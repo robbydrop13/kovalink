@@ -25,7 +25,7 @@ import { Txt } from '@/ui/Txt';
 import { Icon } from '@/ui/Icon';
 import { TabGroupView } from '@/features/sessions/TabGroupView';
 import { paneHref } from '@/features/sessions/SessionRow';
-import { confirmClose, promptRename, toggleBookmark } from '@/features/sessions/paneActions';
+import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
 import { groupByTab, summaryLine, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
@@ -123,7 +123,7 @@ export default function SessionsScreen() {
             return out;
           });
         }),
-      onRename: () => promptRename(pane, group.tabId === null ? null : group.title, setToast, () => void refresh()),
+      onRename: () => router.push({ pathname: '/rename', params: { paneId: String(pane.id) } }),
     };
   };
   const aging = (paneId: number) => isAging(prompts[paneId]);

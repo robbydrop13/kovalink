@@ -22,6 +22,7 @@ import { Icon } from '@/ui/Icon';
 import { isComposerLocked, requiresFaceIdForText } from '@/store/prompts';
 import { draftOf, useDrafts } from '@/store/drafts';
 import { AttachmentStrip, askAttachmentSource } from './AttachmentViews';
+import { VoiceButton } from './VoiceButton';
 import type { Attachment } from './attachments';
 
 export interface ComposerProps {
@@ -151,6 +152,12 @@ export function Composer({
         >
           <Icon name="plus" size={24} color={canAttach ? colors.text.secondary : colors.text.disabled} />
         </Pressable>
+
+        <VoiceButton
+          disabled={locked || disabled || sending}
+          onText={(text) => setValue(value.trim().length > 0 ? `${value.trimEnd()} ${text}` : text)}
+          onNotice={onNotice}
+        />
 
         <Pressable
           style={styles.fieldWrap}

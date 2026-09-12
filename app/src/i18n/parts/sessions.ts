@@ -33,8 +33,8 @@ export const sessions = {
   paneGoneOnMac: 'This pane no longer exists on the Mac',
 
   // Interrompre (liste, session, barre de validation)
-  interruptLabel: 'Interrupt',
-  interruptDone: 'Interrupted',
+  interruptLabel: 'Stop',
+  interruptDone: 'Stopped',
   interruptFailed: 'Failed',
   interruptUnavailable: 'Unavailable',
 
@@ -68,10 +68,10 @@ export const sessions = {
   closeDone: (project: string) => `Closed ${project}`,
   closeFailed: (cause: string) => `Close failed. ${cause}`,
   closeAnyway: 'Close anyway',
-  closeInterruptTitle: 'Interrupt the task?',
+  closeInterruptTitle: 'Stop the task?',
   closeInterruptBody: 'The agent is in the middle of a task. This closes the pane and stops it.',
   closeKeepWorking: 'Keep working',
-  closeAndInterrupt: 'Close and interrupt',
+  closeAndInterrupt: 'Close and stop',
   closeStateWorking: 'The agent is working right now: closing interrupts the task.',
   closeStateAwaiting: 'The agent is waiting for your answer.',
   closeStateIdle: 'The agent is idle.',
@@ -84,12 +84,6 @@ export const sessions = {
   bookmarkFailed: (cause: string) => `Bookmark failed. ${cause}`,
 
   // Renommer
-  renameTitle: 'Rename tab',
-  renameBody: 'Leave empty to go back to the automatic title.',
-  renameButton: 'Rename',
-  renameReset: 'Tab title reset',
-  renameDone: (title: string) => `Tab renamed to ${title}`,
-  renameFailed: (cause: string) => `Rename failed. ${cause}`,
 
   // Ouvrir et suivre sur le Mac
   openOnMacLabel: 'Open on the Mac',
@@ -116,6 +110,19 @@ export const sessions = {
   sessionsMacAsleepBanner: (time: string) => `Mac asleep or off, last state at ${time}`,
   sessionsSearchPlaceholder: 'Tab, project or pane title',
   sessionsSearchAccessibilityLabel: 'Search sessions',
+  renameMenu: 'Rename',
+  renameTitle: 'Rename',
+  renameTabLabel: 'Tab name',
+  renameTabHint: 'Shown in the Kova tab bar. Leave empty for the automatic title.',
+  renameTabButton: 'Rename tab',
+  renameSessionLabel: 'Session name',
+  renameSessionHint: 'Persists across close and resume',
+  renameSessionButton: 'Rename session',
+  renameSessionNeedsClaude: 'Session names exist only for a Claude pane',
+  renameSessionRefused: 'The agent is waiting for an answer, rename later',
+  renameSessionSent: (name: string) => `Session renamed to ${name}`,
+  renameTabDone: (title: string | null) => (title === null ? 'Tab title reset' : `Tab renamed to ${title}`),
+  renameFailed: (cause: string) => `Rename failed. ${cause}`,
   sessionsSearchHint: 'Opens the panes palette, like Cmd+P in Kova',
   panesNewSessionIn: (project: string) => `New session in ${project}`,
   panesSectionProjects: 'PROJECTS',

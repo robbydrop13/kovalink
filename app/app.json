@@ -82,6 +82,12 @@
         {
           "appleTeamId": "49583398UQ"
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "KovaLink records your voice only while you hold the microphone button, to type your message."
+        }
       ]
     ],
     "experiments": {

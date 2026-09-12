@@ -173,3 +173,30 @@ export function setBookmark(
   audit({ deviceId, action: 'kova.bookmark', result: 'ok', detail: 'add' });
   return { bookmarked: true };
 }
+
+// --- Nom de session Claude (`/rename`) ---------------------------------------
+
+export const SESSION_NAME_MAX = 60;
+
+/**
+ * Nom de session assaini : une seule ligne, sans controle, sans `/` en tete (sinon le
+ * texte deviendrait une autre commande), 60 caracteres au plus. Vide : refus.
+ */
+export function sanitizeSessionName(raw: unknown): string {
+  if (typeof raw !== 'string') throw new ManageError('BAD_REQUEST', 'name must be a string');
+  const clean = raw
+    .normalize('NFC')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\/+/, '')
+    .trim();
+  if (clean.length === 0) throw new ManageError('BAD_REQUEST', 'empty session name');
+  return clean.length > SESSION_NAME_MAX ? clean.slice(0, SESSION_NAME_MAX).trim() : clean;
+}
+
+/** La commande tapee dans le pane. Construite ici, jamais recue du client. */
+export function renameCommand(name: string): string {
+  return `/rename ${name}`;
+}

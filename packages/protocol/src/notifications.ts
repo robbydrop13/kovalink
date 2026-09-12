@@ -93,7 +93,7 @@ const OPEN: QuickAction = {
 };
 const INTERRUPT: QuickAction = {
   identifier: NOTIFICATION_ACTION.interrupt,
-  buttonTitle: 'Interrupt',
+  buttonTitle: 'Stop',
   opensAppToForeground: false,
   authenticationRequired: false,
 };

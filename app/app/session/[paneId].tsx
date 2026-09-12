@@ -32,7 +32,8 @@ import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
 import { Icon } from '@/ui/Icon';
 import { AgentStatus } from '@/features/chat/AgentStatus';
-import { AssistantTurn, OrphanResults, QuietSystemRow, StreamDot, SystemRow, UserBubble } from '@/features/chat/Bubble';
+import { AssistantTurn, OrphanResults, QuietSystemRow, SystemRow, UserBubble } from '@/features/chat/Bubble';
+import { Shimmer } from '@/features/chat/Shimmer';
 import { feedItems } from '@/features/chat/systemEvents';
 import { Composer } from '@/features/chat/Composer';
 import { StaleQueue } from '@/features/chat/StaleQueue';
@@ -43,6 +44,7 @@ import { MonospaceFallback } from '@/features/terminal/MonospaceFallback';
 import { NumericKeypad } from '@/features/terminal/NumericKeypad';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { followSessionOnMac, showPaneMenu } from '@/features/sessions/openOnMac';
+import { paneLabel } from '@/features/sessions/SessionRow';
 import { dismissBannersForPane, paneIdentity } from '@/notifications/banners';
 import {
   attachSession,
@@ -312,9 +314,24 @@ export default function SessionScreen() {
   // Le tour assistant en cours d'écriture : le daemon le complète ligne par ligne (V6).
   const streamingTurnId =
     working && lastTurn?.kind === 'assistant' && !lastTurn.stopReason ? lastTurn.id : null;
-  // L'agent travaille mais n'a pas encore commencé à écrire : un point pulse en bas.
+  // L'agent travaille mais n'a pas encore commencé à écrire : « Thinking… » avec un reflet
+  // qui balaye le texte, ou « Running <tool>… » si un appel attend son résultat.
   const tailDot =
     working && (!lastTurn || lastTurn.kind !== 'assistant' || lastTurn.stopReason === 'end_turn');
+  const pendingTool = useMemo(() => {
+    if (!working) return null;
+    for (let i = session.turns.length - 1; i >= 0; i--) {
+      const turn = session.turns[i];
+      if (turn?.kind !== 'assistant') continue;
+      for (let j = turn.blocks.length - 1; j >= 0; j--) {
+        const b = turn.blocks[j];
+        if (b?.type === 'tool_use' && !results.has(b.id)) return b.name;
+      }
+      break;
+    }
+    return null;
+  }, [working, session.turns, results]);
+  const thinkingLabel = pendingTool ? t.chatRunningTool(pendingTool) : t.chatThinking;
   const finishedAt = useMemo(() => {
     if (working) return null;
     if (prompt?.state === 'turn_end') return Date.parse(prompt.endedAt) || null;
@@ -560,7 +577,13 @@ export default function SessionScreen() {
     setNotice(paneId, t.sessionRejectSent);
   }, [onAnswer, paneId, prompt, setNotice]);
 
-  const openMenu = useCallback(() => showPaneMenu(paneId, setToast), [paneId]);
+  const openMenu = useCallback(
+    () =>
+      showPaneMenu(paneId, setToast, [
+        { label: t.renameMenu, run: () => router.push({ pathname: '/rename', params: { paneId: String(paneId) } }) },
+      ]),
+    [paneId],
+  );
 
   if (!pane && session.status !== 'ready') {
     if (resolveTimedOut) {
@@ -591,7 +614,7 @@ export default function SessionScreen() {
         <NavBar view={view} onView={setView} title={t.sessionsTitle} onMenu={openMenu} />
         <View style={styles.subtitle}>
           <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1}>
-            {pane ? `${pane.projectName} · ${pane.title ?? pane.agent ?? t.paneFallbackTitle}` : t.sessionFallbackTitle}
+            {pane ? `${pane.projectName} · ${paneLabel(pane)}` : t.sessionFallbackTitle}
           </Txt>
           <View style={styles.grow} />
           <Txt variant="monoPath" color={colors.text.tertiary} numberOfLines={1}>
@@ -786,7 +809,7 @@ export default function SessionScreen() {
             />
           ))}
 
-          {tailDot ? <StreamDot /> : null}
+          {tailDot || (working && pendingTool !== null && streamingTurnId === null) ? <Shimmer label={thinkingLabel} /> : null}
         </ScrollView>
       ) : (
         <View style={styles.grow}>

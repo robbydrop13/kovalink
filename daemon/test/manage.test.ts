@@ -19,6 +19,9 @@ const {
   setBookmark,
   readBookmarks,
   bookmarkedIds,
+  sanitizeSessionName,
+  renameCommand,
+  SESSION_NAME_MAX,
 } = await import('../src/kova/manage.js');
 
 const ESC = String.fromCharCode(27);
@@ -186,5 +189,17 @@ describe('favoris (bookmarks.json de Kova)', () => {
     writeFileSync(broken, '{ pas du json');
     assert.throws(() => setBookmark('add', { sessionId: SID, cwd: '/x', label: 'l' }, 'dev', broken));
     assert.equal(readFileSync(broken, 'utf8'), '{ pas du json');
+  });
+});
+
+describe('sanitizeSessionName (/rename au sens Claude)', () => {
+  it('une ligne, sans controle, sans / en tete, 60 caracteres, jamais vide', () => {
+    assert.equal(sanitizeSessionName(`  Link${ESC} mobile\nv2 `), 'Link mobile v2');
+    assert.equal(sanitizeSessionName('/rename /clear'), 'rename /clear', 'un / en tete ne fait pas une autre commande');
+    assert.equal(sanitizeSessionName('x'.repeat(100)).length, SESSION_NAME_MAX);
+    assert.throws(() => sanitizeSessionName(''), ManageError);
+    assert.throws(() => sanitizeSessionName('///'), ManageError);
+    assert.throws(() => sanitizeSessionName(12), ManageError);
+    assert.equal(renameCommand('Link mobile'), '/rename Link mobile');
   });
 });

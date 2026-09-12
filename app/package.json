@@ -19,6 +19,7 @@
     "@expo/vector-icons": "^15.0.2",
     "@kovalink/protocol": "file:../packages/protocol",
     "expo": "~57.0.21",
+    "expo-audio": "~57.0.5",
     "expo-camera": "~57.0.4",
     "expo-constants": "~57.0.17",
     "expo-crypto": "~57.0.2",

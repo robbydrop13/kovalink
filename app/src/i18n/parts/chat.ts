@@ -1,6 +1,19 @@
 // Chaînes visibles : chat, actions, transferts. Voir `../en.ts`.
 export const chat = {
   // Actions partagées entre écrans.
+  voiceButton: 'Hold to talk',
+  voiceRecording: 'Recording…',
+  voiceSlideToCancel: 'Slide left to cancel',
+  voiceCancelled: 'Recording cancelled',
+  voiceTranscribing: 'Transcribing…',
+  voiceNeedsBuild: 'Voice input arrives with the next app build (microphone module missing in this one)',
+  voicePermissionDenied: 'Microphone access refused. Enable it in Settings for KovaLink.',
+  voiceTooLong: 'Recording too long (over 10 MB). Keep it under a couple of minutes.',
+  voiceTooShort: 'Too short, hold the button while you talk',
+  voiceEmpty: 'Nothing was recognized',
+  voiceFailed: (cause: string) => `Transcription failed. ${cause}`,
+  chatThinking: 'Thinking…',
+  chatRunningTool: (tool: string) => `Running ${tool}…`,
   systemLabel: 'System',
   systemEvents: (n: number) => (n === 1 ? '1 system event' : `${n} system events`),
   systemShowRaw: 'Show raw content',
@@ -72,7 +85,7 @@ export const chat = {
   composerSendFailed: (cause: string) => `Could not send. ${cause}`,
   composerQueued: (n: number) => (n === 1 ? '1 message queued' : `${n} messages queued`),
   composerFieldA11y: 'Message to send',
-  composerInterrupt: 'Interrupt',
+  composerInterrupt: 'Stop',
   composerSending: 'Sending',
 
   // Pièces jointes (`AttachmentViews`, `attachments`, `actions/attachments`).

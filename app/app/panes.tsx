@@ -11,12 +11,12 @@ import type { KovaSessionEntry, Pane, RecentProject } from '@/protocol';
 import { colors } from '@/theme';
 import { Banner } from '@/ui/States';
 import { Palette, type PaletteRow } from '@/ui/Palette';
-import { paneBadge, paneHref } from '@/features/sessions/SessionRow';
+import { paneBadge, paneHref, paneLabel } from '@/features/sessions/SessionRow';
 import { tabTint } from '@/features/sessions/TabGroupView';
 import { groupByTab, isStaleSession, paletteEntries } from '@/features/sessions/tabGroups';
 import { closedMatching } from '@/features/sessions/closedSessions';
 import { askResume, readSession, sessionAge } from '@/features/sessions/resume';
-import { confirmClose, promptRename, toggleBookmark } from '@/features/sessions/paneActions';
+import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
 import { fetchRecentProjects, fetchSessions, postNewTab } from '@/net/http';
 import { matchesQuery } from '@/utils/search';
@@ -75,7 +75,7 @@ export default function PanesPaletteScreen() {
         bookmarked: isBookmarked,
         onClose: () => confirmClose(pane, tabTitle, setNotice),
         onBookmark: () => void toggleBookmark(pane, isBookmarked, setNotice).then(() => load()),
-        onRename: () => promptRename(pane, tabTitle, setNotice),
+        onRename: () => router.push({ pathname: '/rename', params: { paneId: String(pane.id) } }),
       };
     },
     [bookmarked, load],
@@ -88,7 +88,7 @@ export default function PanesPaletteScreen() {
         key: String(pane.id),
         tint: tabTint(group.color),
         prefix: group.title,
-        title: pane.title ?? pane.agent ?? t.paneFallbackTitle,
+        title: paneLabel(pane),
         subtitle: pane.agent && pane.agent !== pane.title ? `${pane.projectName} · ${pane.agent}` : pane.projectName,
         badge: paneBadge(pane, prompts[pane.id]),
         badgeColor: pane.awaiting

@@ -1,3 +1,4 @@
+import type { ActionResponse } from './errors.js';
 /**
  * Table des routes HTTPS. SOURCE UNIQUE DE VERITE.
  *
@@ -25,7 +26,17 @@ export const ROUTES = {
    */
   paneClose: (paneId: number): string => `/v1/panes/${paneId}/close`,
   paneTitle: (paneId: number): string => `/v1/panes/${paneId}/title`,
+  /**
+   * Renommage au sens Claude : `/rename <name>` tape par le daemon dans le pane, via
+   * KeyGate, nom assaini. Le nom survit a la fermeture et a la reprise de la session.
+   */
+  paneSessionName: (paneId: number): string => `/v1/panes/${paneId}/session-name`,
   kovaBookmark: '/v1/kova/bookmark',
+  /**
+   * Mode vocal : l'app envoie l'audio (m4a, 10 Mo max) au daemon, qui appelle Gladia
+   * avec la cle lue sur le Mac. La cle ne quitte jamais le Mac, l'audio n'y reste pas.
+   */
+  transcribe: '/v1/transcribe',
   paneScreen: (paneId: number): string => `/v1/panes/${paneId}/screen`,
   sessionTurns: (sessionId: string): string =>
     `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
@@ -78,7 +89,13 @@ export const ROUTE_PATTERNS = {
   paneText: '/v1/panes/:paneId/text',
   paneClose: '/v1/panes/:paneId/close',
   paneTitle: '/v1/panes/:paneId/title',
+  paneSessionName: '/v1/panes/:paneId/session-name',
   kovaBookmark: '/v1/kova/bookmark',
+  /**
+   * Mode vocal : l'app envoie l'audio (m4a, 10 Mo max) au daemon, qui appelle Gladia
+   * avec la cle lue sur le Mac. La cle ne quitte jamais le Mac, l'audio n'y reste pas.
+   */
+  transcribe: '/v1/transcribe',
   paneScreen: '/v1/panes/:paneId/screen',
   sessionTurns: '/v1/sessions/:sessionId/turns',
   kovaLaunch: '/v1/kova/launch',
@@ -249,4 +266,23 @@ export interface PaneTitleRequest {
 
 export interface PaneTitleResponse {
   title: string | null;
+}
+
+/** Corps de `POST /v1/panes/:paneId/session-name` : le nom seulement, assaini par le daemon. */
+export interface PaneSessionNameRequest {
+  name: string;
+}
+
+export type PaneSessionNameResponse = ActionResponse & { name: string };
+
+/** Plafond d'un enregistrement vocal envoye au daemon. */
+export const TRANSCRIBE_MAX_BYTES = 10 * 1024 * 1024;
+/** Types MIME acceptes par `POST /v1/transcribe`. */
+export const TRANSCRIBE_MIME_TYPES: readonly string[] = ['audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/mpeg', 'audio/wav', 'audio/webm'];
+
+/** Reponse de `POST /v1/transcribe` : le texte, la langue detectee, la duree entendue. */
+export interface TranscribeResponse {
+  text: string;
+  language: string | null;
+  durationMs: number | null;
 }

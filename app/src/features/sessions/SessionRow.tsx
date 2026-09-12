@@ -46,7 +46,8 @@ export function paneHref(pane: Pane): string {
 
 /** Titre d'un pane tel que Kova le montre, le projet venant en sous-titre. */
 export function paneLabel(pane: Pane): string {
-  return pane.title ?? pane.agent ?? t.paneFallbackTitle;
+  // Le nom de session Claude (`/rename`) prime sur le titre generique du pane.
+  return pane.agent_session_name ?? pane.title ?? pane.agent ?? t.paneFallbackTitle;
 }
 
 export function SessionRow({

@@ -59,7 +59,7 @@ export function PaneTitle({ pane }: { pane: Pane }) {
     <View style={styles.row}>
       <TabColorDot index={pane.color ?? null} />
       <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.title}>
-        {pane.projectName} · {pane.title ?? pane.agent ?? t.paneFallbackTitle}
+        {pane.projectName} · {pane.agent_session_name ?? pane.title ?? pane.agent ?? t.paneFallbackTitle}
       </Txt>
       <PermissionBadge mode={pane.permissionMode} />
     </View>

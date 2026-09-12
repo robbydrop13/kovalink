@@ -20,6 +20,8 @@ import {
   type Pane,
   type PaneTitleRequest,
   type PaneTitleResponse,
+  type PaneSessionNameRequest,
+  type PaneSessionNameResponse,
   type PairClaimRequest,
   type PairClaimResponse,
   type Prompt,
@@ -256,6 +258,12 @@ export function postClose(paneId: number, nonce: string, timeoutMs = 5000): Prom
 export function postTitle(paneId: number, title: string | null, timeoutMs = 5000): Promise<PaneTitleResponse> {
   const body: PaneTitleRequest = { title };
   return request(ROUTES.paneTitle(paneId), { method: 'POST', body, timeoutMs });
+}
+
+/** Nom de session au sens Claude (`/rename`), tapé par le daemon via KeyGate. */
+export function postSessionName(paneId: number, name: string, timeoutMs = 10_000): Promise<PaneSessionNameResponse> {
+  const body: PaneSessionNameRequest = { name };
+  return request(ROUTES.paneSessionName(paneId), { method: 'POST', body, timeoutMs });
 }
 
 /** Favori : ajout ou retrait dans `bookmarks.json` de Kova. */

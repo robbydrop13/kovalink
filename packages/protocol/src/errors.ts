@@ -27,6 +27,10 @@ export const ERROR_CODES = [
   'RATE_LIMITED',
   'IO_ERROR',
   'NO_SPACE',
+  // Mode vocal : la cle Gladia (`~/.kovalink/gladia-key`) est absente du Mac.
+  'TRANSCRIPTION_UNAVAILABLE',
+  // Mode vocal : Gladia a refuse ou echoue, son message est relaye mot pour mot.
+  'TRANSCRIPTION_FAILED',
   'INTERNAL',
 ] as const;
 

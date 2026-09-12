@@ -5,7 +5,7 @@
 import { Alert } from 'react-native';
 import type { Pane } from '@/protocol';
 import { nonce } from '@/actions/nonce';
-import { postBookmark, postClose, postTitle } from '@/net/http';
+import { postBookmark, postClose } from '@/net/http';
 import { ImpactStyle, NotifyType, impact, notify } from '@/utils/haptics';
 import { closeStateLabel } from './closeState';
 import { t } from '@/i18n/en';
@@ -73,30 +73,4 @@ export async function toggleBookmark(pane: Pane, bookmarked: boolean, onNotice: 
     onNotice(t.bookmarkFailed(e instanceof Error ? e.message : String(e)));
     return null;
   }
-}
-
-/** Renommer l'onglet : champ pré-rempli avec le titre courant, vide pour le titre automatique. */
-export function promptRename(pane: Pane, currentTitle: string | null, onNotice: Notice, onDone?: (title: string | null) => void): void {
-  const submit = (value?: string): void => {
-    const title = (value ?? '').trim();
-    void postTitle(pane.id, title.length === 0 ? null : title).then(
-      (res) => {
-        impact(ImpactStyle.Light);
-        onNotice(res.title === null ? t.renameReset : t.renameDone(res.title));
-        onDone?.(res.title);
-      },
-      (e: unknown) => onNotice(t.renameFailed(e instanceof Error ? e.message : String(e))),
-    );
-  };
-  Alert.prompt(
-    t.renameTitle,
-    t.renameBody,
-    [
-      { text: t.actionCancel, style: 'cancel' },
-      { text: t.renameButton, onPress: submit },
-    ],
-    'plain-text',
-    currentTitle ?? '',
-    'default',
-  );
 }

@@ -20,6 +20,11 @@ import {
   type KovaBookmarkResponse,
   type PaneTitleRequest,
   type PaneTitleResponse,
+  type PaneSessionNameRequest,
+  type PaneSessionNameResponse,
+  TRANSCRIBE_MAX_BYTES,
+  TRANSCRIBE_MIME_TYPES,
+  type TranscribeResponse,
   type KovaSessionsResponse,
   type Prompt,
   type Turn,
@@ -45,7 +50,8 @@ import type { UploadStore } from '../fs/uploads.js';
 import { listRecentProjects, resolveRecentProject } from '../fs/quickdests.js';
 import { findSession, listSessions } from '../kova/sessions.js';
 import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession } from '../kova/resume.js';
-import { ManageError, closePane, renameTab, setBookmark } from '../kova/manage.js';
+import { ManageError, closePane, renameCommand, renameTab, sanitizeSessionName, setBookmark } from '../kova/manage.js';
+import { TranscriptionError, transcribe } from '../voice/gladia.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { Hub, type Socket } from './hub.js';
 import type { Services } from './services.js';
@@ -351,6 +357,39 @@ export async function createHttpServer(
     }
   });
 
+  /**
+   * Renommage au sens Claude : `/rename <name>` dans le pane, via KeyGate comme un texte
+   * avec Entree. Seulement sur un pane `claude` sans prompt parse en attente (KeyGate
+   * refuse `became_awaiting` sinon). Le nom apparait dans `agent_session_name` de Kova.
+   */
+  app.post<{ Params: { paneId: string }; Body: Partial<PaneSessionNameRequest> }>(
+    ROUTE_PATTERNS.paneSessionName,
+    async (req, reply) => {
+      const deviceId = req.deviceId ?? '';
+      if (!services.rate.allow(deviceId, 'text')) return fail(reply, 429, 'RATE_LIMITED', 'too many renames');
+      const paneId = Number(req.params.paneId);
+      const pane = services.panes.get(paneId);
+      if (!pane) return fail(reply, 404, 'PANE_NOT_FOUND', 'unknown pane');
+      if (pane.agent !== 'claude') return fail(reply, 400, 'FORBIDDEN_ACTION', 'session names exist only for a claude pane');
+      let name: string;
+      try {
+        name = sanitizeSessionName(req.body?.name);
+      } catch (e) {
+        if (e instanceof ManageError) return fail(reply, 400, e.code, e.message);
+        throw e;
+      }
+      try {
+        const res = await services.keygate.emitText(paneId, renameCommand(name), deviceId);
+        audit({ deviceId, action: 'pane.sessionName', paneId, result: res.applied ? 'ok' : 'denied', detail: res.applied ? `len=${name.length}` : (res.reason ?? 'refused') });
+        const out: PaneSessionNameResponse = { ...res, name };
+        return out;
+      } catch (e) {
+        if (e instanceof ForbiddenError) return fail(reply, 403, e.code, e.message);
+        throw e;
+      }
+    },
+  );
+
   /** Favori : ajout ou retrait dans `bookmarks.json` de Kova, identifiant resolu par l'index. */
   app.post<{ Body: Partial<KovaBookmarkRequest> }>(ROUTE_PATTERNS.kovaBookmark, async (req, reply) => {
     const deviceId = req.deviceId ?? '';
@@ -606,6 +645,44 @@ export async function createHttpServer(
     const out = await resumeSession(services, req.body?.sessionId, deviceId);
     if (!out.ok) return fail(reply, out.status, out.code, out.message);
     return out.response;
+  });
+
+  // --- Mode vocal ------------------------------------------------------------
+  // Corps audio brut, borne a 10 Mo AVANT lecture complete : un type non audio ou une
+  // taille annoncee trop grande sont refuses sans lire le flux.
+  for (const mime of TRANSCRIBE_MIME_TYPES) {
+    app.addContentTypeParser(mime, { parseAs: 'buffer', bodyLimit: TRANSCRIBE_MAX_BYTES }, (_req, body, done) => {
+      done(null, body);
+    });
+  }
+  app.post(ROUTE_PATTERNS.transcribe, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'text')) return fail(reply, 429, 'RATE_LIMITED', 'too many transcriptions');
+    const mime = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+    if (!TRANSCRIBE_MIME_TYPES.includes(mime)) {
+      audit({ deviceId, action: 'voice.transcribe', result: 'denied', detail: `mime=${mime || 'none'}` });
+      return fail(reply, 415, 'BAD_REQUEST', `unsupported audio type: ${mime || 'none'}`);
+    }
+    const audio = req.body;
+    if (!Buffer.isBuffer(audio) || audio.length === 0) return fail(reply, 400, 'BAD_REQUEST', 'empty audio body');
+    if (audio.length > TRANSCRIBE_MAX_BYTES) {
+      audit({ deviceId, action: 'voice.transcribe', bytes: audio.length, result: 'denied', detail: 'too large' });
+      return fail(reply, 413, 'BAD_REQUEST', `audio over ${TRANSCRIBE_MAX_BYTES} bytes`);
+    }
+    const started = Date.now();
+    try {
+      const res: TranscribeResponse = await transcribe(audio, mime, `voice.${mime.endsWith('wav') ? 'wav' : 'm4a'}`);
+      // Jamais le texte dans le journal : c'est la voix de Robin.
+      audit({ deviceId, action: 'voice.transcribe', bytes: audio.length, result: 'ok', detail: `ms=${Date.now() - started} chars=${res.text.length}` });
+      return res;
+    } catch (e) {
+      if (e instanceof TranscriptionError) {
+        audit({ deviceId, action: 'voice.transcribe', bytes: audio.length, result: e.code === 'TRANSCRIPTION_UNAVAILABLE' ? 'denied' : 'error', detail: e.code });
+        return fail(reply, e.code === 'TRANSCRIPTION_UNAVAILABLE' ? 503 : 502, e.code, e.message);
+      }
+      audit({ deviceId, action: 'voice.transcribe', bytes: audio.length, result: 'error', detail: (e as Error).message });
+      return fail(reply, 502, 'TRANSCRIPTION_FAILED', (e as Error).message);
+    }
   });
 
   // --- Bloc C, les fichiers ----------------------------------------------
