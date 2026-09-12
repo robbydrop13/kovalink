@@ -2,7 +2,7 @@
 // gauche (les six couleurs Kova, 0 rouge à 5 violet), nom de l'onglet, marque `actif`
 // pour l'onglet au premier plan, puis les panes dans l'ordre. Un pane qui attend garde sa
 // carte, à sa place dans l'onglet, jamais extrait dans une section à part.
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import type { Pane, Prompt } from '@/protocol';
 import { colors, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
@@ -17,6 +17,8 @@ interface Props {
   onOpen: (paneId: number) => void;
   onOpenOnMac: (paneId: number) => void;
   onRelaunch: (pane: Pane) => void;
+  /** Tap sur l'en-tête d'onglet : la palette des panes (Cmd+P). */
+  onHeaderPress: () => void;
   onInterrupt: (paneId: number) => void;
   interruptDisabled: boolean;
   interruptLabel: (paneId: number) => string;
@@ -34,6 +36,7 @@ export function TabGroupView({
   onOpen,
   onOpenOnMac,
   onRelaunch,
+  onHeaderPress,
   onInterrupt,
   interruptDisabled,
   interruptLabel,
@@ -44,7 +47,12 @@ export function TabGroupView({
       style={[styles.group, { borderLeftColor: tint }]}
       accessibilityLabel={`Onglet ${group.tabIndex + 1}, ${group.title}${group.active ? ', actif sur le Mac' : ''}, ${group.panes.length} pane${group.panes.length > 1 ? 's' : ''}`}
     >
-      <View style={styles.header}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Onglet ${group.title}, ouvrir la palette des panes`}
+        onPress={onHeaderPress}
+        style={({ pressed }) => [styles.header, pressed && styles.headerPressed]}
+      >
         <View style={[styles.dot, { backgroundColor: tint }]} />
         <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.title}>
           {group.title}
@@ -56,7 +64,7 @@ export function TabGroupView({
             </Txt>
           </View>
         ) : null}
-      </View>
+      </Pressable>
       <View style={styles.panes}>
         {group.panes.map((pane: Pane) =>
           pane.awaiting ? (
@@ -97,7 +105,8 @@ const styles = StyleSheet.create({
     paddingLeft: space[4],
     gap: space[3],
   },
-  header: { flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 28 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 32, borderRadius: radius.sm },
+  headerPressed: { backgroundColor: colors.bg.pressed },
   dot: { width: 10, height: 10, borderRadius: 5 },
   title: { flexShrink: 1 },
   activeChip: {

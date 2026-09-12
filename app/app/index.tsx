@@ -242,6 +242,7 @@ export default function SessionsScreen() {
                   onOpen={open}
                   onOpenOnMac={onMac}
                   onRelaunch={relaunch}
+                  onHeaderPress={() => router.push('/panes')}
                   onInterrupt={(id) => void interrupt(id)}
                   interruptDisabled={degraded}
                   interruptLabel={(id) => labelFor(id, degraded)}
@@ -252,16 +253,30 @@ export default function SessionsScreen() {
         </View>
       </ScrollView>
 
-      {/* Barre d'action basse, zone du pouce (design 4.1) : le Cmd+O de Kova. */}
+      {/* Barre d'action basse, zone du pouce (design 4.1) : les deux palettes de Kova,
+          Cmd+P (tous les panes) et Cmd+O (projets récents, nouvelle session). La barre du
+          haut est pleine (titre, pastille, Fichiers, Réglages) : ici, deux boutons larges. */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + space[3] }]}>
-        <Button
-          label="Nouvelle session"
-          kind="secondary"
-          height={layout.touchPrimary}
-          disabled={degraded}
-          accessibilityHint="Ouvre un projet récent de Kova dans un nouvel onglet, avec Claude"
-          onPress={() => router.push('/new-session')}
-        />
+        <View style={styles.bottomButton}>
+          <Button
+            label="Panes"
+            kind="secondary"
+            height={layout.touchPrimary}
+            disabled={kovaDown}
+            accessibilityHint="Palette de tous les panes, comme Cmd+P dans Kova"
+            onPress={() => router.push('/panes')}
+          />
+        </View>
+        <View style={styles.bottomButton}>
+          <Button
+            label="Projets"
+            kind="secondary"
+            height={layout.touchPrimary}
+            disabled={degraded}
+            accessibilityHint="Palette des projets récents, comme Cmd+O dans Kova"
+            onPress={() => router.push('/new-session')}
+          />
+        </View>
       </View>
 
       {toast ? (
@@ -298,12 +313,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   bottomBar: {
+    flexDirection: 'row',
+    gap: space[4],
     paddingHorizontal: layout.screenPaddingH,
     paddingTop: space[3],
     backgroundColor: colors.bg.base,
     borderTopWidth: 1,
     borderTopColor: colors.border.subtle,
   },
+  bottomButton: { flex: 1 },
   grow: { flex: 1 },
   toast: {
     position: 'absolute',

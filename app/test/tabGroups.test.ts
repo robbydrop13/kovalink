@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Pane, Tab } from '@/protocol';
-import { filterGroups, groupByTab, isStaleSession, summaryLine, windowCount } from '@/features/sessions/tabGroups';
+import { filterGroups, groupByTab, isStaleSession, paletteEntries, summaryLine, windowCount } from '@/features/sessions/tabGroups';
 
 function pane(partial: Partial<Pane> & { id: number; tab: number }): Pane {
   return {
@@ -162,5 +162,31 @@ describe('summaryLine', () => {
     assert.equal(summaryLine([pane({ id: 1, tab: 1, working: true })]), '1 travaille');
     assert.equal(summaryLine([pane({ id: 1, tab: 1, working: true, awaiting: true })]), '1 en attente');
     assert.equal(summaryLine([pane({ id: 1, tab: 1 })]), null);
+  });
+});
+
+describe('paletteEntries (Cmd+P)', () => {
+  const groups = groupByTab(PANES, TABS);
+
+  it('tous les panes à plat, dans l’ordre des onglets puis des panes', () => {
+    const entries = paletteEntries(groups, '');
+    assert.deepEqual(
+      entries.map((e) => [e.group.title, e.pane.id]),
+      [
+        ['Courses', 13],
+        ['Link', 4],
+        ['Link', 3],
+        ['QR appairage', 20],
+        ['TrailCoach', 11],
+        ['Dollary', 9],
+      ],
+    );
+  });
+
+  it('filtre au fil de la frappe sur onglet, projet et titre, sans accents ni casse', () => {
+    assert.deepEqual(paletteEntries(groups, 'TRAIL').map((e) => e.pane.id), [11]);
+    assert.deepEqual(paletteEntries(groups, 'link').map((e) => e.pane.id), [4, 3, 20]);
+    assert.deepEqual(paletteEntries(groups, 'appairage tools').map((e) => e.pane.id), [20]);
+    assert.deepEqual(paletteEntries(groups, 'inexistant'), []);
   });
 });

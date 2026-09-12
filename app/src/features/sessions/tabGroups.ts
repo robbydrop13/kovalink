@@ -146,3 +146,29 @@ export function summaryLine(panes: Pane[]): string | null {
 export function windowCount(groups: TabGroup[]): number {
   return new Set(groups.map((g) => g.window)).size;
 }
+
+/** Un pane de la palette Cmd+P, avec son onglet : l'ordre est celui des onglets puis des panes. */
+export interface PaletteEntry {
+  pane: Pane;
+  group: TabGroup;
+}
+
+/**
+ * Tous les panes de tous les onglets, à plat, dans l'ordre du sélecteur de Kova
+ * (`open-pane-switcher`) : fenêtre, onglet, pane. Filtré par mots sur le nom de
+ * l'onglet, le titre du pane, le projet, le dossier et l'agent.
+ */
+export function paletteEntries(groups: TabGroup[], query: string): PaletteEntry[] {
+  const words = fold(query).split(/\s+/).filter((w) => w.length > 0);
+  const out: PaletteEntry[] = [];
+  for (const group of groups) {
+    for (const pane of group.panes) {
+      if (words.length > 0) {
+        const hay = `${fold(group.title)} ${paneHaystack(pane)}`;
+        if (!words.every((w) => hay.includes(w))) continue;
+      }
+      out.push({ pane, group });
+    }
+  }
+  return out;
+}
