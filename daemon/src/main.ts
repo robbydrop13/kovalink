@@ -16,6 +16,7 @@ import { UploadStore } from './fs/uploads.js';
 import { KovaIpc } from './kova/ipc.js';
 import { KeyGate } from './kova/keygate.js';
 import { PaneStore, type WorkingTransition } from './kova/panes.js';
+import { LAYOUT_POLL_MS } from './kova/layoutPoll.js';
 import { purgeOrphanRaws, RAW_PURGE_INTERVAL_MS, realRawPurgeDeps } from './kova/rawPurge.js';
 import { logger } from './logger.js';
 import { runPair } from './pair.js';
@@ -143,6 +144,38 @@ async function run(): Promise<void> {
     }
   };
 
+  /**
+   * Kova n'emet AUCUN evenement quand un onglet est renomme, deplace ou cree vide : son
+   * `subscribe` ne connait que `focus`, `pane-open`, `pane-close`, `pane-working` et
+   * `pane-status`. Sans relecture, l'ordre et les noms des onglets restaient figes dans
+   * l'app jusqu'au prochain redemarrage du daemon (mesure le 12 septembre 2026 : l'onglet
+   * « Perso » deplace en 2e position sur le Mac, toujours en 8e sur l'iPhone). On relit
+   * donc `list-tabs` + `list-panes` a chaque `focus` et toutes les `LAYOUT_POLL_MS`, et on
+   * ne diffuse un instantane que si la mise en page (ordre, titres, cwd) a change.
+   */
+  let layoutSignature = '';
+  const layoutOf = (tabs: Record<string, unknown>[], rawPanes: Record<string, unknown>[]): string =>
+    JSON.stringify([
+      tabs.map((t) => [t['id'], t['window'], t['tab_index'], t['title']]),
+      rawPanes.map((p) => [p['id'], p['window'], p['tab'], p['title'], p['cwd'], p['agent']]),
+    ]);
+  const refreshLayout = async (reason: string): Promise<void> => {
+    try {
+      const [tabs, rawPanes] = await Promise.all([ipc.listTabs(), ipc.listPanes()]);
+      const signature = layoutOf(tabs, rawPanes);
+      if (signature === layoutSignature) return;
+      layoutSignature = signature;
+      panes.setTabs(tabs);
+      panes.replaceAll(rawPanes);
+      hub.pushPanesSnapshot();
+      logger.debug('mise en page relue', { reason });
+    } catch {
+      /* Kova vient de tomber, le reconnecteur s'en charge */
+    }
+  };
+  const layoutTimer = setInterval(() => void refreshLayout('sondage'), LAYOUT_POLL_MS);
+  layoutTimer.unref?.();
+
   /** Relecture complete de `list-panes`, puis diffusion. Jamais sur le chemin d'une requete. */
   const refreshPanes = async (reason: string): Promise<void> => {
     try {
@@ -179,6 +212,7 @@ async function run(): Promise<void> {
           reason: String(ev['reason'] ?? ''),
           pane,
         });
+        void refreshLayout('focus');
         return;
       }
       case 'pane-status': {
@@ -214,7 +248,7 @@ async function run(): Promise<void> {
       case 'pane-open': {
         const pane = panes.upsertRaw(ev['pane'] as Record<string, unknown>);
         hub.pushPaneEvent({ t: 'pane.event', ev: 'pane-open', pane });
-        void refreshTabs();
+        void refreshLayout('pane-open');
         return;
       }
       case 'pane-close': {
@@ -225,7 +259,7 @@ async function run(): Promise<void> {
         refs.invalidatePane(paneId);
         hub.forgetPrompt(paneId);
         hub.pushPaneEvent({ t: 'pane.event', ev: 'pane-close', paneId, window, tab });
-        void refreshTabs();
+        void refreshLayout('pane-close');
         return;
       }
       default:
@@ -471,6 +505,7 @@ async function run(): Promise<void> {
     clearInterval(clockTimer);
     clearInterval(certTimer);
     clearInterval(rawPurgeTimer);
+    clearInterval(layoutTimer);
     hub.stopHeartbeat();
     stopPeerRefresh();
     detector.stop();

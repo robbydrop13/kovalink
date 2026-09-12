@@ -62,6 +62,8 @@ export function toPane(raw: Record<string, unknown>): Pane {
     chatCapable: agent === 'claude' && transcript,
     permissionMode: meta.permissionMode,
     color: colorOf(window, tabIndex),
+    // Resolu par le `PaneStore` a partir de `list-tabs`, jamais par Kova.
+    tabId: null,
     // 3 etats exclusifs : `awaiting` l'emporte sur `working` (PRD A2).
     liveState: awaiting ? 'awaiting' : working ? 'working' : 'idle',
   };
@@ -149,7 +151,18 @@ export class PaneStore extends EventEmitter {
 
   setTabs(raw: Record<string, unknown>[]): void {
     this.tabs = raw.map(toTab);
+    // Les onglets ont pu etre deplaces : chaque pane reprend l'identifiant de l'onglet
+    // qui se trouve MAINTENANT a son index.
+    for (const [id, pane] of this.panes) {
+      const tabId = this.tabIdOf(pane.window, pane.tab);
+      if (tabId !== pane.tabId) this.panes.set(id, { ...pane, tabId });
+    }
     this.bumpEtag();
+  }
+
+  /** Identifiant de l'onglet a cet index, `null` tant que `list-tabs` ne l'a pas donne. */
+  private tabIdOf(window: number, tabIndex: number): number | null {
+    return this.tabs.find((t) => t.window === window && t.tab_index === tabIndex)?.id ?? null;
   }
 
   /** Remplacement complet. Le client REMPLACE aussi, il ne fusionne pas. */
@@ -175,12 +188,12 @@ export class PaneStore extends EventEmitter {
 
   private applyPane(incoming: Pane): void {
     const previous = this.panes.get(incoming.id);
-    let pane = incoming;
+    let pane: Pane = { ...incoming, tabId: this.tabIdOf(incoming.window, incoming.tab) };
     // Kova sait : son etat reel prend le pas sur notre synthese.
     if (incoming.awaiting) this.syntheticAwaiting.delete(incoming.id);
     if (previous && !incoming.awaiting && this.syntheticAwaiting.has(incoming.id)) {
       pane = {
-        ...incoming,
+        ...pane,
         awaiting: true,
         awaiting_since: previous.awaiting_since,
         liveState: 'awaiting',

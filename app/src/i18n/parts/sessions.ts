@@ -157,6 +157,8 @@ export const sessions = {
   sessionsPanesHint: 'Palette of all panes, like Cmd+P in Kova',
   sessionsProjectsButton: 'Projects',
   sessionsProjectsHint: 'Palette of recent projects, like Cmd+O in Kova',
+  sessionsNewSessionButton: 'New session',
+  sessionsNewSessionHint: 'Opens a recent Kova project in a new tab, with Claude',
 
   // Palette Panes (Cmd+P)
   panesTitle: 'Panes',

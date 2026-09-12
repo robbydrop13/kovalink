@@ -30,6 +30,7 @@ function pane(partial: Partial<Pane> & { id: number; tab: number }): Pane {
     chatCapable: true,
     permissionMode: null,
     color: null,
+    tabId: null,
     liveState: 'idle',
     ...partial,
   };
@@ -189,4 +190,27 @@ describe('paletteEntries (Cmd+P)', () => {
     assert.deepEqual(paletteEntries(groups, 'appairage tools').map((e) => e.pane.id), [20]);
     assert.deepEqual(paletteEntries(groups, 'inexistant'), []);
   });
+});
+
+it('la jointure suit l identifiant de l onglet, pas son index, apres un reordonnancement sur le Mac', () => {
+  // Avant : Link en index 1. Apres deplacement : Perso (id 27) prend l index 1, Link (id 3) passe en 7.
+  const tabs = [
+    tab({ id: 26, tab_index: 0, title: 'Claap' }),
+    tab({ id: 27, tab_index: 1, title: 'Perso' }),
+    tab({ id: 3, tab_index: 7, title: 'Link' }),
+  ];
+  // Le daemon a estampille les panes avec l identifiant de leur onglet.
+  const panes = [
+    pane({ id: 66, tab: 7, tabId: 3, cwd: '/x/link' }),
+    pane({ id: 70, tab: 1, tabId: 27, cwd: '/x/perso' }),
+  ];
+  const groups = groupByTab(panes, tabs);
+  assert.deepEqual(
+    groups.map((g) => [g.title, g.panes.map((p) => p.id)]),
+    [['Perso', [70]], ['Link', [66]]],
+  );
+  // Un pane recu par evenement sans identifiant (tabId null) retombe sur l index.
+  const stale = groupByTab([pane({ id: 71, tab: 1, tabId: null })], tabs);
+  assert.equal(stale[0]?.title, 'Perso');
+  assert.equal(stale[0]?.key, 't27');
 });

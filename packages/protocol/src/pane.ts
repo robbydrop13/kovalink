@@ -56,6 +56,15 @@ export interface Pane {
    * l'onglet n'en porte aucune.
    */
   color: number | null;
+  /**
+   * Identifiant Kova de l'ONGLET qui porte ce pane. Kova ne le donne pas sur le pane
+   * (seulement `tab`, un INDEX qui change a chaque deplacement d'onglet) : le daemon le
+   * resout en lisant `list-tabs` et `list-panes` au meme instant. C'est la cle de
+   * regroupement de l'app ; `(window, tab)` n'est qu'un repli quand il vaut `null`.
+   * Une jointure sur l'index entre deux listes lues a des moments differents nommait
+   * l'onglet « Link » « Perso » apres un reordonnancement sur le Mac.
+   */
+  tabId: number | null;
   /** 3 etats exclusifs, `awaiting` l'emporte sur `working` (PRD A2). */
   liveState: 'awaiting' | 'working' | 'idle';
 }

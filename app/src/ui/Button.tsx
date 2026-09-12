@@ -82,6 +82,57 @@ function labelColor(kind: ButtonKind, disabled: boolean): string {
   return colors.text.onFill;
 }
 
+/**
+ * Bouton rond, icône seule : les actions de la barre basse (Panes, New session, Next).
+ * Pas de libellé visible, il est porté par `accessibilityLabel`. Un point de compteur
+ * optionnel en haut à droite (les non lus).
+ */
+export function RoundButton({
+  icon,
+  label,
+  onPress,
+  kind = 'secondary',
+  disabled = false,
+  size = layout.touchPrimary,
+  badge,
+  accessibilityHint,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+  kind?: ButtonKind;
+  disabled?: boolean;
+  size?: number;
+  badge?: number;
+  accessibilityHint?: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={() => {
+        impact(ImpactStyle.Light);
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.round,
+        { width: size, height: size, borderRadius: size / 2 },
+        kindStyle(kind, pressed, disabled),
+      ]}
+    >
+      <Icon name={icon} size={20} color={labelColor(kind, disabled)} />
+      {badge !== undefined && badge > 0 ? (
+        <Txt variant="caption" color={colors.text.onFill} style={styles.badge}>
+          {badge > 99 ? '99+' : String(badge)}
+        </Txt>
+      ) : null}
+    </Pressable>
+  );
+}
+
 /** Lien secondaire de 32 pt, cible tactile étendue par `hitSlop`. */
 export function LinkAction({
   label,
@@ -119,6 +170,20 @@ export function LinkAction({
 }
 
 const styles = StyleSheet.create({
+  round: { alignItems: 'center', justifyContent: 'center' },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    lineHeight: 18,
+    paddingHorizontal: 4,
+    textAlign: 'center',
+    borderRadius: 9,
+    overflow: 'hidden',
+    backgroundColor: colors.accent.primary,
+  },
   base: {
     borderRadius: radius.md,
     flexDirection: 'row',

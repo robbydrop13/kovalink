@@ -49,6 +49,7 @@ const pane: Pane = {
   permissionMode: null,
   color: null,
   liveState: 'idle',
+  tabId: null,
 };
 
 const turnEnd: Prompt = {

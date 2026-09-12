@@ -18,7 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Pane } from '@/protocol';
 import { colors, layout, radius, space } from '@/theme';
-import { Button, LinkAction } from '@/ui/Button';
+import { Button, LinkAction, RoundButton } from '@/ui/Button';
 import { LinkPill } from '@/ui/LinkPill';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
@@ -301,49 +301,47 @@ export default function SessionsScreen() {
         </View>
       </ScrollView>
 
-      {/* Barre d'action basse, zone du pouce (design 4.1) : les deux palettes de Kova,
-          Cmd+P (tous les panes) et Cmd+O (projets récents, nouvelle session). La barre du
-          haut est pleine (titre, pastille, Fichiers, Réglages) : ici, deux boutons larges. */}
+      {/* Barre d'action basse, zone du pouce (design 4.1) : icônes rondes, sans libellé,
+          le nom est porté par l'accessibilité. Panes (Cmd+P), Projects (Cmd+O), New session
+          (un projet récent dans un nouvel onglet, avec Claude) et Next (Cmd+J). */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + space[3] }]}>
-        <View style={styles.bottomButton}>
-          <Button
-            icon="grid"
-            label={t.sessionsPanesButton}
-            kind="secondary"
-            height={layout.touchPrimary}
-            disabled={kovaDown}
-            accessibilityHint={t.sessionsPanesHint}
-            onPress={() => router.push('/panes')}
-          />
-        </View>
-        <View style={styles.bottomButton}>
-          <Button
-            icon="folder"
-            label={t.sessionsProjectsButton}
-            kind="secondary"
-            height={layout.touchPrimary}
-            disabled={degraded}
-            accessibilityHint={t.sessionsProjectsHint}
-            onPress={() => router.push('/new-session')}
-          />
-        </View>
-        <View style={styles.bottomButton}>
-          <Button
-            icon={next.target ? 'skip-forward' : 'check-circle'}
-            kind={next.target?.kind === 'unread' ? 'primary' : 'secondary'}
-            height={layout.touchPrimary}
-            disabled={degraded || !next.target}
-            label={
-              next.target?.kind === 'unread'
-                ? `${t.nextUnread} (${next.unreadCount})`
-                : next.target?.kind === 'idle'
-                  ? t.nextIdle
-                  : t.caughtUp
-            }
-            accessibilityHint={next.target ? t.nextPillHint(next.target.entry.group.title, next.target.entry.pane.title ?? '') : t.nothingLeftToRead}
-            onPress={jumpNext}
-          />
-        </View>
+        <RoundButton
+          icon="grid"
+          label={t.sessionsPanesButton}
+          disabled={kovaDown}
+          accessibilityHint={t.sessionsPanesHint}
+          onPress={() => router.push('/panes')}
+        />
+        <RoundButton
+          icon="folder"
+          label={t.sessionsProjectsButton}
+          disabled={degraded}
+          accessibilityHint={t.sessionsProjectsHint}
+          onPress={() => router.push('/new-session')}
+        />
+        <RoundButton
+          icon="plus"
+          label={t.sessionsNewSessionButton}
+          disabled={degraded}
+          accessibilityHint={t.sessionsNewSessionHint}
+          onPress={() => router.push('/new-session')}
+        />
+        <View style={styles.grow} />
+        <RoundButton
+          icon={next.target ? 'skip-forward' : 'check-circle'}
+          kind={next.target?.kind === 'unread' ? 'primary' : 'secondary'}
+          disabled={degraded || !next.target}
+          badge={next.target?.kind === 'unread' ? next.unreadCount : undefined}
+          label={
+            next.target?.kind === 'unread'
+              ? `${t.nextUnread} (${next.unreadCount})`
+              : next.target?.kind === 'idle'
+                ? t.nextIdle
+                : t.caughtUp
+          }
+          accessibilityHint={next.target ? t.nextPillHint(next.target.entry.group.title, next.target.entry.pane.title ?? '') : t.nothingLeftToRead}
+          onPress={jumpNext}
+        />
       </View>
 
       {toast ? (
@@ -383,6 +381,7 @@ const styles = StyleSheet.create({
   searchPressed: { backgroundColor: colors.bg.pressed },
   bottomBar: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: space[4],
     paddingHorizontal: layout.screenPaddingH,
     paddingTop: space[3],
@@ -390,7 +389,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border.subtle,
   },
-  bottomButton: { flex: 1 },
   grow: { flex: 1 },
   toast: {
     position: 'absolute',

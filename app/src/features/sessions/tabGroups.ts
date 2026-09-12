@@ -8,7 +8,7 @@ import { fold } from '@/utils/search';
 import { t } from '@/i18n/en';
 
 export interface TabGroup {
-  /** `w<window>-i<tab_index>` : la clé de jointure, stable d'un instantané à l'autre. */
+  /** `t<id>` quand l'onglet est identifié, sinon `w<window>-i<tab_index>` en repli. */
   key: string;
   window: number;
   /** Index de l'onglet dans sa fenêtre : c'est ce que `pane.tab` porte. */
@@ -29,29 +29,32 @@ function fallbackTitle(panes: Pane[], tabIndex: number): string {
   return first?.title || first?.projectName || t.tabFallbackTitle(tabIndex + 1);
 }
 
-const keyOf = (window: number, tabIndex: number): string => `w${window}-i${tabIndex}`;
+const keyOfIndex = (window: number, tabIndex: number): string => `w${window}-i${tabIndex}`;
+const keyOfId = (tabId: number): string => `t${tabId}`;
 
 /**
  * Groupes par onglet, ordonnés comme la barre d'onglets : fenêtre, puis `tab_index`.
  *
- * LA JOINTURE : `pane.tab` est l'INDEX de l'onglet dans sa fenêtre, pas son identifiant
- * (vérifié sur la machine : le pane 11 porte `tab: 3` et l'onglet « TrailCoach » a
- * `id: 10, tab_index: 3` ; l'onglet d'`id: 3` est « Link »). Le daemon joint déjà la
- * couleur sur `(window, tab_index)` ; le nom suit la même règle. Une jointure sur `id`
- * mettait le pane trail-coach sous « Link » et nommait les autres onglets par leur
- * projet.
+ * LA JOINTURE : par `pane.tabId`, l'identifiant Kova de l'onglet, résolu par le daemon
+ * en lisant `list-tabs` et `list-panes` au même instant. `pane.tab` n'est qu'un INDEX
+ * qui change à chaque déplacement d'onglet sur le Mac : joindre sur cet index deux
+ * listes reçues à des moments différents nommait l'onglet « Link » « Perso » après un
+ * réordonnancement. `(window, tab)` ne sert plus que de repli quand `tabId` vaut
+ * `null` (pane reçu par événement avant tout `list-tabs`).
  *
  * L'ordre des panes dans un onglet est celui de `list-panes`. Un pane dont l'onglet
- * n'est pas (encore) connu forme son propre groupe à son index : la liste des panes et
- * celle des onglets arrivent par deux chemins. RIEN n'est filtré : tous les onglets,
- * tous les panes, agent ou pas, comme le sélecteur Cmd+P de Kova.
+ * n'est pas (encore) connu forme son propre groupe à son index. RIEN n'est filtré :
+ * tous les onglets, tous les panes, agent ou pas, comme le sélecteur Cmd+P de Kova.
  */
 export function groupByTab(panes: Pane[], tabs: Tab[]): TabGroup[] {
   const byKey = new Map<string, TabGroup>();
+  const keyAtIndex = new Map<string, string>();
 
   for (const tab of tabs) {
-    byKey.set(keyOf(tab.window, tab.tab_index), {
-      key: keyOf(tab.window, tab.tab_index),
+    const key = keyOfId(tab.id);
+    keyAtIndex.set(keyOfIndex(tab.window, tab.tab_index), key);
+    byKey.set(key, {
+      key,
       window: tab.window,
       tabIndex: tab.tab_index,
       tabId: tab.id,
@@ -62,7 +65,11 @@ export function groupByTab(panes: Pane[], tabs: Tab[]): TabGroup[] {
     });
   }
   for (const pane of panes) {
-    const key = keyOf(pane.window, pane.tab);
+    const indexKey = keyOfIndex(pane.window, pane.tab);
+    const key =
+      pane.tabId !== null && byKey.has(keyOfId(pane.tabId))
+        ? keyOfId(pane.tabId)
+        : (keyAtIndex.get(indexKey) ?? indexKey);
     let group = byKey.get(key);
     if (!group) {
       group = {
