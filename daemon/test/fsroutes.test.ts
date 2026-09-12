@@ -10,7 +10,9 @@ process.env['KOVALINK_HOME'] = mkdtempSync(join(tmpdir(), 'kovalink-routes-'));
 process.env['KOVALINK_QUIET'] = '1';
 
 const { parseRange, sha256OfFile } = await import('../src/server/fsRoutes.js');
-const { buildQuickDests, shortLabel } = await import('../src/fs/quickdests.js');
+const { buildQuickDests, listRecentProjects, resolveRecentProject, shortLabel } = await import(
+  '../src/fs/quickdests.js'
+);
 const { DEFAULT_CONFIG } = await import('../src/config.js');
 
 const SRC_DIR = resolve(fileURLToPath(new URL('../../src', import.meta.url)));
@@ -154,5 +156,60 @@ describe('empreinte SHA-256 en lecture (CA-101, Mac vers iPhone)', () => {
     const file = join(dir, 'vide');
     writeFileSync(file, '');
     assert.equal(await sha256OfFile(file), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+  });
+});
+
+describe('projets recents de Kova (Cmd+O depuis l app)', () => {
+  function withRecents(projects: unknown[], fn: () => void): void {
+    const file = join(mkdtempSync(join(tmpdir(), 'kovalink-recents-')), 'recent_projects.json');
+    writeFileSync(file, JSON.stringify({ projects }));
+    const before = process.env['KOVALINK_KOVA_RECENTS'];
+    process.env['KOVALINK_KOVA_RECENTS'] = file;
+    try {
+      fn();
+    } finally {
+      if (before === undefined) delete process.env['KOVALINK_KOVA_RECENTS'];
+      else process.env['KOVALINK_KOVA_RECENTS'] = before;
+    }
+  }
+
+  it('liste les projets dedupliques, du plus recent au plus ancien, avec leur index', () => {
+    withRecents(
+      [
+        { path: '/usr', last_opened: 100 },
+        { path: '/etc', last_opened: 300 },
+        { path: '/usr', last_opened: 200 },
+        { path: '/nulle/part', last_opened: 999 },
+      ],
+      () => {
+        const list = listRecentProjects();
+        assert.deepEqual(
+          list.map((p) => [p.index, p.path, p.lastOpenedMs]),
+          [
+            [0, '/etc', 300_000],
+            [1, '/usr', 200_000],
+          ],
+        );
+      },
+    );
+  });
+
+  it('resout un index seulement si le chemin confirme concorde encore', () => {
+    withRecents([{ path: '/etc', last_opened: 2 }, { path: '/usr', last_opened: 1 }], () => {
+      assert.equal(resolveRecentProject(1, '/usr'), '/usr');
+      // La liste a bouge entre les deux appels : on refuse plutot que d'ouvrir un autre dossier.
+      assert.equal(resolveRecentProject(0, '/usr'), null);
+      assert.equal(resolveRecentProject(7, '/usr'), null);
+      assert.equal(resolveRecentProject(-1, '/etc'), null);
+      assert.equal(resolveRecentProject(1.5, '/usr'), null);
+    });
+  });
+
+  it('les routes Kova existent et aucune ne prend un cwd ou une commande libre', () => {
+    assert.equal(ROUTES.kovaRecentProjects, '/v1/kova/recent-projects');
+    assert.equal(ROUTES.kovaNewTab, '/v1/kova/new-tab');
+    const src = readFileSync(join(SRC_DIR, 'server', 'index.ts'), 'utf8');
+    assert.match(src, /const NEW_TAB_COMMAND = 'claude';/);
+    assert.match(src, /cmd: 'new-tab', cwd, command: NEW_TAB_COMMAND/);
   });
 });

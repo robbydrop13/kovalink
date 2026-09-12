@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, sep } from 'node:path';
-import type { FsQuickDestsResponse, Pane, QuickDest } from '@kovalink/protocol';
+import type { FsQuickDestsResponse, Pane, QuickDest, RecentProject } from '@kovalink/protocol';
 import type { KovalinkConfig } from '../config.js';
 import { checkWrite } from '../security/denylist.js';
 
@@ -28,7 +28,7 @@ interface RawProject {
  * Le fichier de Robin contient des doublons (le meme chemin ouvert plusieurs fois) :
  * on deduplique sur le chemin en gardant le `last_opened` le plus recent.
  */
-function readRecentProjects(limit = 20): { path: string; lastOpenedMs: number }[] {
+export function readRecentProjects(limit = 20): { path: string; lastOpenedMs: number }[] {
   let raw: string;
   try {
     raw = readFileSync(recentProjectsFile(), 'utf8');
@@ -134,4 +134,31 @@ export function buildQuickDests(panes: Pane[], cfg: KovalinkConfig): FsQuickDest
   push(home, 'system', 'systeme', null);
 
   return { dests, focusedCwd: focused?.cwd ?? null, home };
+}
+
+/**
+ * Projets recents pour l'ecran « Nouvelle session » (PRD A9, Cmd+O de Kova). L'index est
+ * la position dans CETTE liste : `new-tab` le relit par `resolveRecentProject` au moment
+ * d'agir, jamais un chemin envoye par l'app.
+ */
+export function listRecentProjects(): RecentProject[] {
+  const home = homedir();
+  return readRecentProjects().map((p, index) => ({
+    index,
+    path: p.path,
+    label: shortLabel(p.path, home),
+    lastOpenedMs: p.lastOpenedMs,
+  }));
+}
+
+/**
+ * Resout un index de projet recent en chemin. `expectedPath` est la confirmation de
+ * l'app : si la liste a bouge entre les deux appels (Kova a ouvert un autre projet),
+ * l'index designe un autre dossier et on refuse plutot que d'ouvrir le mauvais.
+ */
+export function resolveRecentProject(index: number, expectedPath: string): string | null {
+  if (!Number.isInteger(index) || index < 0) return null;
+  const project = readRecentProjects()[index];
+  if (!project || project.path !== expectedPath) return null;
+  return project.path;
 }

@@ -12,12 +12,16 @@ import {
   type ErrorCode,
   type ErrorPayload,
   type KovaLaunchResponse,
+  type KovaNewTabRequest,
+  type KovaNewTabResponse,
+  type KovaRecentProjectsResponse,
   type Prompt,
   type Turn,
 } from '@kovalink/protocol';
 import { audit } from '../audit.js';
 import { consumePairing, readPairing } from '../pairing.js';
 import { ForbiddenError } from '../kova/keygate.js';
+import { IpcError } from '../kova/ipc.js';
 import { logger } from '../logger.js';
 import { transcriptPath } from '../paths.js';
 import { formatTurnEndSubtitle } from '../turnEnd.js';
@@ -32,9 +36,17 @@ import {
 } from '../security/token.js';
 import type { TlsMaterial } from '../security/tls.js';
 import type { UploadStore } from '../fs/uploads.js';
+import { listRecentProjects, resolveRecentProject } from '../fs/quickdests.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { Hub, type Socket } from './hub.js';
 import type { Services } from './services.js';
+
+/** La SEULE commande que `new-tab` lance. Constante, jamais une chaine du client. */
+const NEW_TAB_COMMAND = 'claude';
+
+/** Fenetre de lecture d'une page d'historique, doublee jusqu'au plafond si elle est vide. */
+const TURNS_PAGE_BYTES = 256 * 1024;
+const TURNS_PAGE_BYTES_MAX = 4 * 1024 * 1024;
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -403,8 +415,24 @@ export async function createHttpServer(
       const beforeSeq = num(req.query[TURNS_QUERY.beforeSeq]);
       const afterSeq = num(req.query[TURNS_QUERY.afterSeq]);
 
-      const lines = readTailLines(transcriptPath(pane.cwd, req.params.sessionId));
-      const all: Turn[] = buildTurns(sortAssistantBlocks(lines));
+      // `seq` est l'offset d'octet du tour dans le JSONL : `beforeSeq` borne donc la
+      // LECTURE elle meme, pas seulement le filtre. Sans cela, la page « plus ancien »
+      // relisait toujours la meme fin de fichier et l'historique s'arretait la.
+      const path = transcriptPath(pane.cwd, req.params.sessionId);
+      const end = beforeSeq === null ? undefined : beforeSeq;
+      // Fenetre doublee tant qu'elle ne contient aucun tour : une seule ligne de
+      // `tool_result` mesure parfois plus de 256 Ko, et une page vide arreterait
+      // l'historique avant son vrai debut.
+      let bytes = TURNS_PAGE_BYTES;
+      let lines = readTailLines(path, bytes, end);
+      let all: Turn[] = buildTurns(sortAssistantBlocks(lines));
+      let windowStart = lines.find((l) => typeof l.offset === 'number')?.offset ?? 0;
+      while (all.length === 0 && windowStart > 0 && bytes < TURNS_PAGE_BYTES_MAX) {
+        bytes *= 2;
+        lines = readTailLines(path, bytes, end);
+        all = buildTurns(sortAssistantBlocks(lines));
+        windowStart = lines.find((l) => typeof l.offset === 'number')?.offset ?? 0;
+      }
       const filtered = all.filter(
         (t) => (beforeSeq === null || t.seq < beforeSeq) && (afterSeq === null || t.seq > afterSeq),
       );
@@ -413,7 +441,7 @@ export async function createHttpServer(
       return {
         sessionId: req.params.sessionId,
         turns: page,
-        hasMoreBefore: page.length < filtered.length,
+        hasMoreBefore: page.length < filtered.length || windowStart > 0,
       };
     },
   );
@@ -440,6 +468,51 @@ export async function createHttpServer(
     audit({ deviceId, action: 'kova.launch', result: 'ok', detail: alreadyUp ? 'deja lance' : 'lance' });
     logger.info('kova lance depuis l app', { deviceId, alreadyUp });
     const res: KovaLaunchResponse = { launched: true, alreadyUp };
+    return res;
+  });
+
+  /**
+   * Cmd+O de Kova depuis l'app (PRD A9). La liste vient du fichier de Kova, l'index
+   * designe une entree de cette liste, et la commande lancee est TOUJOURS `claude` : ni
+   * le dossier ni la commande ne sont des chaines libres du client. `new-tab` n'ecrit
+   * rien dans un pane existant, donc pas `KeyGate` ; mais c'est un processus lance sur
+   * le Mac, donc audite et limite en debit comme `Lancer Kova`.
+   */
+  app.get(ROUTE_PATTERNS.kovaRecentProjects, async (req, reply) => {
+    if (!services.rate.allow(req.deviceId ?? '', 'panes')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures');
+    }
+    const res: KovaRecentProjectsResponse = { projects: listRecentProjects() };
+    return res;
+  });
+
+  app.post<{ Body: Partial<KovaNewTabRequest> }>(ROUTE_PATTERNS.kovaNewTab, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'launch')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop de lancements');
+    }
+    const body = req.body ?? {};
+    const index = typeof body.recentProjectIndex === 'number' ? body.recentProjectIndex : -1;
+    const cwd = typeof body.path === 'string' ? resolveRecentProject(index, body.path) : null;
+    if (cwd === null) {
+      audit({ deviceId, action: 'kova.newTab', result: 'denied', detail: `index=${index}` });
+      return fail(reply, 400, 'BAD_REQUEST', 'projet recent inconnu, la liste a peut-etre change');
+    }
+    let data: { tab_id?: unknown; pane_id?: unknown };
+    try {
+      const res = await services.ipc.request({ cmd: 'new-tab', cwd, command: NEW_TAB_COMMAND });
+      if (!res.ok) throw new Error(res.error ?? 'erreur IPC');
+      data = (res.data ?? {}) as { tab_id?: unknown; pane_id?: unknown };
+    } catch (e) {
+      audit({ deviceId, action: 'kova.newTab', path: cwd, result: 'error', detail: (e as Error).message });
+      const code: ErrorCode = e instanceof IpcError ? e.code : 'KOVA_DOWN';
+      return fail(reply, 502, code, `new-tab a echoue : ${(e as Error).message}`);
+    }
+    const tabId = typeof data.tab_id === 'number' ? data.tab_id : -1;
+    const paneId = typeof data.pane_id === 'number' ? data.pane_id : -1;
+    audit({ deviceId, action: 'kova.newTab', paneId, path: cwd, result: 'ok', detail: `tab=${tabId}` });
+    logger.info('nouvel onglet kova depuis l app', { deviceId, cwd, tabId, paneId });
+    const res: KovaNewTabResponse = { tabId, paneId, cwd };
     return res;
   });
 

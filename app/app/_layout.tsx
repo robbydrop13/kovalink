@@ -73,6 +73,8 @@ export default function RootLayout() {
           <Stack.Screen name="session/[paneId]" />
           <Stack.Screen name="prompt/[promptRef]" options={{ animation: 'fade' }} />
           <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+          {/* Cmd+O de Kova : projets récents, puis `new-tab` avec `claude` (PRD A9). */}
+          <Stack.Screen name="new-session" options={{ presentation: 'modal' }} />
           {/* Bloc C. L'onglet Fichiers ne dépend pas de Kova : il reste utilisable quand
               Kova est quitté (CA-123). */}
           <Stack.Screen name="files/index" />

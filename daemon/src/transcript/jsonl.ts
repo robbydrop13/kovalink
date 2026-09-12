@@ -26,6 +26,22 @@ export interface RawLine {
   subtype?: string;
   durationMs?: number;
   title?: string;
+  /** Lignes `attachment` : `queued_command` porte un message de Robin absorbe en cours de tour. */
+  attachment?: RawAttachment;
+  /**
+   * Offset d'octet de la ligne dans le fichier, pose par le lecteur (`tailer`,
+   * `readTailLines`). Devient le `seq` du tour : stable d'une lecture a l'autre.
+   */
+  offset?: number;
+  [k: string]: unknown;
+}
+
+export interface RawAttachment {
+  type?: string;
+  prompt?: unknown;
+  commandMode?: string;
+  origin?: { kind?: string };
+  timestamp?: string;
   [k: string]: unknown;
 }
 
@@ -52,7 +68,6 @@ export function safeParseLine(line: string): RawLine | null {
 /** Types ignores en bloc. `queue-operation` en fait partie (C22) : zero message de Robin. */
 const IGNORED_TYPES = new Set([
   'queue-operation',
-  'attachment',
   'last-prompt',
   'atis-latch',
   'bridge-session',
@@ -62,6 +77,24 @@ const IGNORED_TYPES = new Set([
 
 function isConversationLine(l: RawLine): boolean {
   return (l.type === 'user' || l.type === 'assistant') && !!l.message;
+}
+
+/**
+ * Message de Robin ABSORBE EN COURS DE TOUR.
+ *
+ * Quand Robin ecrit pendant que l'agent travaille, Claude Code n'ecrit AUCUNE ligne
+ * `user` : le texte part dans une ligne `attachment` de type `queued_command`, avec
+ * `queue-operation remove, reason: absorbed_mid_turn` juste avant. Ignorer les
+ * `attachment` en bloc effacait donc ces messages du fil, et la bulle locale de l'app
+ * n'avait jamais d'echo a attendre. Les `queued_command` de mode `task-notification`
+ * sont des retours de sous-agents, pas des messages de Robin : ils restent ignores.
+ */
+export function queuedHumanCommand(l: RawLine): RawAttachment | null {
+  if (l.type !== 'attachment' || !l.attachment) return null;
+  const a = l.attachment;
+  if (a.type !== 'queued_command') return null;
+  const human = a.origin?.kind === 'human' || a.commandMode === 'prompt';
+  return human ? a : null;
 }
 
 const PREVIEW_MAX = 400;
@@ -167,15 +200,35 @@ function usageOf(u: Record<string, unknown> | undefined): Turn['usage'] {
 export function buildTurns(lines: RawLine[], startSeq = 0): Turn[] {
   const turns: Turn[] = [];
   const byRequest = new Map<string, Turn>();
-  let seq = startSeq;
+  let counter = startSeq;
+  // Le `seq` est l'OFFSET D'OCTET de la ligne quand le lecteur l'a pose : stable entre
+  // deux lectures, quelle que soit la fenetre. Le compteur ne sert qu'aux lignes sans
+  // offset (tests, lignes construites en memoire).
+  const seqOf = (line: RawLine): number => (typeof line.offset === 'number' ? line.offset : counter++);
 
   for (const line of lines) {
     if (IGNORED_TYPES.has(line.type)) continue;
+    const queued = queuedHumanCommand(line);
+    if (queued) {
+      const blocks = blocksOf(queued.prompt);
+      if (blocks.length === 0) continue;
+      const seq = seqOf(line);
+      turns.push({
+        id: line.uuid ?? `q${seq}`,
+        kind: 'user',
+        ts: queued.timestamp ?? line.timestamp ?? new Date(0).toISOString(),
+        seq,
+        uuids: line.uuid ? [line.uuid] : [],
+        blocks,
+        isSidechain: line.isSidechain === true,
+      });
+      continue;
+    }
     if (!isConversationLine(line)) continue;
     const msg = line.message as RawMessage;
 
     if (line.type === 'assistant') {
-      const key = line.requestId ?? line.uuid ?? `a${seq}`;
+      const key = line.requestId ?? line.uuid ?? `a${counter}`;
       // Contrat F1 (`ToolResultBlock` du protocole) : un turn assistant ne porte JAMAIS
       // de `tool_result`. Ils vivent dans des turns `tool_result` separes, joints par
       // l'app sur `toolUseId`. Le JSONL de Claude ne les met pas la, mais un autre
@@ -194,7 +247,7 @@ export function buildTurns(lines: RawLine[], startSeq = 0): Turn[] {
         id: key,
         kind: 'assistant',
         ts: line.timestamp ?? new Date(0).toISOString(),
-        seq: seq++,
+        seq: seqOf(line),
         uuids: line.uuid ? [line.uuid] : [],
         blocks,
         model: msg.model,
@@ -212,10 +265,10 @@ export function buildTurns(lines: RawLine[], startSeq = 0): Turn[] {
     if (blocks.length === 0) continue;
     const isToolResult = blocks.every((b) => b.type === 'tool_result');
     turns.push({
-      id: line.uuid ?? `u${seq}`,
+      id: line.uuid ?? `u${counter}`,
       kind: isToolResult ? 'tool_result' : 'user',
       ts: line.timestamp ?? new Date(0).toISOString(),
-      seq: seq++,
+      seq: seqOf(line),
       uuids: line.uuid ? [line.uuid] : [],
       blocks,
       isSidechain: line.isSidechain === true,

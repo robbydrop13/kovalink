@@ -1,10 +1,18 @@
-// Écran Sessions. Il répond à une seule question : qu'est-ce qui m'attend ?
+// Écran Sessions. Il répond à deux questions : qu'est-ce qui m'attend, et où est la
+// session que je cherche.
+//
+// La liste reproduit la STRUCTURE de Kova : un groupe par onglet, dans l'ordre de la barre
+// d'onglets du Mac, avec la couleur et le nom de l'onglet, et sous chaque onglet ses panes.
+// Les états sont des badges, pas des sections : un pane qui attend garde sa carte, à sa
+// place. Une ligne de résumé en tête dit ce qui attend. La recherche filtre onglets et
+// panes sans casser le regroupement, et `Sur le Mac` (`focus-pane`) est un lien visible
+// sur chaque pane : c'est le Cmd+P de Kova. `Nouvelle session` en bas est son Cmd+O.
 //
 // Aucun bouton d'approbation ici (A7, P3). `Interrompre` en revanche est disponible sur la
 // carte EN ATTENTE comme sur la ligne TRAVAILLE : c'est le geste sûr, on le rend le plus
 // facile possible, et le scénario S3 décrit un pane qui travaille.
-import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,12 +21,12 @@ import { Button, LinkAction } from '@/ui/Button';
 import { LinkPill } from '@/ui/LinkPill';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
-import { AwaitingCard } from '@/features/sessions/AwaitingCard';
-import { SectionHeader, SessionRow } from '@/features/sessions/SessionRow';
+import { TabGroupView } from '@/features/sessions/TabGroupView';
+import { filterGroups, groupByTab, summaryLine, windowCount } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
-import { showPaneMenu } from '@/features/sessions/openOnMac';
+import { openOnMac } from '@/features/sessions/openOnMac';
 import { isDegraded, useConnection } from '@/store/connection';
-import { sectionize, usePanes } from '@/store/panes';
+import { usePanes } from '@/store/panes';
 import { isAging, usePrompts } from '@/store/prompts';
 import { forceReconnect } from '@/net/connection';
 import { fetchPanes, postKovaLaunch } from '@/net/http';
@@ -32,6 +40,7 @@ export default function SessionsScreen() {
   const boot = useBootState();
   const bootError = useBootError();
   const panes = usePanes((s) => s.panes);
+  const tabs = usePanes((s) => s.tabs);
   const loading = usePanes((s) => s.loading);
   const fetchedAt = usePanes((s) => s.fetchedAt);
   const applySnapshot = usePanes((s) => s.applySnapshot);
@@ -44,6 +53,7 @@ export default function SessionsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     if (!toast) return;
@@ -66,9 +76,13 @@ export default function SessionsScreen() {
   // Kova quitté (CA-123) : le daemon a vidé sa liste et l'a annoncé. Ce qui resterait en
   // cache serait des panes fantômes, on ne les montre pas.
   const kovaDown = kova === 'down';
-  const { awaiting, working, idle } = sectionize(kovaDown ? [] : panes);
+  const groups = useMemo(() => groupByTab(kovaDown ? [] : panes, tabs), [kovaDown, panes, tabs]);
+  const shown = useMemo(() => filterGroups(groups, query), [groups, query]);
+  const windows = windowCount(shown);
+  const summary = kovaDown ? null : summaryLine(panes);
   const open = (paneId: number) => router.push(`/session/${paneId}`);
-  const menu = (paneId: number) => showPaneMenu(paneId, setToast);
+  const onMac = (paneId: number) => setToast(openOnMac(paneId));
+  const aging = (paneId: number) => isAging(prompts[paneId]);
 
   /**
    * `Lancer Kova` (design 4.1, CA-123) : `POST /v1/kova/launch`, le daemon fait `open -a
@@ -145,8 +159,31 @@ export default function SessionsScreen() {
       {/* Bandeau discret et non bloquant : tout le reste de l'app fonctionne normalement. */}
       {!pushAvailable ? <Banner text={PUSH_UNAVAILABLE_LABEL} /> : null}
 
+      {!kovaDown && panes.length > 0 ? (
+        <View style={styles.searchRow}>
+          <TextInput
+            style={styles.search}
+            placeholder="Onglet, projet ou titre de pane"
+            placeholderTextColor={colors.text.tertiary}
+            value={query}
+            onChangeText={setQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+            keyboardAppearance="dark"
+            accessibilityLabel="Rechercher une session"
+          />
+          {summary ? (
+            <Txt variant="footnote" color={colors.status.awaiting} numberOfLines={1}>
+              {summary}
+            </Txt>
+          ) : null}
+        </View>
+      ) : null}
+
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[8] }]}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + layout.touchPrimary + space[8] }]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.text.secondary} />
         }
@@ -174,66 +211,51 @@ export default function SessionsScreen() {
           />
         ) : null}
 
-        {awaiting.length > 0 ? (
-          <>
-            <SectionHeader label="EN ATTENTE" count={awaiting.length} />
-            <View style={styles.stack}>
-              {awaiting.map((pane) => (
-                <AwaitingCard
-                  key={pane.id}
-                  pane={pane}
-                  prompt={prompts[pane.id]}
-                  aging={isAging(prompts[pane.id])}
-                  onOpen={() => open(pane.id)}
-                  onLongPress={() => menu(pane.id)}
-                  interruptDisabled={degraded}
-                  interruptLabel={labelFor(pane.id, degraded)}
-                  onInterrupt={() => void interrupt(pane.id)}
-                />
-              ))}
-            </View>
-          </>
+        {!kovaDown && panes.length > 0 && shown.length === 0 ? (
+          <EmptyState title="Aucune session ne correspond" body="Essaie un autre mot : nom d’onglet, projet, titre de pane." />
         ) : null}
 
-        {working.length > 0 ? (
-          <>
-            <SectionHeader label="TRAVAILLE" count={working.length} />
-            <View style={styles.stack}>
-              {working.map((pane) => (
-                <SessionRow
-                  key={pane.id}
-                  pane={pane}
-                  subtitle={pane.cwd}
-                  onOpen={() => open(pane.id)}
-                  onLongPress={() => menu(pane.id)}
+        <View style={styles.groups}>
+          {shown.map((group, i) => {
+            const previous = shown[i - 1];
+            const newWindow = windows > 1 && (i === 0 || previous?.window !== group.window);
+            return (
+              <View key={group.key} style={styles.groupSlot}>
+                {newWindow ? (
+                  <Txt variant="caption" color={colors.text.tertiary} style={styles.windowLabel}>
+                    FENÊTRE {group.window + 1}
+                  </Txt>
+                ) : null}
+                <TabGroupView
+                  group={group}
+                  prompts={prompts}
+                  aging={aging}
+                  onOpen={open}
+                  onOpenOnMac={onMac}
+                  onInterrupt={(id) => void interrupt(id)}
                   interruptDisabled={degraded}
-                  interruptLabel={labelFor(pane.id, degraded)}
-                  onInterrupt={() => void interrupt(pane.id)}
+                  interruptLabel={(id) => labelFor(id, degraded)}
                 />
-              ))}
-            </View>
-          </>
-        ) : null}
-
-        {idle.length > 0 ? (
-          <>
-            <SectionHeader label="INACTIF" count={idle.length} />
-            <View style={styles.stack}>
-              {idle.map((pane) => (
-                <SessionRow
-                  key={pane.id}
-                  pane={pane}
-                  onOpen={() => open(pane.id)}
-                  onLongPress={() => menu(pane.id)}
-                />
-              ))}
-            </View>
-          </>
-        ) : null}
+              </View>
+            );
+          })}
+        </View>
       </ScrollView>
 
+      {/* Barre d'action basse, zone du pouce (design 4.1) : le Cmd+O de Kova. */}
+      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + space[3] }]}>
+        <Button
+          label="Nouvelle session"
+          kind="secondary"
+          height={layout.touchPrimary}
+          disabled={degraded}
+          accessibilityHint="Ouvre un projet récent de Kova dans un nouvel onglet, avec Claude"
+          onPress={() => router.push('/new-session')}
+        />
+      </View>
+
       {toast ? (
-        <View style={[styles.toast, { bottom: insets.bottom + space[6] }]}>
+        <View style={[styles.toast, { bottom: insets.bottom + layout.touchPrimary + space[6] }]}>
           <Txt variant="footnote" color={colors.text.primary}>
             {toast}
           </Txt>
@@ -252,8 +274,26 @@ const styles = StyleSheet.create({
     gap: space[4],
     paddingHorizontal: layout.screenPaddingH,
   },
-  content: { paddingHorizontal: layout.screenPaddingH },
-  stack: { gap: space[4] },
+  content: { paddingHorizontal: layout.screenPaddingH, paddingTop: space[2] },
+  groups: { gap: space[6] },
+  groupSlot: { gap: space[3] },
+  windowLabel: { letterSpacing: 0.6, marginTop: space[2] },
+  searchRow: { paddingHorizontal: layout.screenPaddingH, paddingVertical: space[3], gap: space[2] },
+  search: {
+    height: 36,
+    borderRadius: radius.md,
+    paddingHorizontal: space[4],
+    backgroundColor: colors.bg.raised,
+    color: colors.text.primary,
+    fontSize: 15,
+  },
+  bottomBar: {
+    paddingHorizontal: layout.screenPaddingH,
+    paddingTop: space[3],
+    backgroundColor: colors.bg.base,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.subtle,
+  },
   grow: { flex: 1 },
   toast: {
     position: 'absolute',

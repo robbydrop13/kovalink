@@ -145,27 +145,6 @@ export function paneById(panes: Pane[], id: number): Pane | undefined {
   return panes.find((p) => p.id === id);
 }
 
-export interface PaneSections {
-  awaiting: Pane[];
-  working: Pane[];
-  idle: Pane[];
-}
-
-/** Ordre fixe : EN ATTENTE, TRAVAILLE, INACTIF. `awaiting` l'emporte sur `working`. */
-export function sectionize(panes: Pane[]): PaneSections {
-  const awaiting: Pane[] = [];
-  const working: Pane[] = [];
-  const idle: Pane[] = [];
-  for (const p of panes) {
-    if (p.awaiting) awaiting.push(p);
-    else if (p.working) working.push(p);
-    else idle.push(p);
-  }
-  const byAge = (a: Pane, b: Pane): number => (b.awaiting_since ?? '').localeCompare(a.awaiting_since ?? '');
-  awaiting.sort(byAge);
-  return { awaiting, working, idle };
-}
-
 export function awaitingCount(panes: Pane[]): number {
   return panes.reduce((n, p) => n + (p.awaiting ? 1 : 0), 0);
 }

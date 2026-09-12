@@ -110,3 +110,46 @@ describe('tail incrementale du JSONL', () => {
     assert.equal(state.bytesRead, before, 'aucun octet relu');
   });
 });
+
+describe('offsets d octet des lignes (seq stable)', () => {
+  const at = (l: { offset?: number } | undefined): number => l?.offset ?? -1;
+
+  it('chaque ligne porte l offset ou elle commence dans le fichier', () => {
+    const path = tmpFile();
+    const parts = ['{"type":"user","uuid":"a","text":"été"}\n', '{"type":"user","uuid":"b"}\n'];
+    writeFileSync(path, parts.join(''));
+    const { lines } = openTail(path);
+    assert.equal(at(lines[0]), 0);
+    assert.equal(at(lines[1]), Buffer.byteLength(parts[0] as string));
+  });
+
+  it('les offsets restent exacts a travers une lecture incrementale coupee en plein caractere', () => {
+    const path = tmpFile();
+    const first = line(0);
+    writeFileSync(path, first);
+    const { state } = openTail(path);
+    const payload = `${JSON.stringify({ type: 'user', uuid: 'c', text: 'café crème' })}\n`;
+    const buf = Buffer.from(payload, 'utf8');
+    appendFileSync(path, buf.subarray(0, 25));
+    readMore(state);
+    appendFileSync(path, buf.subarray(25));
+    const res = readMore(state);
+    assert.equal(at(res.lines[0]), Buffer.byteLength(first));
+    appendFileSync(path, line(9));
+    assert.equal(at(readMore(state).lines[0]), Buffer.byteLength(first) + buf.length);
+  });
+
+  it('une fenetre partielle rend les memes offsets qu une lecture complete', () => {
+    const path = tmpFile();
+    const all = Array.from({ length: 3000 }, (_, i) => line(i)).join('');
+    writeFileSync(path, all);
+    const full = openTail(path, 100_000).lines;
+    const partial = openTail(path, 10).lines;
+    assert.ok(partial.length < full.length);
+    assert.ok(at(partial[0]) > 0);
+    for (const l of partial) {
+      const same = full.find((f) => f['uuid'] === l['uuid']);
+      assert.equal(at(same), at(l));
+    }
+  });
+});

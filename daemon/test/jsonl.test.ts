@@ -173,6 +173,68 @@ describe('parseur JSONL', () => {
     assert.equal(turns[0]?.kind, 'user');
   });
 
+  it('un message absorbe en cours de tour (attachment queued_command) est un tour user', () => {
+    const turns = buildTurns([
+      user([{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }], 'r1'),
+      {
+        type: 'attachment',
+        uuid: 'q1',
+        timestamp: '2026-09-12T13:11:07.885Z',
+        attachment: {
+          type: 'queued_command',
+          prompt: 'Tu peux envoyer le message',
+          commandMode: 'prompt',
+          origin: { kind: 'human' },
+          timestamp: '2026-09-12T13:11:07.885Z',
+        },
+      } as RawLine,
+      // Retour de sous-agent : pas un message de Robin.
+      {
+        type: 'attachment',
+        uuid: 'q2',
+        attachment: { type: 'queued_command', prompt: '<task-notification>x</task-notification>', commandMode: 'task-notification' },
+      } as RawLine,
+      // Un autre attachment : ignore comme avant.
+      { type: 'attachment', uuid: 'q3', attachment: { type: 'total_tokens_reminder' } } as RawLine,
+    ]);
+    assert.deepEqual(
+      turns.map((t) => [t.kind, t.id]),
+      [
+        ['tool_result', 'r1'],
+        ['user', 'q1'],
+      ],
+    );
+    assert.deepEqual(turns[1]?.blocks, [{ type: 'text', text: 'Tu peux envoyer le message' }]);
+  });
+
+  it('un message absorbe avec image ne garde que son texte', () => {
+    const turns = buildTurns([
+      {
+        type: 'attachment',
+        uuid: 'q4',
+        attachment: {
+          type: 'queued_command',
+          prompt: [
+            { type: 'text', text: '[Image #1]' },
+            { type: 'image', source: { type: 'base64', data: 'xxxx' } },
+          ],
+          origin: { kind: 'human' },
+        },
+      } as RawLine,
+    ]);
+    assert.deepEqual(turns[0]?.blocks, [{ type: 'text', text: '[Image #1]' }]);
+  });
+
+  it('le seq est l offset de la ligne quand le lecteur l a pose, un compteur sinon', () => {
+    const withOffsets = buildTurns([
+      { ...user('a', 'u1'), offset: 1200 },
+      { ...assistant('req_Z', 0, [{ type: 'text', text: 'b' }]), offset: 1800 },
+    ]);
+    assert.deepEqual(withOffsets.map((t) => t.seq), [1200, 1800]);
+    const counted = buildTurns([user('a', 'u1'), user('b', 'u2')], 7);
+    assert.deepEqual(counted.map((t) => t.seq), [7, 8]);
+  });
+
   it('les blocs thinking ne transportent aucun texte', () => {
     const turns = buildTurns([
       assistant('req_A', 0, [{ type: 'thinking', thinking: 'secret', signature: 'x' }]),

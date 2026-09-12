@@ -48,9 +48,82 @@ describe('withoutEchoed', () => {
   });
 
   it('ne confond pas un message identique envoyé plus tôt dans la session', () => {
-    const local = [pendingMsg({ nonce: 'n1', text: 'oui', afterSeq: 7 })];
-    const older = [turn({ id: 'u1', seq: 3, blocks: [{ type: 'text', text: 'oui' }] })];
+    const local = [pendingMsg({ nonce: 'n1', text: 'oui', afterSeq: 7, ts: '2026-09-10T10:00:00.000Z' })];
+    const older = [
+      turn({ id: 'u1', seq: 3, ts: '2026-09-10T09:58:00.000Z', blocks: [{ type: 'text', text: 'oui' }] }),
+    ];
     assert.equal(withoutEchoed(local, older, 's1').length, 1, 'un tour antérieur à afterSeq ne compte pas');
+  });
+
+  describe('capture du 12 septembre : trois bulles jamais remplacées', () => {
+    // Les trois messages, tels que Claude Code les a enregistrés (texte identique octet
+    // pour octet, apostrophe typographique comprise). Le daemon d'alors renumérotait les
+    // tours à chaque `session.attach` : après quatre reconnexions, l'écho de chaque
+    // message portait un `seq` INFÉRIEUR au `afterSeq` noté à l'envoi, et le troisième,
+    // absorbé en cours de tour, n'existait même pas comme tour `user`.
+    const bubbles = [
+      pendingMsg({ nonce: 'b1', text: 'C’est nettoyé ?', state: 'queued', ts: '2026-09-12T12:48:10.000Z', afterSeq: 195 }),
+      pendingMsg({ nonce: 'b2', text: 'Recrée un unique commit', ts: '2026-09-12T13:10:26.234Z', afterSeq: 197 }),
+      pendingMsg({ nonce: 'b3', text: 'Tu peux envoyer le message à Thomas ok', ts: '2026-09-12T13:11:07.884Z', afterSeq: 203 }),
+    ];
+    // Le snapshot reçu à 13:14:42 par l'ancien daemon : numérotation repartie de zéro,
+    // d'où des `seq` sous les bornes.
+    const oldNumbering = [
+      turn({ id: '9ed2d009', seq: 186, ts: '2026-09-12T12:50:34.559Z', blocks: [{ type: 'text', text: 'C’est nettoyé ?' }] }),
+      turn({ id: 'a1', seq: 187, kind: 'assistant', ts: '2026-09-12T12:51:10.325Z', blocks: [{ type: 'text', text: 'Oui.' }] }),
+      turn({ id: '9500d7de', seq: 190, ts: '2026-09-12T13:10:26.974Z', blocks: [{ type: 'text', text: 'Recrée un unique commit' }] }),
+      turn({ id: 'a2', seq: 191, kind: 'assistant', ts: '2026-09-12T13:11:40.000Z', blocks: [{ type: 'text', text: 'Fait.' }] }),
+    ];
+
+    it('avec la numérotation instable, les deux premiers échos sont reconnus par l’heure', () => {
+      const kept = withoutEchoed(bubbles, oldNumbering, 's1');
+      assert.deepEqual(kept.map((m) => m.nonce), ['b3'], 'seul le message absorbé, sans tour, reste');
+    });
+
+    it('avec le daemon corrigé, le message absorbé arrive comme tour user et la dernière bulle disparaît', () => {
+      const fixed = [
+        ...oldNumbering,
+        turn({ id: '21761428', seq: 9415554, ts: '2026-09-12T13:11:07.885Z', blocks: [{ type: 'text', text: 'Tu peux envoyer le message à Thomas ok' }] }),
+      ];
+      assert.deepEqual(withoutEchoed(bubbles, fixed, 's1'), []);
+    });
+
+    it('une bulle mise en file pendant le sommeil du Mac reconnaît son écho envoyé deux minutes plus tard', () => {
+      const queued = [pendingMsg({ nonce: 'q', text: 'C’est nettoyé ?', state: 'queued', ts: '2026-09-12T12:48:10.000Z', afterSeq: 9_000_000 })];
+      const echo = [turn({ id: 'u', seq: 9376640, ts: '2026-09-12T12:50:34.559Z', blocks: [{ type: 'text', text: 'C’est nettoyé ?' }] })];
+      assert.deepEqual(withoutEchoed(queued, echo, 's1'), []);
+    });
+  });
+
+  it('compare une forme canonique : NFC, retours à la ligne, espaces multiples, marqueur d’image', () => {
+    const local = [pendingMsg({ nonce: 'n1', text: 'Recre\u0301e  un unique\r\ncommit ' })];
+    const echo = [turn({ id: 'u1', seq: 9, blocks: [{ type: 'text', text: '[Image #1]Recrée un unique\ncommit' }] })];
+    assert.deepEqual(withoutEchoed(local, echo, 's1'), []);
+  });
+
+  it('seconde passe : un tour postérieur qui CONTIENT le texte de Robin vaut écho', () => {
+    const local = [pendingMsg({ nonce: 'n1', text: 'regarde ce fichier' })];
+    const echo = [
+      turn({ id: 'u1', seq: 9, blocks: [{ type: 'text', text: 'regarde ce fichier\n[Image: source: /tmp/kovalink/a.png]' }] }),
+    ];
+    assert.deepEqual(withoutEchoed(local, echo, 's1'), []);
+    // Mais jamais un tour ANTÉRIEUR à l'envoi.
+    const before = [
+      turn({ id: 'u0', seq: 1, ts: '2026-09-10T09:00:00.000Z', blocks: [{ type: 'text', text: 'regarde ce fichier stp' }] }),
+    ];
+    assert.equal(withoutEchoed(local, before, 's1').length, 1);
+  });
+
+  it('la passe exacte a priorité : deux bulles, un écho exact et un écho élargi, chacune la sienne', () => {
+    const local = [
+      pendingMsg({ nonce: 'n1', text: 'ok' }),
+      pendingMsg({ nonce: 'n2', text: 'ok pour moi' }),
+    ];
+    const turns = [
+      turn({ id: 'u1', seq: 8, blocks: [{ type: 'text', text: 'ok pour moi' }] }),
+    ];
+    // Un seul tour : il revient à la bulle dont le texte est EXACT, pas à la première.
+    assert.deepEqual(withoutEchoed(local, turns, 's1').map((m) => m.nonce), ['n1']);
   });
 
   it("deux envois identiques d'affilée ne disparaissent pas ensemble sur le premier écho", () => {

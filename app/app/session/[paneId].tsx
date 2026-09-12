@@ -72,6 +72,7 @@ import {
   confirmStale,
   countPending,
   dequeue,
+  pending as pendingJobs,
   staleTexts,
   type OutboxJob,
 } from '@/db/outbox';
@@ -89,6 +90,8 @@ const SESSION_RESOLVE_TIMEOUT_MS = 8_000;
  * 60 lectures par minute et par appareil, 2 s laisse la moitié de marge à un `Rafraîchir`.
  */
 const SCREEN_REFRESH_MS = 2_000;
+/** Guet d'une bulle en file : la vidange a lieu hors de cet écran, à la reconnexion. */
+const QUEUE_POLL_MS = 2_000;
 
 export default function SessionScreen() {
   const params = useLocalSearchParams<{ paneId: string; focus?: string; view?: string }>();
@@ -171,14 +174,35 @@ export default function SessionScreen() {
 
   const refreshQueue = useCallback(() => {
     void countPending('text').then(setQueued);
-    void staleTexts().then((jobs) => setStale(jobs.filter((j) => j.paneId === paneId)));
+    void Promise.all([pendingJobs(), staleTexts()]).then(([live, stale]) => {
+      setStale(stale.filter((j) => j.paneId === paneId));
+      // Une bulle `queued` dont le nonce a quitté la file est PARTIE : la vidange l'a
+      // envoyée à la reconnexion. Elle passe `sent`, datée de maintenant, et entre dans
+      // le compte « Non confirmé » si son écho ne suit pas.
+      const inQueue = new Set([...live, ...stale].map((j) => j.nonce));
+      const left = (m: PendingMessage): boolean => m.state === 'queued' && !inQueue.has(m.nonce);
+      setPending((p) => {
+        if (!p.some(left)) return p;
+        const ts = new Date().toISOString();
+        return p.map((m) => (left(m) ? { ...m, state: 'sent', ts } : m));
+      });
+    });
   }, [paneId]);
 
   // Relu à chaque envoi et à chaque changement de liaison : un texte devient « à confirmer »
   // avec le temps, sans que rien d'autre ne bouge.
   useEffect(() => {
     refreshQueue();
-  }, [refreshQueue, pending, link]);
+  }, [refreshQueue, pending.length, link]);
+
+  // Tant qu'une bulle est en file, on guette sa sortie : la vidange se fait hors de cet
+  // écran, à la reconnexion, sans le prévenir.
+  const hasQueued = pending.some((m) => m.state === 'queued');
+  useEffect(() => {
+    if (!hasQueued) return;
+    const timer = setInterval(refreshQueue, QUEUE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [hasQueued, refreshQueue]);
 
   useEffect(() => {
     if (!toast) return;
@@ -224,7 +248,12 @@ export default function SessionScreen() {
   // en bas, il ne replie rien en haut.
   // État dérivé du rendu précédent (motif React « storing information from previous
   // renders ») : posé pendant le rendu, sans effet ni rendu en cascade.
-  if (session.turns.length > 0 && (!floor || floor.sessionId !== session.sessionId)) {
+  // Filet : si plus AUCUN tour n'atteint le plancher (numérotation qui a changé après une
+  // reconnexion sur un daemon ancien), l'écran resterait vide sous les bulles locales,
+  // c'est la capture du 12 septembre. On repose alors le plancher sur ce que l'on a.
+  const lastKnown = session.turns[session.turns.length - 1];
+  const floorStale = !!floor && !!lastKnown && floor.sessionId === session.sessionId && floor.seq > lastKnown.seq;
+  if (session.turns.length > 0 && (!floor || floor.sessionId !== session.sessionId || floorStale)) {
     const first = recentExchanges(session.turns)[0];
     if (first) setFloor({ sessionId: session.sessionId, seq: first.seq });
   }

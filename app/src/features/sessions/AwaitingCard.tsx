@@ -12,13 +12,14 @@ import { StatusGlyph } from '@/ui/StatusGlyph';
 import { Txt } from '@/ui/Txt';
 import { shortAge } from '@/utils/time';
 import { PaneTitle, PermissionNote, bypassAccessibilitySuffix } from './PaneIdentity';
+import { OPEN_ON_MAC_LABEL } from './SessionRow';
 
 interface Props {
   pane: Pane;
   prompt: Prompt | undefined;
   onOpen: () => void;
-  /** Appui long : menu `Ouvrir sur le Mac` (design 4.1). */
-  onLongPress?: () => void;
+  /** `Ouvrir sur le Mac` (`focus-pane`), en lien visible dans le pied de carte. */
+  onOpenOnMac?: () => void;
   onInterrupt: () => void;
   interruptDisabled: boolean;
   interruptLabel: string;
@@ -52,7 +53,7 @@ export function AwaitingCard({
   pane,
   prompt,
   onOpen,
-  onLongPress,
+  onOpenOnMac,
   onInterrupt,
   interruptDisabled,
   interruptLabel,
@@ -65,7 +66,6 @@ export function AwaitingCard({
       accessibilityRole="button"
       accessibilityLabel={`${pane.projectName}, en attente depuis ${age}${bypassAccessibilitySuffix(pane.permissionMode)}. ${title}`}
       onPress={onOpen}
-      onLongPress={onLongPress}
       style={styles.card}
     >
       <View style={styles.header}>
@@ -87,6 +87,7 @@ export function AwaitingCard({
       ) : null}
       <Button label="Ouvrir" onPress={onOpen} height={layout.touchPrimary} />
       <View style={styles.footer}>
+        {onOpenOnMac ? <LinkAction label={OPEN_ON_MAC_LABEL} onPress={onOpenOnMac} /> : null}
         <LinkAction
           label={interruptLabel}
           color={colors.action.interrupt.text}
@@ -109,5 +110,5 @@ const styles = StyleSheet.create({
   },
   header: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   spacer: { flex: 1 },
-  footer: { alignItems: 'flex-start' },
+  footer: { flexDirection: 'row', gap: space[6] },
 });

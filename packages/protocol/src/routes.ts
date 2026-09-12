@@ -26,6 +26,14 @@ export const ROUTES = {
    * ecriture dans un pane, donc pas `KeyGate` : une route dediee, auditee.
    */
   kovaLaunch: '/v1/kova/launch',
+  /**
+   * Cmd+O de Kova depuis l'app (PRD A9) : la liste des projets recents de
+   * `~/.config/kova/recent_projects.json`, puis `new-tab` sur l'UN d'eux, designe par
+   * son index dans cette liste. Jamais un `cwd` libre, jamais une commande libre : le
+   * daemon resout l'index et lance toujours `claude`.
+   */
+  kovaRecentProjects: '/v1/kova/recent-projects',
+  kovaNewTab: '/v1/kova/new-tab',
   ws: '/ws',
 
   // --- Bloc C, les fichiers ---------------------------------------------
@@ -56,6 +64,8 @@ export const ROUTE_PATTERNS = {
   paneScreen: '/v1/panes/:paneId/screen',
   sessionTurns: '/v1/sessions/:sessionId/turns',
   kovaLaunch: '/v1/kova/launch',
+  kovaRecentProjects: '/v1/kova/recent-projects',
+  kovaNewTab: '/v1/kova/new-tab',
   ws: '/ws',
   fsList: '/v1/fs/list',
   fsRead: '/v1/fs/read',
@@ -116,4 +126,36 @@ export interface PairClaimResponse {
 export interface KovaLaunchResponse {
   launched: boolean;
   alreadyUp: boolean;
+}
+
+/** Un projet recent de Kova, tel que `GET /v1/kova/recent-projects` le rend. */
+export interface RecentProject {
+  /** Position dans la liste dedupliquee et triee du daemon : c'est elle que `new-tab` prend. */
+  index: number;
+  path: string;
+  /** Libelle court, deja abrege (`link / docs`). */
+  label: string;
+  /** Millisecondes epoch de la derniere ouverture dans Kova. */
+  lastOpenedMs: number;
+}
+
+export interface KovaRecentProjectsResponse {
+  projects: RecentProject[];
+}
+
+/**
+ * Corps de `POST /v1/kova/new-tab`. `path` est une confirmation, pas une source : le
+ * daemon relit la liste, resout `recentProjectIndex`, et refuse si le chemin ne concorde
+ * plus (la liste a bouge entre les deux appels).
+ */
+export interface KovaNewTabRequest {
+  recentProjectIndex: number;
+  path: string;
+}
+
+/** Reponse de `POST /v1/kova/new-tab` : l'onglet et le pane crees, `claude` lance dedans. */
+export interface KovaNewTabResponse {
+  tabId: number;
+  paneId: number;
+  cwd: string;
 }

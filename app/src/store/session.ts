@@ -257,12 +257,57 @@ export interface PendingMessage {
   attachments?: Attachment[];
 }
 
-/** Vrai quand le tour utilisateur `echoText` est le rendu de la bulle locale `m`. */
-function echoes(m: PendingMessage, echoText: string): boolean {
+/**
+ * Forme canonique d'un texte pour la comparaison : NFC (le daemon normalise ainsi avant
+ * d'émettre, et un clavier iOS peut produire l'autre forme), fins de ligne uniformisées,
+ * suites d'espaces réduites, marqueurs `[Image #n]` retirés, bords rognés.
+ */
+export function canonicalText(text: string): string {
+  return text
+    .normalize('NFC')
+    .replace(/\[Image #\d+\]/g, ' ')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t\f\v\u00a0]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
+/**
+ * Tolérance d'horloge entre l'iPhone et le Mac pour dater un écho. Le `seq` est la
+ * borne principale ; l'horodatage prend le relais quand la numérotation a bougé
+ * (daemon relancé, ancienne version qui renumérotait à chaque `session.attach`). Les
+ * deux horloges sont à l'heure réseau : quelques secondes suffisent.
+ */
+const ECHO_CLOCK_SKEW_MS = 5_000;
+
+/** Vrai si le tour `t` est postérieur à l'envoi de `m` : par `seq`, sinon par l'heure. */
+function isAfterSend(m: PendingMessage, t: Turn): boolean {
+  if (t.seq > m.afterSeq) return true;
+  const sentAt = Date.parse(m.ts);
+  const turnAt = Date.parse(t.ts);
+  return Number.isFinite(sentAt) && Number.isFinite(turnAt) && turnAt >= sentAt - ECHO_CLOCK_SKEW_MS;
+}
+
+/**
+ * Vrai quand le tour utilisateur `echoText` est le rendu de la bulle locale `m`.
+ * `loose` accepte que le transcript ait AJOUTÉ quelque chose autour du texte de Robin
+ * (préfixe, ligne de contexte) : le texte de la bulle doit alors être contenu dans
+ * celui du tour.
+ */
+function echoes(m: PendingMessage, echoText: string, loose = false): boolean {
   const pieces = m.attachments ?? [];
-  if (pieces.length === 0) return echoText === m.text.trim();
+  const mine = canonicalText(m.text);
+  if (pieces.length === 0) {
+    const theirs = canonicalText(echoText);
+    return loose ? mine.length > 0 && theirs.includes(mine) : theirs === mine;
+  }
+  // Avec des pièces, seule la comparaison du TEXTE s'élargit : les chemins, eux, doivent
+  // toujours concorder, sinon un tour au même texte sans pièce passerait pour l'écho.
   const { text, paths } = splitAttachmentLines(echoText);
-  if (text !== m.text.trim() || paths.length !== pieces.length) return false;
+  const theirs = canonicalText(text);
+  const textOk = loose ? theirs.includes(mine) : theirs === mine;
+  if (!textOk || paths.length !== pieces.length) return false;
   // Une pièce partie de la file hors ligne n'a pas de chemin connu ici : on ne compare
   // que ce que l'on sait.
   return pieces.every((a, i) => a.path === null || a.path === paths[i]);
@@ -275,9 +320,14 @@ function echoes(m: PendingMessage, echoText: string): boolean {
  * place pour toujours, et le transcript rendait le même message quelques centaines de
  * millisecondes plus tard. Le transcript ne porte pas le `nonce` (l'identifiant d'un tour
  * utilisateur est l'`uuid` de la ligne JSONL écrite par Claude) : la seule corrélation
- * possible est le texte, bornée par le `seq` connu à l'envoi. Un tour n'est consommé que
- * par une seule bulle, pour que deux envois identiques d'affilée ne disparaissent pas
- * ensemble sur l'arrivée du premier.
+ * possible est le texte, bornée par le `seq` connu à l'envoi, ou à défaut par l'heure. Un
+ * tour n'est consommé que par une seule bulle, pour que deux envois identiques d'affilée
+ * ne disparaissent pas ensemble sur l'arrivée du premier.
+ *
+ * Deux passes : d'abord le texte exact (forme canonique), puis, pour les bulles restées
+ * sans écho, un tour postérieur à l'envoi qui CONTIENT le texte de Robin. C'est le cas
+ * de la capture du 12 septembre : après plusieurs reconnexions, la numérotation `seq`
+ * avait changé et trois bulles sont restées collées sous le fil, jamais remplacées.
  */
 export function withoutEchoed(
   list: PendingMessage[],
@@ -286,20 +336,23 @@ export function withoutEchoed(
 ): PendingMessage[] {
   if (list.length === 0) return list;
   const consumed = new Set<string>();
+  const candidates = (m: PendingMessage): Turn[] =>
+    turns.filter((t) => t.kind === 'user' && !t.isSidechain && !consumed.has(t.id) && isAfterSend(m, t));
+  const matched = new Set<string>();
+  for (const loose of [false, true]) {
+    for (const m of list) {
+      if (matched.has(m.nonce) || m.sessionId !== sessionId) continue;
+      const match = candidates(m).find((t) => echoes(m, textOf(t.blocks), loose));
+      if (!match) continue;
+      consumed.add(match.id);
+      matched.add(m.nonce);
+    }
+  }
   const kept = list.filter((m) => {
     // Bulle héritée d'une session précédente : plus aucun tour ne pourra la reconnaître,
     // et la garder afficherait un doublon indélogeable.
     if (m.sessionId !== sessionId) return false;
-    const match = turns.find(
-      (t) =>
-        t.kind === 'user' &&
-        t.seq > m.afterSeq &&
-        !consumed.has(t.id) &&
-        echoes(m, textOf(t.blocks)),
-    );
-    if (!match) return true;
-    consumed.add(match.id);
-    return false;
+    return !matched.has(m.nonce);
   });
   return kept.length === list.length ? list : kept;
 }

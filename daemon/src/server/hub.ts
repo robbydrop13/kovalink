@@ -446,16 +446,21 @@ export class Hub {
       return this.error(client, reqId, 'IO_ERROR', (e as Error).message);
     }
     const raw = sortAssistantBlocks(lines as never[]);
+    // Le `seq` d'un tour est l'offset de sa ligne dans le JSONL : il ne depend ni de la
+    // fenetre lue ni du nombre de reconnexions. Le compteur ne sert qu'aux lignes sans
+    // offset, et repart de la fin de ce que l'on vient d'envoyer.
     const turns = buildTurns(raw);
-    this.seqs.set(sessionId, turns.length);
-    const meta = buildSessionMeta(sessionId, pane.id, pane.cwd, raw, turns.length);
+    const lastSeq = turns.length > 0 ? (turns[turns.length - 1] as Turn).seq : 0;
+    this.seqs.set(sessionId, lastSeq + 1);
+    const meta = buildSessionMeta(sessionId, pane.id, pane.cwd, raw, lastSeq);
+    const first = raw.find((l) => typeof l.offset === 'number');
     this.send(client, {
       t: 'session.snapshot',
       reqId,
       sessionId,
       meta,
       turns,
-      hasMoreBefore: true,
+      hasMoreBefore: first === undefined || (first.offset as number) > 0,
     });
   }
 
@@ -468,7 +473,7 @@ export class Hub {
     const startSeq = reopened ? 0 : (this.seqs.get(sessionId) ?? 0);
     const turns: Turn[] = buildTurns(sortAssistantBlocks(lines), startSeq);
     if (turns.length === 0) return;
-    this.seqs.set(sessionId, startSeq + turns.length);
+    this.seqs.set(sessionId, (turns[turns.length - 1] as Turn).seq + 1);
     // Un turn peut etre MUTABLE : les blocs d'un meme `requestId` arrivent en
     // plusieurs lignes. Le client remplace les turns dont l'identifiant revient.
     this.broadcast(

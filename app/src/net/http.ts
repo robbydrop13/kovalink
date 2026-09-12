@@ -9,10 +9,14 @@ import {
   TURNS_QUERY,
   type ActionResponse,
   type KovaLaunchResponse,
+  type KovaNewTabRequest,
+  type KovaNewTabResponse,
+  type KovaRecentProjectsResponse,
   type Pane,
   type PairClaimRequest,
   type PairClaimResponse,
   type Prompt,
+  type RecentProject,
   type Tab,
   type Turn,
 } from '@/protocol';
@@ -224,4 +228,18 @@ export function postText(
  */
 export function postKovaLaunch(timeoutMs = 8000): Promise<KovaLaunchResponse> {
   return request(ROUTES.kovaLaunch, { method: 'POST', timeoutMs });
+}
+
+/** Projets récents de Kova, pour l'écran « Nouvelle session » (Cmd+O). */
+export function fetchRecentProjects(): Promise<KovaRecentProjectsResponse> {
+  return request(ROUTES.kovaRecentProjects);
+}
+
+/**
+ * `new-tab` sur un projet récent, désigné par son index ET son chemin : le daemon relit sa
+ * liste et refuse si elle a bougé. La commande lancée est toujours `claude`, côté daemon.
+ */
+export function postNewTab(project: RecentProject, timeoutMs = 10_000): Promise<KovaNewTabResponse> {
+  const body: KovaNewTabRequest = { recentProjectIndex: project.index, path: project.path };
+  return request(ROUTES.kovaNewTab, { method: 'POST', body, timeoutMs });
 }

@@ -1,18 +1,26 @@
 import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 import type { PermissionMode, SessionMeta } from '@kovalink/protocol';
 import { transcriptPath } from '../paths.js';
-import { aiTitleOf, permissionModeOf, safeParseLine, type RawLine } from './jsonl.js';
+import { aiTitleOf, permissionModeOf, type RawLine } from './jsonl.js';
+import { splitWithOffsets } from './tailer.js';
 
 const META_TAIL_BYTES = 256 * 1024;
 
-/** Lit les derniers octets d'un JSONL. Jamais le fichier entier (1,4 Mo mesure ici). */
-export function readTailLines(path: string, maxBytes = META_TAIL_BYTES): RawLine[] {
+/**
+ * Lit les derniers octets d'un JSONL. Jamais le fichier entier (1,4 Mo mesure ici).
+ *
+ * `end` borne la lecture : les `maxBytes` octets AVANT cet offset. C'est la pagination
+ * de l'historique, `beforeSeq` etant l'offset du plus ancien tour connu de l'app.
+ * Chaque ligne rendue porte son `offset`, le `seq` stable des tours.
+ */
+export function readTailLines(path: string, maxBytes = META_TAIL_BYTES, end?: number): RawLine[] {
   let size: number;
   try {
     size = statSync(path).size;
   } catch {
     return [];
   }
+  if (end !== undefined) size = Math.max(0, Math.min(size, end));
   const start = Math.max(0, size - maxBytes);
   const length = size - start;
   const buf = Buffer.allocUnsafe(length);
@@ -24,12 +32,14 @@ export function readTailLines(path: string, maxBytes = META_TAIL_BYTES): RawLine
       if (n <= 0) break;
       got += n;
     }
-    let text = buf.subarray(0, got).toString('utf8');
-    if (start > 0) text = text.slice(text.indexOf('\n') + 1);
-    return text
-      .split('\n')
-      .map(safeParseLine)
-      .filter((l): l is RawLine => l !== null);
+    const data = buf.subarray(0, got);
+    let text = data.toString('utf8');
+    let firstLineAt = start;
+    if (start > 0) {
+      firstLineAt = start + data.indexOf(0x0a) + 1;
+      text = text.slice(text.indexOf('\n') + 1);
+    }
+    return splitWithOffsets(text.endsWith('\n') || text === '' ? text : `${text}\n`, firstLineAt).lines;
   } finally {
     closeSync(fd);
   }

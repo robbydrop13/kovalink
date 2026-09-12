@@ -20,6 +20,38 @@ export interface TailState {
   carry: string;
   /** Compteur d'octets lus depuis l'ouverture. Sert au test anti relecture complete. */
   bytesRead: number;
+  /** Position dans le fichier du debut de `carry` : l'offset de la prochaine ligne complete. */
+  lineStart: number;
+}
+
+/**
+ * Decoupe un texte en lignes et pose sur chacune son OFFSET D'OCTET dans le fichier.
+ *
+ * C'est cet offset qui devient le `seq` des tours (voir `buildTurns`) : il est stable
+ * d'une ouverture a l'autre, croissant dans l'ordre du transcript, et ne depend pas de la
+ * taille de la fenetre lue. Un compteur qui repartait de zero a chaque `session.attach`
+ * changeait de valeur a chaque reconnexion de l'app, et tout ce que l'app en deduisait
+ * (bulle locale a retirer, plancher de la fenetre visible) devenait faux.
+ *
+ * Rend aussi l'offset ou commence le reste incomplet, pour `readMore`.
+ */
+export function splitWithOffsets(
+  text: string,
+  base: number,
+): { lines: RawLine[]; rest: string; restOffset: number } {
+  const parts = text.split('\n');
+  const rest = parts.pop() ?? '';
+  const lines: RawLine[] = [];
+  let offset = base;
+  for (const part of parts) {
+    const parsed = safeParseLine(part);
+    if (parsed) {
+      parsed.offset = offset;
+      lines.push(parsed);
+    }
+    offset += Buffer.byteLength(part, 'utf8') + 1;
+  }
+  return { lines, rest, restOffset: offset };
 }
 
 function readRange(path: string, start: number, end: number): Buffer {
@@ -78,6 +110,7 @@ export function openTail(path: string, wantLines = 200): { state: TailState; lin
     decoder: new StringDecoder('utf8'),
     carry: '',
     bytesRead: 0,
+    lineStart: st.size,
   };
 
   let chunk = FIRST_CHUNK;
@@ -87,12 +120,16 @@ export function openTail(path: string, wantLines = 200): { state: TailState; lin
     const buf = readRange(path, start, st.size);
     state.bytesRead = buf.length;
     let text = buf.toString('utf8');
+    let firstLineAt = start;
     // Fenetre partielle : la premiere ligne est probablement coupee, on la jette.
-    if (start > 0) text = text.slice(text.indexOf('\n') + 1);
-    lines = text
-      .split('\n')
-      .map(safeParseLine)
-      .filter((l): l is RawLine => l !== null);
+    if (start > 0) {
+      const cut = buf.indexOf(0x0a) + 1;
+      text = text.slice(text.indexOf('\n') + 1);
+      firstLineAt = start + cut;
+    }
+    // Un fichier sans saut de ligne final : la derniere ligne est tout de meme lue.
+    const split = splitWithOffsets(text.endsWith('\n') || text === '' ? text : `${text}\n`, firstLineAt);
+    lines = split.lines;
     const conv = lines.filter((l) => l.type === 'user' || l.type === 'assistant').length;
     if (start === 0 || conv >= wantLines || chunk >= MAX_INITIAL_BYTES) break;
     chunk = Math.min(chunk * 2, MAX_INITIAL_BYTES);
@@ -128,6 +165,7 @@ export function readMore(state: TailState): ReadResult {
     state.head = fresh.state.head;
     state.decoder = fresh.state.decoder;
     state.carry = '';
+    state.lineStart = fresh.state.lineStart;
     state.bytesRead += fresh.state.bytesRead;
     return { lines: fresh.lines, reopened: true };
   }
@@ -139,10 +177,10 @@ export function readMore(state: TailState): ReadResult {
   state.bytesRead += buf.length;
   // Le decodeur est PERSISTANT : sans lui, un caractere UTF-8 coupe en deux lectures
   // deviendrait un U+FFFD definitif.
-  const parts = (state.carry + state.decoder.write(buf)).split('\n');
-  state.carry = parts.pop() ?? '';
-  const lines = parts.map(safeParseLine).filter((l): l is RawLine => l !== null);
-  return { lines, reopened: false };
+  const split = splitWithOffsets(state.carry + state.decoder.write(buf), state.lineStart);
+  state.carry = split.rest;
+  state.lineStart = split.restOffset;
+  return { lines: split.lines, reopened: false };
 }
 
 export interface TailHandle {
