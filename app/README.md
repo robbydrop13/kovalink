@@ -182,6 +182,26 @@ Vérification : `source app/scripts/eas-env.sh && npx eas-cli whoami`.
 les config plugins, donc une mise à jour OTA ne peut pas s'appliquer à un build natif
 incompatible. Une politique `appVersion` provoquerait des crashs au lancement.
 
+## Mode vocal
+
+Le bouton micro de la barre de message enregistre tant qu'on le maintient (niveau et
+durée affichés, glisser vers la gauche annule), envoie l'audio au daemon à la relâche, et
+le texte transcrit remplace le contenu du champ : Robin relit et appuie sur Send. La
+transcription est faite par Gladia **depuis le Mac** : la clé se place dans
+`~/.kovalink/gladia-key` sur le Mac (`0600`, une par machine, jamais dans le dépôt, voir
+`daemon/README.md`) ; sans elle, le daemon répond `TRANSCRIPTION_UNAVAILABLE` et le bouton
+l'explique.
+
+```bash
+umask 077 && printf '%s\n' 'VOTRE_CLE_GLADIA' > ~/.kovalink/gladia-key
+```
+
+L'enregistrement passe par `expo-audio`, un module natif : il faut un build qui le
+contient (dépendance et permission micro déclarées dans `app.json`). Sur un build qui ne
+l'a pas, le module est chargé paresseusement et le bouton dit que le mode vocal arrive
+avec le prochain build, sans rien casser. Le fichier audio temporaire de l'iPhone est
+supprimé après l'envoi.
+
 ## Tests
 
 `npm test` lance le lanceur natif de Node (`node --test`) sur `test/*.test.ts`. Node 22.6 ou

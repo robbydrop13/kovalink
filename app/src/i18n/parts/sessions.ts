@@ -130,7 +130,6 @@ export const sessions = {
   nothingLeftToRead: 'Nothing left to read',
   nextPillA11y: (n: number) => `Next unread session, ${n} left`,
   nextPillHint: (tab: string, title: string) => `Opens ${tab}, ${title}`,
-  composerPlaceholderFor: (tab: string, title: string) => `Message ${tab} · ${title}…`,
   summaryUnread: (n: number) => `${n} unread`,
   panesUnreadTitle: 'Unread',
   panesUnreadPlaceholder: 'Search unread',

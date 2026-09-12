@@ -1,19 +1,21 @@
-// « Thinking… » avec un reflet lumineux qui balaye le texte de gauche à droite en boucle
-// (1,6 s par cycle, courbe douce), comme l'indicateur de Claude : sans lui, on se demande
-// s'il se passe vraiment quelque chose. Couvre l'attente AVANT que le texte n'arrive ; le
-// point pulsant reste pour un tour en cours de rédaction.
+// « Thinking… » avec un reflet lumineux qui traverse LE TEXTE, caractère par caractère, de
+// gauche à droite en boucle (1,6 s, courbe douce) : chaque glyphe passe de `text.tertiary`
+// à `text.primary` quand la lumière le touche, le fond reste plat. Sans lui, on se demande
+// s'il se passe vraiment quelque chose. Couvre l'attente AVANT que le texte n'arrive.
 //
-// Pas de masque de dégradé dans ce build natif (ni reanimated, ni expo-linear-gradient) :
-// une bande claire semi-transparente traverse le texte dans un conteneur à débordement
-// caché, avec l'`Animated` de React Native sur le fil natif. `reduceMotion` iOS : trois
-// points animés lentement, sans balayage.
+// Pas de masque dans ce build natif : `@react-native-masked-view/masked-view` n'est pas
+// lié, et un masque de dégradé demanderait aussi `expo-linear-gradient`. À ajouter au
+// prochain build pour le vrai masque ; d'ici là l'animation de couleur par caractère
+// (`Animated` sur le fil JS, une seule valeur partagée, une interpolation par glyphe)
+// donne le même mouvement continu. `reduceMotion` iOS : trois points animés lentement.
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
 import { colors, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 
 const CYCLE_MS = 1600;
-const BAND_WIDTH = 56;
+/** Largeur du reflet, en fraction du texte : environ trois caractères éclairés à la fois. */
+const BEAM = 0.18;
 
 function useReduceMotion(): boolean {
   const [reduce, setReduce] = useState(false);
@@ -36,9 +38,7 @@ function useReduceMotion(): boolean {
 function Dots() {
   const [phase] = useState(() => new Animated.Value(0));
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.timing(phase, { toValue: 3, duration: 2400, easing: Easing.linear, useNativeDriver: true }),
-    );
+    const loop = Animated.loop(Animated.timing(phase, { toValue: 3, duration: 2400, easing: Easing.linear, useNativeDriver: true }));
     loop.start();
     return () => loop.stop();
   }, [phase]);
@@ -49,13 +49,7 @@ function Dots() {
           key={i}
           style={[
             styles.dot,
-            {
-              opacity: phase.interpolate({
-                inputRange: [i, i + 0.5, i + 1, 3],
-                outputRange: [0.3, 1, 0.3, 0.3],
-                extrapolate: 'clamp',
-              }),
-            },
+            { opacity: phase.interpolate({ inputRange: [i, i + 0.5, i + 1, 3], outputRange: [0.3, 1, 0.3, 0.3], extrapolate: 'clamp' }) },
           ]}
         />
       ))}
@@ -65,56 +59,58 @@ function Dots() {
 
 export function Shimmer({ label }: { label: string }) {
   const reduce = useReduceMotion();
-  const [x] = useState(() => new Animated.Value(0));
-  const [width, setWidth] = useState(0);
+  const [progress] = useState(() => new Animated.Value(0));
+  const chars = [...label];
 
   useEffect(() => {
-    if (reduce || width === 0) return;
-    x.setValue(0);
+    if (reduce) return;
+    progress.setValue(0);
+    // La couleur n'est pas animable sur le fil natif : boucle JS, un seul `Animated.Value`.
     const loop = Animated.loop(
-      Animated.timing(x, { toValue: 1, duration: CYCLE_MS, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(progress, { toValue: 1, duration: CYCLE_MS, easing: Easing.inOut(Easing.sin), useNativeDriver: false }),
     );
     loop.start();
     return () => loop.stop();
-  }, [reduce, width, x]);
+  }, [reduce, progress, label]);
 
-  return (
-    <View style={styles.wrap} accessibilityLabel={label} accessibilityLiveRegion="polite">
-      <View style={styles.textBox} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+  if (reduce) {
+    return (
+      <View style={styles.wrap} accessibilityLabel={label} accessibilityLiveRegion="polite">
         <Txt variant="footnote" color={colors.text.secondary}>
           {label}
         </Txt>
-        {!reduce && width > 0 ? (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.band,
-              {
-                transform: [
-                  { translateX: x.interpolate({ inputRange: [0, 1], outputRange: [-BAND_WIDTH, width + BAND_WIDTH] }) },
-                  { rotate: '12deg' },
-                ],
-              },
-            ]}
-          />
-        ) : null}
+        <Dots />
       </View>
-      {reduce ? <Dots /> : null}
+    );
+  }
+
+  return (
+    <View style={styles.wrap} accessibilityLabel={label} accessibilityLiveRegion="polite">
+      <View style={styles.line} accessible={false}>
+        {chars.map((c, i) => {
+          // Position du glyphe dans le texte, de 0 à 1 ; le reflet va de -BEAM à 1+BEAM.
+          const at = chars.length > 1 ? i / (chars.length - 1) : 0.5;
+          const center = progress.interpolate({ inputRange: [0, 1], outputRange: [-BEAM, 1 + BEAM] });
+          const color = Animated.subtract(center, at).interpolate({
+            inputRange: [-BEAM, 0, BEAM],
+            outputRange: [colors.text.tertiary, colors.text.primary, colors.text.tertiary],
+            extrapolate: 'clamp',
+          });
+          return (
+            <Animated.Text key={i} style={[styles.glyph, { color }]}>
+              {c}
+            </Animated.Text>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingVertical: space[2] },
-  textBox: { overflow: 'hidden', paddingHorizontal: space[1], borderRadius: 4 },
-  band: {
-    position: 'absolute',
-    top: -8,
-    bottom: -8,
-    width: BAND_WIDTH,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    borderRadius: BAND_WIDTH / 2,
-  },
+  line: { flexDirection: 'row', flexWrap: 'wrap' },
+  glyph: { fontSize: 13, lineHeight: 18 },
   dots: { flexDirection: 'row', gap: 4 },
   dot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.text.secondary },
 });

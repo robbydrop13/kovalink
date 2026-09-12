@@ -225,6 +225,28 @@ elle ne porte que sur cette racine. Le reste (liste noire, `O_NOFOLLOW`, emprein
 v2.1.268 : une image collee ainsi est affichee a Claude sans outil ; un fichier texte
 hors du projet passe par `Read` et, en mode `default`, par un prompt de permission.
 
+## Mode vocal (Gladia)
+
+L'app enregistre la voix de Robin (m4a) et l'envoie au daemon sur `POST /v1/transcribe`
+(corps audio brut, 10 Mo au plus, types `audio/*` seulement, audite sans jamais le texte).
+Le daemon appelle Gladia (API v2, transcription pre-enregistree, langue detectee :
+francais ou anglais) avec une cle lue sur le Mac, et rend le texte a l'app, qui le met
+dans le champ de message sans l'envoyer. L'audio est transmis en memoire et n'est jamais
+ecrit sur le disque du Mac.
+
+**La cle ne quitte jamais le Mac et n'est jamais dans le depot.** Elle vit dans
+`~/.kovalink/gladia-key` (une ligne, mode `0600`), une par machine. Elle vient d'un compte
+Gladia personnel ou de celui de l'equipe. Installation en une ligne :
+
+```bash
+umask 077 && printf '%s\n' 'VOTRE_CLE_GLADIA' > ~/.kovalink/gladia-key
+```
+
+Le daemon la relit a chaque transcription : aucun redemarrage n'est necessaire. Sans le
+fichier, la route repond `503 TRANSCRIPTION_UNAVAILABLE` avec le chemin a creer, et le
+bouton micro de l'app l'affiche tel quel. Un refus de Gladia (cle invalide, audio trop
+court) est relaye mot pour mot en `502 TRANSCRIPTION_FAILED`.
+
 ## Tests
 
 ```bash

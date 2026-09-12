@@ -36,7 +36,7 @@ import { AgentStatus } from '@/features/chat/AgentStatus';
 import { AssistantTurn, OrphanResults, QuietSystemRow, SystemRow, UserBubble } from '@/features/chat/Bubble';
 import { Shimmer } from '@/features/chat/Shimmer';
 import { feedItems } from '@/features/chat/systemEvents';
-import { Composer } from '@/features/chat/Composer';
+import { MessageBar } from '@/features/chat/MessageBar';
 import { StaleQueue } from '@/features/chat/StaleQueue';
 import { confirmCellularSend } from '@/features/chat/AttachmentViews';
 import { totalSize, type Attachment } from '@/features/chat/attachments';
@@ -46,7 +46,7 @@ import { NumericKeypad } from '@/features/terminal/NumericKeypad';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { followSessionOnMac, showPaneMenu } from '@/features/sessions/openOnMac';
 import { paneHref, paneLabel } from '@/features/sessions/SessionRow';
-import { NextPill } from '@/features/sessions/NextPill';
+import { NEXT_BUTTON_SPACE, NextPill } from '@/features/sessions/NextPill';
 import { useNextTarget } from '@/features/sessions/useNextTarget';
 import { readablePrompt } from '@/features/sessions/unread';
 import { useReads } from '@/store/reads';
@@ -790,7 +790,7 @@ export default function SessionScreen() {
         <ScrollView
           ref={scrollRef}
           style={styles.grow}
-          contentContainerStyle={styles.chat}
+          contentContainerStyle={[styles.chat, { paddingBottom: space[4] + (pillHidden || !next.target ? 0 : NEXT_BUTTON_SPACE) }]}
           maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           refreshControl={
             hiddenCount > 0 || session.hasMoreBefore ? (
@@ -952,7 +952,7 @@ export default function SessionScreen() {
       ) : null}
 
       <View style={{ paddingBottom: insets.bottom }}>
-        <Composer
+        <MessageBar
           paneId={paneId}
           prompt={prompt}
           working={working}
@@ -962,7 +962,6 @@ export default function SessionScreen() {
             closed ? t.sessionGoneShort : t.sessionNoAgentSession
           }
           queuedCount={queued}
-          placeholder={pane ? t.composerPlaceholderFor(tabLabel ?? pane.projectName, paneLabel(pane)) : undefined}
           onSend={onSend}
           onInterrupt={() => {
             markActed();

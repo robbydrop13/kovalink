@@ -77,7 +77,7 @@ export const chat = {
   markdownShareA11y: 'Share this code block',
 
   // Zone de saisie (`Composer`).
-  composerPlaceholder: 'Message…',
+  composerPlaceholder: 'Send message',
   composerLockedPlaceholder: 'Answer the question above first',
   composerUnavailable: 'Unavailable',
   composerFaceIdPlaceholder: 'Free text, Face ID required',

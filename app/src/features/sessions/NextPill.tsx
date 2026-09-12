@@ -1,7 +1,9 @@
-// Le bouton flottant de Cmd+J (docs/16, 6.1 et 6.2) : `Next unread (3)`, puis
-// `All caught up` 1 600 ms quand le dernier non lu vient d'être lu, puis `Next idle (2)`
-// ou rien. Jamais d'animation d'attention ; masqué par le parent (clavier, brouillon,
-// envoi en cours). Appui long : la palette Unread.
+// Le bouton flottant de Cmd+J (docs/16, retouche du 12 septembre) : un rond de 44 pt en
+// bas à droite, icône `skip-forward` seule et badge du compte, au dessus de la barre de
+// message ; le fil garde un padding bas égal pour que sa dernière ligne reste lisible.
+// Rond accent tant qu'il reste du non lu, neutre pour `Next idle`, `check-circle` 1 600 ms
+// quand le dernier non lu vient d'être lu. Masqué par le parent (clavier, brouillon,
+// envoi). Appui long : la palette Unread.
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { t } from '@/i18n/en';
@@ -52,7 +54,6 @@ export function NextPill({
   if (mode === null) return null;
 
   const badge = mode === 'next' ? state.unreadCount : mode === 'idle' ? state.idleCount : 0;
-  const label = mode === 'next' ? t.nextUnread : mode === 'idle' ? t.nextIdle : t.allCaughtUp;
   const tint = mode === 'next' ? colors.accent.primary : mode === 'idle' ? colors.text.secondary : colors.status.success;
   const dest = state.target ? t.nextPillHint(state.target.entry.group.title, state.target.entry.pane.title ?? state.target.entry.pane.agent ?? '') : '';
 
@@ -60,18 +61,15 @@ export function NextPill({
     <Animated.View pointerEvents={hidden ? 'none' : 'auto'} style={[styles.wrap, { opacity }]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={mode === 'caughtUp' ? t.allCaughtUp : t.nextPillA11y(badge)}
+        accessibilityLabel={mode === 'caughtUp' ? t.allCaughtUp : mode === 'idle' ? `${t.nextIdle}, ${badge}` : t.nextPillA11y(badge)}
         accessibilityHint={dest}
         disabled={mode === 'caughtUp'}
         onPress={onPress}
         onLongPress={onLongPress}
         delayLongPress={500}
-        style={({ pressed }) => [styles.pill, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.round, mode === 'next' && styles.roundNext, pressed && styles.pressed]}
       >
-        <Icon name={mode === 'caughtUp' ? 'check-circle' : 'skip-forward'} size={16} color={tint} />
-        <Txt variant="calloutStrong" color={mode === 'caughtUp' ? colors.status.success : mode === 'idle' ? colors.text.secondary : colors.text.primary}>
-          {label}
-        </Txt>
+        <Icon name={mode === 'caughtUp' ? 'check-circle' : 'skip-forward'} size={20} color={mode === 'next' ? colors.text.onFill : tint} />
         {badge > 0 ? (
           <View style={[styles.badge, mode === 'idle' ? styles.badgeIdle : styles.badgeNext]}>
             <Txt variant="caption" color={mode === 'idle' ? colors.text.secondary : colors.text.onFill}>
@@ -84,16 +82,17 @@ export function NextPill({
   );
 }
 
+/** Hauteur du bouton rond plus sa marge : le fil garde ce padding bas. */
+export const NEXT_BUTTON_SPACE = 44 + space[4];
+
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', right: space[5], bottom: space[4] },
-  pill: {
-    minWidth: 140,
+  round: {
+    width: 44,
     height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[3],
-    paddingHorizontal: space[5],
     borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.bg.overlay,
     borderWidth: 1,
     borderColor: colors.border.strong,
@@ -102,8 +101,21 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
   },
-  pressed: { backgroundColor: colors.bg.pressed, transform: [{ scale: 0.97 }] },
-  badge: { minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  roundNext: { backgroundColor: colors.accent.primary, borderColor: colors.accent.primary },
+  pressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+    borderWidth: 2,
+    borderColor: colors.bg.base,
+  },
   badgeNext: { backgroundColor: colors.accent.primary },
   badgeIdle: { backgroundColor: colors.bg.pressed },
 });
