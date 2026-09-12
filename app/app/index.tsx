@@ -25,6 +25,10 @@ import { Txt } from '@/ui/Txt';
 import { Icon } from '@/ui/Icon';
 import { TabGroupView } from '@/features/sessions/TabGroupView';
 import { paneHref } from '@/features/sessions/SessionRow';
+import { useNextTarget } from '@/features/sessions/useNextTarget';
+import { isUnread } from '@/features/sessions/unread';
+import { useReads } from '@/store/reads';
+import { ImpactStyle, impact } from '@/utils/haptics';
 import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
 import { groupByTab, summaryLine, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
@@ -97,7 +101,16 @@ export default function SessionsScreen() {
   const groups = useMemo(() => groupByTab(kovaDown ? [] : panes, tabs), [kovaDown, panes, tabs]);
   const shown = groups;
   const windows = windowCount(shown);
-  const summary = kovaDown ? null : summaryLine(panes);
+  // Cmd+J depuis la liste : l'anneau entier (aucun pane courant), la ligne de résumé.
+  const next = useNextTarget(null);
+  const marks = useReads((s) => s.byPane);
+  const unreadOf = (pane: Pane) => isUnread(pane, prompts[pane.id], marks);
+  const summary = kovaDown ? null : summaryLine(panes, next.unreadCount);
+  const jumpNext = () => {
+    if (!next.target) return;
+    impact(ImpactStyle.Light);
+    router.push(paneHref(next.target.entry.pane));
+  };
   // Un pane sans agent s'ouvre sur la vue Term ; une session périmée propose de relancer
   // Claude dans son dossier via la feuille « Nouvelle session », préfiltrée.
   const open = (paneId: number) => {
@@ -277,6 +290,7 @@ export default function SessionsScreen() {
                   onRelaunch={relaunch}
                   onHeaderPress={() => router.push('/panes')}
                   swipeFor={swipeFor}
+                  isUnread={unreadOf}
                   onInterrupt={(id) => void interrupt(id)}
                   interruptDisabled={degraded}
                   interruptLabel={(id) => labelFor(id, degraded)}
@@ -311,6 +325,23 @@ export default function SessionsScreen() {
             disabled={degraded}
             accessibilityHint={t.sessionsProjectsHint}
             onPress={() => router.push('/new-session')}
+          />
+        </View>
+        <View style={styles.bottomButton}>
+          <Button
+            icon={next.target ? 'skip-forward' : 'check-circle'}
+            kind={next.target?.kind === 'unread' ? 'primary' : 'secondary'}
+            height={layout.touchPrimary}
+            disabled={degraded || !next.target}
+            label={
+              next.target?.kind === 'unread'
+                ? `${t.nextUnread} (${next.unreadCount})`
+                : next.target?.kind === 'idle'
+                  ? t.nextIdle
+                  : t.caughtUp
+            }
+            accessibilityHint={next.target ? t.nextPillHint(next.target.entry.group.title, next.target.entry.pane.title ?? '') : t.nothingLeftToRead}
+            onPress={jumpNext}
           />
         </View>
       </View>

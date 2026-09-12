@@ -12,6 +12,7 @@
 // `pane.screen`). La vue `Fichiers` est en lot 3 et n'est pas rendue, plutôt qu'affichée morte.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -22,7 +23,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { NotifyType, notify } from '@/utils/haptics';
+import { ImpactStyle, NotifyType, impact, notify } from '@/utils/haptics';
 
 import { attachmentsDir, indexToolResults, type PromptOption, type Turn } from '@/protocol';
 import { colors, layout, radius, space } from '@/theme';
@@ -44,7 +45,12 @@ import { MonospaceFallback } from '@/features/terminal/MonospaceFallback';
 import { NumericKeypad } from '@/features/terminal/NumericKeypad';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { followSessionOnMac, showPaneMenu } from '@/features/sessions/openOnMac';
-import { paneLabel } from '@/features/sessions/SessionRow';
+import { paneHref, paneLabel } from '@/features/sessions/SessionRow';
+import { NextPill } from '@/features/sessions/NextPill';
+import { useNextTarget } from '@/features/sessions/useNextTarget';
+import { readablePrompt } from '@/features/sessions/unread';
+import { useReads } from '@/store/reads';
+import { useDrafts, draftOf } from '@/store/drafts';
 import { dismissBannersForPane, paneIdentity } from '@/notifications/banners';
 import {
   attachSession,
@@ -97,6 +103,11 @@ const SESSION_RESOLVE_TIMEOUT_MS = 8_000;
  * 60 lectures par minute et par appareil, 2 s laisse la moitié de marge à un `Rafraîchir`.
  */
 const SCREEN_REFRESH_MS = 2_000;
+/** Cmd+J : un pane affiché ce temps là est lu (docs/16, 6.4). */
+const READ_AFTER_MS = 1_200;
+/** Cmd+J : à l'arrivée sur un pane, l'envoi et les options ignorent les taps ce temps là (6.3). */
+const INPUT_GUARD_MS = 400;
+
 /** Guet d'une bulle en file : la vidange a lieu hors de cet écran, à la reconnexion. */
 const QUEUE_POLL_MS = 2_000;
 
@@ -134,6 +145,13 @@ export default function SessionScreen() {
   const { run: interrupt } = useInterrupt();
 
   const [view, setView] = useState<ViewMode>(params.view === 'term' ? 'term' : 'chat');
+  // Cmd+J (docs/16) : cible du prochain saut, clavier, garde de saisie à l'arrivée.
+  const next = useNextTarget(paneId);
+  const markRead = useReads((s) => s.markRead);
+  const draft = useDrafts((s) => draftOf(s.byPane, paneId));
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [arrivedAt, setArrivedAt] = useState(() => Date.now());
+  const [arrivalFlash, setArrivalFlash] = useState(false);
   const [pending, setPending] = useState<PendingMessage[]>([]);
   const [queued, setQueued] = useState(0);
   /** Textes de ce pane en file depuis plus de 15 min : ils attendent Robin (CA-122). */
@@ -153,6 +171,44 @@ export default function SessionScreen() {
   const stickToBottom = useRef(true);
 
   const agentSessionId = pane?.agent_session_id ?? null;
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardOpen(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  // Arrivée sur un pane (saut Cmd+J ou ouverture) : garde de saisie de 400 ms et flash de
+  // la ligne d'identité, le seul signal visuel qui dit OÙ l'on est.
+  useEffect(() => {
+    const now = Date.now();
+    const arm = setTimeout(() => {
+      setArrivedAt(now);
+      setArrivalFlash(true);
+    }, 0);
+    const timer = setTimeout(() => setArrivalFlash(false), 320);
+    return () => {
+      clearTimeout(arm);
+      clearTimeout(timer);
+    };
+  }, [paneId]);
+
+  // Lu = affiché au premier plan avec quelque chose à l'écran pendant 1 200 ms continus,
+  // pour CETTE référence. Interrompu avant : rien, le pane reste dans l'anneau.
+  const promptRef = readablePrompt(prompt) ? prompt.promptRef : null;
+  const somethingShown = session.status === 'ready' || (view === 'term' && screen !== undefined);
+  useEffect(() => {
+    if (!promptRef || !somethingShown) return;
+    const timer = setTimeout(() => markRead(paneId, promptRef), READ_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [paneId, promptRef, somethingShown, markRead]);
+  /** Robin agit sur le pane : lu tout de suite. */
+  const markActed = useCallback(() => {
+    if (promptRef) markRead(paneId, promptRef);
+  }, [paneId, promptRef, markRead]);
 
   // Abonnement : uniquement le pane et la session visibles. Jamais les autres.
   useEffect(() => {
@@ -183,7 +239,6 @@ export default function SessionScreen() {
   // (CA-14). Idem quand le pane n'a plus rien à demander.
   const projectName = pane?.projectName ?? null;
   const tabLabel = pane ? paneIdentity(pane).tab : null;
-  const promptRef = prompt && prompt.state !== 'none' ? prompt.promptRef : null;
   useEffect(() => {
     if (projectName === null || tabLabel === null) return;
     void dismissBannersForPane({ id: paneId, projectName, tab: tabLabel }, promptRef ? [promptRef] : []);
@@ -397,6 +452,8 @@ export default function SessionScreen() {
       // RÈGLE : aucun envoi ne disparaît sans message visible ET sans ligne de journal.
       // Toute issue autre que « parti » ou « en file » rend `false` (le composer garde le
       // texte) après un toast, et `bootWarn` la trace.
+      if (Date.now() - arrivedAt < INPUT_GUARD_MS) return false;
+      markActed();
       let outcome: SendTextOutcome;
       try {
         outcome = await sendText(paneId, text, prompt, pieces);
@@ -467,7 +524,7 @@ export default function SessionScreen() {
       scrollRef.current?.scrollToEnd({ animated: true });
       return true;
     },
-    [paneId, prompt, agentSessionId],
+    [paneId, prompt, agentSessionId, arrivedAt, markActed],
   );
 
   /**
@@ -507,6 +564,8 @@ export default function SessionScreen() {
   const onAnswer = useCallback(
     async (option: PromptOption) => {
       if (!prompt || prompt.state !== 'parsed') return;
+      if (Date.now() - arrivedAt < INPUT_GUARD_MS) return;
+      markActed();
       setPhase(paneId, 'authenticating', option.index);
       const outcome = await answerPrompt({
         paneId,
@@ -562,7 +621,7 @@ export default function SessionScreen() {
       setPhase(paneId, 'armed');
       setNotice(paneId, t.sessionAlreadyAnswered);
     },
-    [paneId, prompt, setNotice, setPhase],
+    [paneId, prompt, setNotice, setPhase, arrivedAt, markActed],
   );
 
   /**
@@ -576,6 +635,24 @@ export default function SessionScreen() {
     await onAnswer(reject);
     setNotice(paneId, t.sessionRejectSent);
   }, [onAnswer, paneId, prompt, setNotice]);
+
+  /**
+   * Cmd+J : le saut vers le prochain non lu, recalculé à l'instant du tap (docs/16, 6.3).
+   * `replace`, jamais `push` : un tour ne doit pas empiler des écrans de session.
+   */
+  const jumpNext = useCallback(() => {
+    const target = next.target;
+    if (!target) {
+      setToast(t.nothingLeftToRead);
+      return;
+    }
+    impact(ImpactStyle.Light);
+    const href = paneHref(target.entry.pane);
+    const focus = target.entry.pane.awaiting ? 'awaiting' : 'last';
+    router.replace(`${href}${href.includes('?') ? '&' : '?'}focus=${focus}`);
+  }, [next.target]);
+  const pillHidden =
+    keyboardOpen || draft.trim().length > 0 || phase === 'authenticating' || phase === 'sending' || closed;
 
   const openMenu = useCallback(
     () =>
@@ -612,7 +689,7 @@ export default function SessionScreen() {
     >
       <View style={{ paddingTop: insets.top }}>
         <NavBar view={view} onView={setView} title={t.sessionsTitle} onMenu={openMenu} />
-        <View style={styles.subtitle}>
+        <View style={[styles.subtitle, arrivalFlash && styles.subtitleArrived]}>
           <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1}>
             {pane ? `${pane.projectName} · ${paneLabel(pane)}` : t.sessionFallbackTitle}
           </Txt>
@@ -847,6 +924,10 @@ export default function SessionScreen() {
         </View>
       )}
 
+      <View style={styles.pillSlot} pointerEvents="box-none">
+        <NextPill state={next} hidden={pillHidden} onPress={jumpNext} onLongPress={() => router.push('/unread')} />
+      </View>
+
       {prompt ? (
         <ValidationBar
           prompt={prompt}
@@ -881,8 +962,12 @@ export default function SessionScreen() {
             closed ? t.sessionGoneShort : t.sessionNoAgentSession
           }
           queuedCount={queued}
+          placeholder={pane ? t.composerPlaceholderFor(tabLabel ?? pane.projectName, paneLabel(pane)) : undefined}
           onSend={onSend}
-          onInterrupt={() => void interrupt(paneId)}
+          onInterrupt={() => {
+            markActed();
+            void interrupt(paneId);
+          }}
           onLockedTap={() => setToast(t.sessionAnswerFirst)}
           onNotice={setToast}
         />
@@ -958,6 +1043,8 @@ function NavBar({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg.base },
+  pillSlot: { height: 0, overflow: 'visible', zIndex: 2 },
+  subtitleArrived: { backgroundColor: colors.accent.subtleBg },
   nav: {
     height: layout.navBarHeight,
     flexDirection: 'row',

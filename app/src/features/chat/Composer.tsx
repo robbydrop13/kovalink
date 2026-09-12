@@ -34,6 +34,8 @@ export interface ComposerProps {
   degraded: boolean;
   disabled: boolean;
   disabledPlaceholder?: string;
+  /** Placeholder nominal, qui nomme le pane (`Message Link · cc…`). */
+  placeholder?: string;
   queuedCount: number;
   /**
    * Envoi. Rend `true` quand le message est parti ou mis en file (le composer se vide),
@@ -54,6 +56,7 @@ export function Composer({
   degraded,
   disabled,
   disabledPlaceholder,
+  placeholder: namedPlaceholder,
   queuedCount,
   onSend,
   onInterrupt,
@@ -76,7 +79,7 @@ export function Composer({
         ? t.composerFaceIdPlaceholder
         : degraded
           ? t.composerOfflinePlaceholder
-          : t.composerPlaceholder;
+          : (namedPlaceholder ?? t.composerPlaceholder);
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
   const canSend = !locked && !disabled && !sending && hasContent;

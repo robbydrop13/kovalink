@@ -239,6 +239,68 @@ describe('Hub : poignee de main', () => {
   });
 });
 
+describe('Hub : rejeu des fins de tour apres un instantane (docs/16, 6.5)', () => {
+  const turnEnd = (paneId: number, ref: string) =>
+    ({
+      state: 'turn_end',
+      paneId,
+      sessionId: SESSION,
+      endedAt: '2026-09-12T18:00:00.000Z',
+      summary: 'Done.',
+      subtitle: '1m 00s, 0 tools',
+      toolCount: 0,
+      durationMs: 60_000,
+      promptRef: ref,
+    }) as const;
+
+  it('une app lancee a froid recoit, apres panes.snapshot, le dernier prompt lisible de chaque pane', async () => {
+    const h = harness();
+    // Une fin de tour survenue AVANT que le telephone se connecte.
+    h.hub.pushPrompt(turnEnd(66, 'ref-a'));
+    h.hub.pushPrompt(turnEnd(66, 'ref-b'));
+    const client = h.connect();
+    await client.say(hello());
+    const msgs = await client.say({ t: 'panes.subscribe', id: 'p1' });
+    await new Promise((r) => setTimeout(r, 10));
+    const all = client.sent.slice(client.sent.length - 3);
+    const snapAt = all.findIndex((m) => m.t === 'panes.snapshot');
+    const promptAt = all.findIndex((m) => m.t === 'prompt');
+    assert.ok(msgs[0]?.t === 'panes.snapshot');
+    assert.ok(promptAt > snapAt, 'le snapshot d abord, pour que l app connaisse le pane');
+    const prompt = all[promptAt] as { prompt: { promptRef?: string } };
+    assert.equal(prompt.prompt.promptRef, 'ref-b', 'seule la derniere reference compte');
+  });
+
+  it('un pane repasse en travail, ferme, ou rend none : plus rien a rejouer', async () => {
+    const h = harness();
+    h.hub.pushPrompt(turnEnd(66, 'ref-a'));
+    assert.equal(h.hub.replayablePrompts().length, 1);
+    h.hub.forgetPrompt(66);
+    assert.equal(h.hub.replayablePrompts().length, 0);
+    h.hub.pushPrompt(turnEnd(66, 'ref-b'));
+    h.hub.pushPrompt({ state: 'none', paneId: 66 });
+    assert.equal(h.hub.replayablePrompts().length, 0);
+    // Un pane qui n'existe plus dans le store n'est pas rejoue, meme si son prompt traine.
+    h.hub.pushPrompt(turnEnd(99, 'ref-x'));
+    const client = h.connect();
+    await client.say(hello());
+    await client.say({ t: 'panes.subscribe', id: 'p1' });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(client.sent.filter((m) => m.t === 'prompt').length, 0);
+  });
+
+  it('une reprise avec etag a jour rejoue aussi les prompts : les fins de tour hors ligne ne se perdent pas', async () => {
+    const h = harness();
+    h.hub.pushPrompt(turnEnd(66, 'ref-off'));
+    const client = h.connect();
+    await client.say({ ...hello(), resume: { panesEtag: h.panes.etag } } as C2S);
+    await client.say({ t: 'panes.subscribe', id: 'p1' });
+    await new Promise((r) => setTimeout(r, 10));
+    const prompts = client.sent.filter((m) => m.t === 'prompt') as { prompt: { promptRef?: string } }[];
+    assert.deepEqual(prompts.map((p) => p.prompt.promptRef), ['ref-off']);
+  });
+});
+
 describe('Hub : attache de session et instantane (H2)', () => {
   it('le premier attach rend les turns, et le SECOND aussi, jamais une liste vide', async () => {
     writeTranscript();

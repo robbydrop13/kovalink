@@ -22,6 +22,8 @@ interface Props {
   onHeaderPress: () => void;
   /** Balayage d'une ligne : fermer, favori, renommer. */
   swipeFor: (pane: Pane, group: TabGroup) => SwipeActions;
+  /** Cmd+J : le pane est non lu sur ce téléphone. */
+  isUnread: (pane: Pane) => boolean;
   onInterrupt: (paneId: number) => void;
   interruptDisabled: boolean;
   interruptLabel: (paneId: number) => string;
@@ -40,6 +42,7 @@ export function TabGroupView({
   onRelaunch,
   onHeaderPress,
   swipeFor,
+  isUnread,
   onInterrupt,
   interruptDisabled,
   interruptLabel,
@@ -85,6 +88,7 @@ export function TabGroupView({
               <SessionRow
                 pane={pane}
                 prompt={prompts[pane.id]}
+                unread={isUnread(pane)}
                 onOpen={() => onOpen(pane.id)}
                 onRelaunch={() => onRelaunch(pane)}
                 interruptDisabled={interruptDisabled}

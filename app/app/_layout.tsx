@@ -83,6 +83,8 @@ export default function RootLayout() {
           <Stack.Screen name="new-session" options={{ presentation: 'modal' }} />
           <Stack.Screen name="panes" options={{ presentation: 'modal' }} />
           <Stack.Screen name="rename" options={{ presentation: 'modal' }} />
+          {/* Cmd+Shift+J : les non lus (docs/16, option C). */}
+          <Stack.Screen name="unread" options={{ presentation: 'modal' }} />
           {/* Session fermée en lecture seule (design 4.11), reprise sur action explicite. */}
           <Stack.Screen name="history/[sessionId]" />
           {/* Bloc C. L'onglet Fichiers ne dépend pas de Kova : il reste utilisable quand

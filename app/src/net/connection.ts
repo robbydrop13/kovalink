@@ -14,6 +14,8 @@ import { loadCredentials, rotateToken } from '@/store/credentials';
 import { useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { usePrompts } from '@/store/prompts';
+import { useReads } from '@/store/reads';
+import { staleMarks } from '@/features/sessions/unread';
 import { useSession } from '@/store/session';
 import { useScreens } from '@/store/screen';
 import { usePrefs, type Prefs } from '@/store/prefs';
@@ -63,7 +65,7 @@ function handle(msg: S2C): void {
       conn.setKova(msg.kova.status);
       conn.setLink(msg.link.relay ? 'relayed' : 'direct', msg.link.relay);
       break;
-    case 'panes.snapshot':
+    case 'panes.snapshot': {
       usePanes.getState().applySnapshot({
         panes: msg.panes,
         tabs: msg.tabs,
@@ -71,10 +73,19 @@ function handle(msg: S2C): void {
         appActive: msg.appActive,
         focusPaneId: msg.focusPaneId,
       });
+      // Cmd+J : les marques de lecture et les prompts des panes disparus sont purgés.
+      const alive = msg.panes.map((p) => p.id);
+      useReads.getState().forget(staleMarks(useReads.getState().byPane, msg.panes));
+      usePrompts.getState().keepOnly(alive);
       conn.markSynced();
       break;
+    }
     case 'pane.event':
       usePanes.getState().applyEvent(msg);
+      if (msg.ev === 'pane-close') {
+        useReads.getState().forget([msg.paneId]);
+        usePrompts.getState().keepOnly(usePanes.getState().panes.map((p) => p.id));
+      }
       break;
     case 'prompt': {
       usePrompts.getState().setPrompt(msg.prompt);

@@ -7,6 +7,22 @@
 // chemins nominaux, pas des cas d'erreur.
 import { PROMPT_AGING_MS, type Prompt } from '@/protocol';
 import { create } from 'zustand';
+import { kvGet, kvSet } from '@/db';
+
+/**
+ * Cache des prompts lisibles (docs/16, 6.5) : la liste hors ligne montre les non lus du
+ * dernier état connu. Rien n'est marqué lu depuis ce cache sans affichage.
+ */
+const PROMPTS_KEY = 'prompts.byPane';
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersist(byPane: () => Record<number, Prompt>): void {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    const live = Object.fromEntries(Object.entries(byPane()).filter(([, p]) => p.state !== 'none'));
+    void kvSet(PROMPTS_KEY, live);
+  }, 500);
+}
 
 /**
  * Phases pilotées par l'app. Les états `unparsable`, `unavailable` et `aging` du design ne
@@ -29,7 +45,11 @@ interface PromptsState {
   /** Option en cours d'envoi, pour afficher le spinner sur le bon bouton. */
   pendingIndex: Record<number, number>;
   notice: Record<number, string | null>;
+  hydrated: boolean;
+  hydrate: () => Promise<void>;
   setPrompt: (prompt: Prompt) => void;
+  /** Panes disparus d'un instantané : leurs prompts n'ont plus de sens. */
+  keepOnly: (paneIds: readonly number[]) => void;
   setPhase: (paneId: number, phase: BarPhase, pendingIndex?: number) => void;
   setNotice: (paneId: number, notice: string | null) => void;
   clear: (paneId: number) => void;
@@ -40,6 +60,22 @@ export const usePrompts = create<PromptsState>((set, get) => ({
   phase: {},
   pendingIndex: {},
   notice: {},
+  hydrated: false,
+
+  hydrate: async () => {
+    if (get().hydrated) return;
+    const stored = (await kvGet<Record<number, Prompt>>(PROMPTS_KEY).catch(() => null)) ?? {};
+    // Ce que le Mac a déjà dit depuis le lancement l'emporte sur le cache.
+    set((s) => ({ byPane: { ...stored, ...s.byPane }, hydrated: true }));
+  },
+
+  keepOnly: (paneIds) => {
+    const alive = new Set(paneIds);
+    const byPane = Object.fromEntries(Object.entries(get().byPane).filter(([id]) => alive.has(Number(id))));
+    if (Object.keys(byPane).length === Object.keys(get().byPane).length) return;
+    set({ byPane });
+    schedulePersist(() => get().byPane);
+  },
 
   setPrompt: (prompt) => {
     const paneId = prompt.paneId;
@@ -52,6 +88,7 @@ export const usePrompts = create<PromptsState>((set, get) => ({
         phase: { ...s.phase, [paneId]: wasOpen ? 'expired' : 'hidden' },
         notice: { ...s.notice, [paneId]: null },
       }));
+      schedulePersist(() => get().byPane);
       return;
     }
     // Une nouvelle question repasse par `entering`, donc par une nouvelle fenêtre
@@ -65,6 +102,7 @@ export const usePrompts = create<PromptsState>((set, get) => ({
       byPane: { ...s.byPane, [paneId]: prompt },
       phase: { ...s.phase, [paneId]: sameQuestion ? (s.phase[paneId] ?? 'armed') : 'entering' },
     }));
+    schedulePersist(() => get().byPane);
   },
 
   setPhase: (paneId, phase, pendingIndex) =>

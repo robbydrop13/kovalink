@@ -15,6 +15,8 @@ import { paneBadge, paneHref, paneLabel } from '@/features/sessions/SessionRow';
 import { tabTint } from '@/features/sessions/TabGroupView';
 import { groupByTab, isStaleSession, paletteEntries } from '@/features/sessions/tabGroups';
 import { closedMatching } from '@/features/sessions/closedSessions';
+import { isUnread } from '@/features/sessions/unread';
+import { useReads } from '@/store/reads';
 import { askResume, readSession, sessionAge } from '@/features/sessions/resume';
 import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
@@ -33,6 +35,7 @@ export default function PanesPaletteScreen() {
   const panes = usePanes((s) => s.panes);
   const tabs = usePanes((s) => s.tabs);
   const prompts = usePrompts((s) => s.byPane);
+  const marks = useReads((s) => s.byPane);
   const kova = useConnection((s) => s.kova);
   const [query, setQuery] = useState('');
   const [sessions, setSessions] = useState<KovaSessionEntry[] | null>(null);
@@ -91,13 +94,16 @@ export default function PanesPaletteScreen() {
         title: paneLabel(pane),
         subtitle: pane.agent && pane.agent !== pane.title ? `${pane.projectName} · ${pane.agent}` : pane.projectName,
         badge: paneBadge(pane, prompts[pane.id]),
-        badgeColor: pane.awaiting
-          ? colors.status.awaiting
-          : pane.working
-            ? colors.status.working
-            : isStaleSession(pane)
-              ? colors.status.awaiting
-              : colors.text.tertiary,
+        // Non lu (Cmd+J) : le badge passe à l'accent, pour que Cmd+P montre ce que Cmd+J va parcourir.
+        badgeColor: isUnread(pane, prompts[pane.id], marks)
+          ? colors.accent.primary
+          : pane.awaiting
+            ? colors.status.awaiting
+            : pane.working
+              ? colors.status.working
+              : isStaleSession(pane)
+                ? colors.status.awaiting
+                : colors.text.tertiary,
         starred: sessionId !== null && bookmarked.has(sessionId),
         swipe: swipeFor(pane, group.title),
       };
@@ -122,8 +128,24 @@ export default function PanesPaletteScreen() {
     if (rest(closedRows).length > 0) {
       out.push({ key: 'section:closed', tint: null, title: t.panesSectionClosed(rest(closedRows).length), subtitle: '', section: true }, ...rest(closedRows));
     }
+    // Sous les résultats : créer une session sur un projet récent qui correspond à la saisie (Cmd+O fusionné).
+    if (projectMatches.length > 0) {
+      out.push({ key: 'section:projects', tint: null, title: t.panesSectionProjects, subtitle: '', section: true });
+      for (const p of projectMatches) {
+        const busy = launching === p.index;
+        out.push({
+          key: `${PROJECT_PREFIX}${p.index}`,
+          tint: colors.accent.primary,
+          title: t.panesNewSessionIn(p.label),
+          subtitle: p.path,
+          badge: busy ? t.projectsCreating : undefined,
+          badgeColor: colors.status.working,
+          disabled: launching !== null,
+        });
+      }
+    }
     return out;
-  }, [entries, closed, prompts, bookmarked, swipeFor]);
+  }, [entries, closed, prompts, bookmarked, swipeFor, marks, projectMatches, launching]);
 
   const closedOf = (row: PaletteRow): KovaSessionEntry | undefined =>
     row.key.startsWith(CLOSED_PREFIX) ? closed.find((s) => s.sessionId === row.key.slice(CLOSED_PREFIX.length)) : undefined;

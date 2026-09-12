@@ -127,10 +127,11 @@ export function filterGroups(groups: TabGroup[], query: string): TabGroup[] {
 }
 
 /** Résumé d'un coup d'œil, tout en haut : « 1 waiting · 2 working ». Vide sinon. */
-export function summaryLine(panes: Pane[]): string | null {
+export function summaryLine(panes: Pane[], unread = 0): string | null {
   const awaiting = panes.filter((p) => p.awaiting).length;
   const working = panes.filter((p) => !p.awaiting && p.working).length;
   const parts: string[] = [];
+  if (unread > 0) parts.push(t.summaryUnread(unread));
   if (awaiting > 0) parts.push(t.summaryWaiting(awaiting));
   if (working > 0) parts.push(t.summaryWorking(working));
   return parts.length > 0 ? parts.join(' · ') : null;

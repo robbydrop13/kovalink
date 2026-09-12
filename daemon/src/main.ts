@@ -205,6 +205,8 @@ async function run(): Promise<void> {
         // pane pour toujours (`agent !== 'claude'`). Mesure sur un pane jetable.
         if (working && (panes.get(paneId)?.agent ?? null) === null) void refreshPanes('agent inconnu');
         panes.setWorking(paneId, working);
+        // Le tour suivant a commence : l'ancienne fin de tour n'est plus a rejouer.
+        if (working) hub.forgetPrompt(paneId);
         hub.pushPaneEvent({ t: 'pane.event', ev: 'pane-working', paneId, working });
         sleep.reconcile(panes.anyWorking());
         return;
@@ -221,6 +223,7 @@ async function run(): Promise<void> {
         const tab = Number(ev['tab'] ?? 0);
         panes.remove(paneId, window, tab);
         refs.invalidatePane(paneId);
+        hub.forgetPrompt(paneId);
         hub.pushPaneEvent({ t: 'pane.event', ev: 'pane-close', paneId, window, tab });
         void refreshTabs();
         return;

@@ -16,6 +16,8 @@ import { t } from '@/i18n/en';
 import { loadCredentials } from '@/store/credentials';
 import { usePanes } from '@/store/panes';
 import { useDrafts } from '@/store/drafts';
+import { useReads } from '@/store/reads';
+import { usePrompts } from '@/store/prompts';
 import { usePrefs } from '@/store/prefs';
 import { startConnection } from '@/net/connection';
 import { setupNotifications, subscribeToNotifications } from '@/notifications/register';
@@ -98,6 +100,8 @@ export async function runBoot(): Promise<void> {
     // 3. Cache local des panes. La liste doit être visible avant le réseau.
     await attempt('panes cache', () => usePanes.getState().hydrate());
     await attempt('drafts', () => useDrafts.getState().hydrate());
+    await attempt('read marks', () => useReads.getState().hydrate());
+    await attempt('prompts cache', () => usePrompts.getState().hydrate());
 
     // L'app est affichable ici. Tout ce qui suit est asynchrone et facultatif.
     bootLog('device paired, route /');

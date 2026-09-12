@@ -90,6 +90,13 @@ export class Hub {
   private readonly clients = new Set<Client>();
   /** Compteur de sequence par session, pour la pagination et les reprises. */
   private readonly seqs = new Map<string, number>();
+  /**
+   * Dernier `Prompt` lisible par pane (`turn_end`, `parsed`, `unparsable`), rejoue apres
+   * chaque instantane de panes : une app lancee a froid ne connaitrait sinon aucun tour
+   * termine pendant qu'elle etait fermee, et Cmd+J n'aurait rien a parcourir (docs/16, 6.5).
+   * Oublie sur `none`, sur `pane-close` et quand le pane repasse en travail.
+   */
+  private readonly lastPrompts = new Map<number, Prompt>();
   private readonly now: () => number;
   private heartbeatTimer: NodeJS.Timeout | null = null;
 
@@ -314,10 +321,13 @@ export class Hub {
         // remis a zero par un redemarrage ne peut pas collisionner avec l'ancien.
         if (client.resumeEtag !== null && client.resumeEtag === panes.etag) {
           client.resumeEtag = null;
-          return this.send(client, { t: 'ack', reqId: msg.id });
+          this.send(client, { t: 'ack', reqId: msg.id });
+          // Les panes sont a jour, pas forcement les fins de tour survenues hors ligne.
+          return this.replayPrompts((m) => this.send(client, m));
         }
         client.resumeEtag = null;
-        return this.send(client, this.panesSnapshot());
+        this.send(client, this.panesSnapshot());
+        return this.replayPrompts((m) => this.send(client, m));
       }
 
       case 'pane.peek': {
@@ -497,6 +507,28 @@ export class Hub {
   pushPanesSnapshot(): void {
     const snap = this.panesSnapshot();
     this.broadcast(snap, (c) => c.panesSubscribed);
+    this.replayPrompts((m) => this.broadcast(m, (c) => c.panesSubscribed));
+  }
+
+  /** Les prompts lisibles des panes encore ouverts, APRES l'instantane (l'app doit connaitre le pane). */
+  private replayPrompts(send: (m: S2C) => void): void {
+    for (const [paneId, prompt] of this.lastPrompts) {
+      if (!this.services.panes.get(paneId)) {
+        this.lastPrompts.delete(paneId);
+        continue;
+      }
+      send({ t: 'prompt', prompt });
+    }
+  }
+
+  /** Le pane repasse en travail ou ferme : son ancienne fin de tour n'est plus l'etat lisible. */
+  forgetPrompt(paneId: number): void {
+    this.lastPrompts.delete(paneId);
+  }
+
+  /** Pour les tests : les prompts qui seraient rejoues. */
+  replayablePrompts(): Prompt[] {
+    return [...this.lastPrompts.values()];
   }
 
   pushPaneEvent(event: Extract<S2C, { t: 'pane.event' }>): void {
@@ -504,6 +536,8 @@ export class Hub {
   }
 
   pushPrompt(prompt: Prompt): void {
+    if (prompt.state === 'none') this.lastPrompts.delete(prompt.paneId);
+    else this.lastPrompts.set(prompt.paneId, prompt);
     this.broadcast({ t: 'prompt', prompt });
   }
 

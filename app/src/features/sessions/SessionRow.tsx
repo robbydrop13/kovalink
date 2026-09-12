@@ -19,6 +19,8 @@ import { t } from '@/i18n/en';
 interface Props {
   pane: Pane;
   prompt?: Prompt | undefined;
+  /** Cmd+J : non lu sur ce téléphone, badge sur fond accent avec un point plein (P4). */
+  unread?: boolean;
   onOpen: () => void;
   /** Session périmée : relancer Claude dans ce dossier (feuille « Nouvelle session »). */
   onRelaunch?: () => void;
@@ -53,6 +55,7 @@ export function paneLabel(pane: Pane): string {
 export function SessionRow({
   pane,
   prompt,
+  unread = false,
   onOpen,
   onRelaunch,
   onInterrupt,
@@ -78,10 +81,11 @@ export function SessionRow({
           <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.title}>
             {paneLabel(pane)}
           </Txt>
-          <View style={[styles.badge, working && styles.badgeWorking, stale && styles.badgeStale]}>
+          <View style={[styles.badge, working && styles.badgeWorking, stale && styles.badgeStale, unread && styles.badgeUnread]}>
+            {unread ? <View style={styles.unreadDot} /> : null}
             <Txt
               variant="caption"
-              color={working ? colors.status.working : stale ? colors.status.awaiting : colors.text.tertiary}
+              color={unread ? colors.accent.primary : working ? colors.status.working : stale ? colors.status.awaiting : colors.text.tertiary}
             >
               {badge}
             </Txt>
@@ -131,6 +135,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.overlay,
   },
   badgeWorking: { backgroundColor: colors.status.workingBg },
+  badgeUnread: { backgroundColor: colors.accent.subtleBg, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  unreadDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent.primary },
   badgeStale: { backgroundColor: colors.status.awaitingBg },
   actions: { flexDirection: 'row', gap: space[6], marginTop: space[1] },
 });
