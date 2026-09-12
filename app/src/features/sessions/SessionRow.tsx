@@ -2,8 +2,9 @@
 //
 // `Interrompre` est présent sur un pane qui travaille parce que le scénario S3 (l'agent est
 // parti de travers) décrit un pane `working: true`, pas un pane `awaiting` : le geste le
-// plus urgent du produit ne doit pas demander d'ouvrir la session (C21, C32). `Sur le Mac`
-// (`focus-pane`) est un lien visible, sans appui long : c'est le Cmd+P de Kova.
+// plus urgent du produit ne doit pas demander d'ouvrir la session (C21, C32). Ouvrir une
+// session bascule l'onglet sur le Mac (réglage « Suivre sur le Mac ») : c'est le Cmd+P de
+// Kova, aucun lien séparé n'est nécessaire.
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { Pane, Prompt } from '@/protocol';
 import { colors, layout, radius, space } from '@/theme';
@@ -18,8 +19,6 @@ interface Props {
   pane: Pane;
   prompt?: Prompt | undefined;
   onOpen: () => void;
-  /** `Ouvrir sur le Mac` : `focus-pane`, en lien visible. */
-  onOpenOnMac?: () => void;
   /** Session périmée : relancer Claude dans ce dossier (feuille « Nouvelle session »). */
   onRelaunch?: () => void;
   onInterrupt?: () => void;
@@ -49,13 +48,10 @@ export function paneLabel(pane: Pane): string {
   return pane.title ?? pane.agent ?? 'pane';
 }
 
-export const OPEN_ON_MAC_LABEL = 'Sur le Mac';
-
 export function SessionRow({
   pane,
   prompt,
   onOpen,
-  onOpenOnMac,
   onRelaunch,
   onInterrupt,
   interruptDisabled = false,
@@ -94,7 +90,6 @@ export function SessionRow({
         </Txt>
         <PermissionNote mode={pane.permissionMode} />
         <View style={styles.actions}>
-          {onOpenOnMac ? <LinkAction label={OPEN_ON_MAC_LABEL} onPress={onOpenOnMac} /> : null}
           {stale && onRelaunch ? <LinkAction label="Relancer Claude" onPress={onRelaunch} /> : null}
           {working && onInterrupt ? (
             <LinkAction

@@ -5,9 +5,21 @@
 // Aucune confirmation : le geste est sûr, il ne fait que mettre un onglet au premier plan.
 import { ActionSheetIOS, Platform } from 'react-native';
 import { focusPaneOnMac } from '@/net/connection';
+import { usePrefs } from '@/store/prefs';
 import { ImpactStyle, impact } from '@/utils/haptics';
+import { followNotice, followPane } from './follow';
 
 const OPEN_ON_MAC_LABEL = 'Ouvrir sur le Mac';
+
+/**
+ * « Suivre sur le Mac » : appelé à l'ouverture d'une session, quel que soit le chemin
+ * (liste, palette, notification, nouvel onglet). Ne bloque rien : le message part sur la
+ * liaison et l'écran s'ouvre. Rend le toast à afficher, ou `null`.
+ */
+export function followSessionOnMac(paneId: number): string | null {
+  const enabled = usePrefs.getState().prefs.followOnMac;
+  return followNotice(followPane(paneId, enabled, focusPaneOnMac));
+}
 
 /** Envoie la commande. Rend un libellé de compte rendu à afficher, jamais une exception. */
 export function openOnMac(paneId: number): string {

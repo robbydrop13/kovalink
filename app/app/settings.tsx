@@ -117,6 +117,13 @@ export default function SettingsScreen() {
             republishPrefs();
           }}
         />
+        <Row
+          title="Suivre sur le Mac"
+          subtitle="Ouvrir une session ici bascule l’onglet sur le Mac, comme Cmd+P. À couper si quelqu’un travaille sur le Mac pendant que tu lis."
+          value={prefs.followOnMac}
+          // Réglage local à l'iPhone : l'app décide d'émettre ou non `focus-pane`.
+          onChange={(v) => setPref('followOnMac', v)}
+        />
 
         <Section title="SÉCURITÉ" />
         <View style={styles.card}>

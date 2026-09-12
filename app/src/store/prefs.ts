@@ -1,4 +1,4 @@
-// Quatre réglages interactifs et cinq compteurs en lecture seule (design 4.10).
+// Cinq réglages interactifs et cinq compteurs en lecture seule (design 4.10).
 // Tout le reste est en dur : thème sombre (A9), main droite, code 13 pt, terminal 12 pt,
 // outils repliés, plage calme 23h-07h non réglable.
 import { kvGet, kvSet } from '@/db';
@@ -14,12 +14,18 @@ export interface Prefs {
   quietHours: boolean;
   /** Assertion IOKit côté daemon tant qu'un pane travaille, 4 h max (A1, A13). */
   keepMacAwake: boolean;
+  /**
+   * Ouvrir une session depuis l'iPhone bascule l'onglet sur le Mac (`focus-pane`), comme
+   * Cmd+P. À couper quand quelqu'un travaille sur le Mac pendant que Robin lit.
+   */
+  followOnMac: boolean;
 }
 
 const DEFAULT_PREFS: Prefs = {
   onlyValidations: false,
   quietHours: true,
   keepMacAwake: true,
+  followOnMac: true,
 };
 
 export interface Counters {

@@ -15,7 +15,6 @@ interface Props {
   prompts: Record<number, Prompt>;
   aging: (paneId: number) => boolean;
   onOpen: (paneId: number) => void;
-  onOpenOnMac: (paneId: number) => void;
   onRelaunch: (pane: Pane) => void;
   /** Tap sur l'en-tête d'onglet : la palette des panes (Cmd+P). */
   onHeaderPress: () => void;
@@ -34,7 +33,6 @@ export function TabGroupView({
   prompts,
   aging,
   onOpen,
-  onOpenOnMac,
   onRelaunch,
   onHeaderPress,
   onInterrupt,
@@ -74,7 +72,6 @@ export function TabGroupView({
               prompt={prompts[pane.id]}
               aging={aging(pane.id)}
               onOpen={() => onOpen(pane.id)}
-              onOpenOnMac={() => onOpenOnMac(pane.id)}
               interruptDisabled={interruptDisabled}
               interruptLabel={interruptLabel(pane.id)}
               onInterrupt={() => onInterrupt(pane.id)}
@@ -85,7 +82,6 @@ export function TabGroupView({
               pane={pane}
               prompt={prompts[pane.id]}
               onOpen={() => onOpen(pane.id)}
-              onOpenOnMac={() => onOpenOnMac(pane.id)}
               onRelaunch={() => onRelaunch(pane)}
               interruptDisabled={interruptDisabled}
               interruptLabel={interruptLabel(pane.id)}

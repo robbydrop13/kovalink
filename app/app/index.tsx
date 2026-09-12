@@ -5,8 +5,8 @@
 // d'onglets du Mac, avec la couleur et le nom de l'onglet, et sous chaque onglet ses panes.
 // Les états sont des badges, pas des sections : un pane qui attend garde sa carte, à sa
 // place. Une ligne de résumé en tête dit ce qui attend. La recherche filtre onglets et
-// panes sans casser le regroupement, et `Sur le Mac` (`focus-pane`) est un lien visible
-// sur chaque pane : c'est le Cmd+P de Kova. `Nouvelle session` en bas est son Cmd+O.
+// panes sans casser le regroupement. Ouvrir une session bascule l'onglet sur le Mac
+// (réglage « Suivre sur le Mac ») : c'est le Cmd+P de Kova, `Projets` en bas son Cmd+O.
 //
 // Aucun bouton d'approbation ici (A7, P3). `Interrompre` en revanche est disponible sur la
 // carte EN ATTENTE comme sur la ligne TRAVAILLE : c'est le geste sûr, on le rend le plus
@@ -26,7 +26,6 @@ import { TabGroupView } from '@/features/sessions/TabGroupView';
 import { paneHref } from '@/features/sessions/SessionRow';
 import { filterGroups, groupByTab, summaryLine, windowCount } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
-import { openOnMac } from '@/features/sessions/openOnMac';
 import { isDegraded, useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { isAging, usePrompts } from '@/store/prompts';
@@ -90,7 +89,6 @@ export default function SessionsScreen() {
   };
   const relaunch = (pane: Pane) =>
     router.push({ pathname: '/new-session', params: { cwd: pane.cwd } });
-  const onMac = (paneId: number) => setToast(openOnMac(paneId));
   const aging = (paneId: number) => isAging(prompts[paneId]);
 
   /**
@@ -240,7 +238,6 @@ export default function SessionsScreen() {
                   prompts={prompts}
                   aging={aging}
                   onOpen={open}
-                  onOpenOnMac={onMac}
                   onRelaunch={relaunch}
                   onHeaderPress={() => router.push('/panes')}
                   onInterrupt={(id) => void interrupt(id)}

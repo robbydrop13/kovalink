@@ -40,7 +40,7 @@ import { ValidationBar } from '@/features/prompt/ValidationBar';
 import { MonospaceFallback } from '@/features/terminal/MonospaceFallback';
 import { NumericKeypad } from '@/features/terminal/NumericKeypad';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
-import { showPaneMenu } from '@/features/sessions/openOnMac';
+import { followSessionOnMac, showPaneMenu } from '@/features/sessions/openOnMac';
 import { dismissBannersForPane, paneIdentity } from '@/notifications/banners';
 import {
   attachSession,
@@ -152,6 +152,18 @@ export default function SessionScreen() {
   // Abonnement : uniquement le pane et la session visibles. Jamais les autres.
   useEffect(() => {
     setVisiblePane(paneId);
+    // « Suivre sur le Mac » : l'onglet bascule sur le Mac comme avec Cmd+P, quel que soit
+    // le chemin d'arrivée (liste, palette, notification, nouvel onglet). En arrière plan :
+    // l'écran s'ouvre quoi qu'il arrive, un échec se dit dans un toast.
+    const notice = followSessionOnMac(paneId);
+    if (notice) {
+      const timer = setTimeout(() => setToast(notice), 0);
+      return () => {
+        clearTimeout(timer);
+        setVisiblePane(null);
+        detachSession();
+      };
+    }
     return () => {
       setVisiblePane(null);
       detachSession();
