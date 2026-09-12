@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Info.plist de la Share Extension.
+
+  Il est VERSIONNÉ plutôt que généré : `@bacons/apple-targets` n'écrit son gabarit que si le
+  fichier est absent, et son gabarit porte `NSExtensionActivationRule: TRUEPREDICATE`, qui
+  fait apparaître KovaLink dans absolument toutes les feuilles de partage, y compris celles
+  où il n'a rien à faire. La règle ci dessous dit ce que l'extension sait réellement traiter.
+
+  `NSExtensionPrincipalClass` doit rester `$(PRODUCT_MODULE_NAME).ShareViewController` :
+  c'est le nom de classe de `ShareViewController.swift`.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>$(PRODUCT_NAME)</string>
+  <key>CFBundleDisplayName</key>
+  <string>KovaLink</string>
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundlePackageType</key>
+  <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>NSExtension</key>
+  <dict>
+    <key>NSExtensionPointIdentifier</key>
+    <string>com.apple.share-services</string>
+    <key>NSExtensionPrincipalClass</key>
+    <string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+    <key>NSExtensionAttributes</key>
+    <dict>
+      <key>NSExtensionActivationRule</key>
+      <dict>
+        <key>NSExtensionActivationSupportsImageWithMaxCount</key>
+        <integer>20</integer>
+        <key>NSExtensionActivationSupportsMovieWithMaxCount</key>
+        <integer>20</integer>
+        <key>NSExtensionActivationSupportsFileWithMaxCount</key>
+        <integer>20</integer>
+        <key>NSExtensionActivationSupportsText</key>
+        <true/>
+        <key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+        <integer>1</integer>
+      </dict>
+    </dict>
+  </dict>
+</dict>
+</plist>

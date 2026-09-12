@@ -1,0 +1,26 @@
+{
+  "name": "kovalink",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KovaLink : piloter ses sessions Claude Code dans Kova depuis un iPhone.",
+  "workspaces": [
+    "packages/*",
+    "daemon"
+  ],
+  "scripts": {
+    "build": "tsc -b packages/protocol daemon && node packages/protocol/scripts/gen-swift.mjs",
+    "clean": "tsc -b --clean packages/protocol daemon",
+    "test": "npm run build && npm run test --workspace daemon",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "eslint": "^9.39.5",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.70.0"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "type": "module"
+}

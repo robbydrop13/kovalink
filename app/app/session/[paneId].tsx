@@ -1,0 +1,890 @@
+// Écran de session. L'écran central du produit depuis D1 : la notification arrive, Robin
+// ouvre, LIT LE DERNIER ÉCHANGE, et donne la suite.
+//
+// Lisibilité (docs/13-chat-lisibilite.md) : un bandeau d'état fixe dit si l'agent travaille,
+// le texte de l'assistant est pleine largeur sans bulle, les actions sont des lignes
+// compactes avec leur état, la vue est calée sur les TROIS derniers échanges et
+// l'historique se charge en tirant vers le haut. La fenêtre visible ne se referme jamais
+// tant que l'écran est ouvert : un nouvel envoi ne replie pas ce que Robin lisait
+// (points 7, 8 et 10).
+//
+// Deux vues internes en lot 1 : `Chat` et `Term` (repli monospace, alimenté en direct par
+// `pane.screen`). La vue `Fichiers` est en lot 3 et n'est pas rendue, plutôt qu'affichée morte.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { NotifyType, notify } from '@/utils/haptics';
+
+import { attachmentsDir, indexToolResults, type PromptOption, type Turn } from '@/protocol';
+import { colors, layout, radius, space } from '@/theme';
+import { Button, LinkAction } from '@/ui/Button';
+import { LinkPill } from '@/ui/LinkPill';
+import { Banner, EmptyState, SkeletonList } from '@/ui/States';
+import { Txt } from '@/ui/Txt';
+import { AgentStatus } from '@/features/chat/AgentStatus';
+import { AssistantTurn, OrphanResults, StreamDot, UserBubble } from '@/features/chat/Bubble';
+import { Composer } from '@/features/chat/Composer';
+import { StaleQueue } from '@/features/chat/StaleQueue';
+import { confirmCellularSend } from '@/features/chat/AttachmentViews';
+import { totalSize, type Attachment } from '@/features/chat/attachments';
+import { ValidationBar } from '@/features/prompt/ValidationBar';
+import { MonospaceFallback } from '@/features/terminal/MonospaceFallback';
+import { NumericKeypad } from '@/features/terminal/NumericKeypad';
+import { useInterrupt } from '@/features/sessions/useInterrupt';
+import { showPaneMenu } from '@/features/sessions/openOnMac';
+import { dismissBannersForPane, paneIdentity } from '@/notifications/banners';
+import {
+  attachSession,
+  detachSession,
+  forceReconnect,
+  peek,
+  requestScreen,
+  setVisiblePane,
+} from '@/net/connection';
+import { fetchTurns } from '@/net/http';
+import { LINK_LABEL, isDegraded, useConnection } from '@/store/connection';
+import { paneById, usePanes } from '@/store/panes';
+import { usePrompts } from '@/store/prompts';
+import { useScreens } from '@/store/screen';
+import {
+  recentExchanges,
+  toolCallIds,
+  transcriptMark,
+  unconfirmed,
+  useSession,
+  withoutEchoed,
+  type PendingMessage,
+} from '@/store/session';
+import { answerPrompt } from '@/actions/answer';
+import { flushOutbox } from '@/actions/outboxRunner';
+import { sendText, type Pieces } from '@/actions/sendText';
+import {
+  TEXT_QUEUE_MAX,
+  confirmStale,
+  countPending,
+  dequeue,
+  staleTexts,
+  type OutboxJob,
+} from '@/db/outbox';
+import { needsCellularChoice } from '@/store/transfers';
+import { shortAgeMs, truncatePath } from '@/utils/time';
+import { useClock } from '@/utils/useClock';
+
+type ViewMode = 'chat' | 'term';
+
+/** Au delà, on montre une erreur actionnable plutôt qu'un squelette qui ne finit jamais. */
+const SESSION_RESOLVE_TIMEOUT_MS = 8_000;
+
+/**
+ * Rafraîchissement du repli monospace. Le design dit 1 Hz ; le daemon plafonne `screen` à
+ * 60 lectures par minute et par appareil, 2 s laisse la moitié de marge à un `Rafraîchir`.
+ */
+const SCREEN_REFRESH_MS = 2_000;
+
+export default function SessionScreen() {
+  const params = useLocalSearchParams<{ paneId: string; focus?: string; view?: string }>();
+  const paneId = Number(params.paneId);
+  const insets = useSafeAreaInsets();
+
+  const pane = usePanes((s) => paneById(s.panes, paneId));
+  const allPanes = usePanes((s) => s.panes);
+  const workingSince = usePanes((s) => s.workingSince[paneId] ?? null);
+  const prompt = usePrompts((s) => s.byPane[paneId]);
+  const phase = usePrompts((s) => s.phase[paneId] ?? 'hidden');
+  const notice = usePrompts((s) => s.notice[paneId] ?? null);
+  const setPhase = usePrompts((s) => s.setPhase);
+  const setNotice = usePrompts((s) => s.setNotice);
+  const link = useConnection((s) => s.link);
+  const degraded = isDegraded(link);
+  const session = useSession();
+  const screen = useScreens((s) => s.byPane[paneId]);
+  const { run: interrupt } = useInterrupt();
+
+  const [view, setView] = useState<ViewMode>(params.view === 'term' ? 'term' : 'chat');
+  const [pending, setPending] = useState<PendingMessage[]>([]);
+  const [queued, setQueued] = useState(0);
+  /** Textes de ce pane en file depuis plus de 15 min : ils attendent Robin (CA-122). */
+  const [stale, setStale] = useState<OutboxJob[]>([]);
+  /**
+   * Premier `seq` visible de la session courante. Posé une fois, à partir des trois
+   * derniers échanges, puis jamais relevé : la fenêtre ne fait que grandir (docs/13, 8 et 10).
+   */
+  const [floor, setFloor] = useState<{ sessionId: string | null; seq: number } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  /** Pane dont le délai de résolution est écoulé. On sort du squelette, quoi qu'il arrive. */
+  const [timedOutPaneId, setTimedOutPaneId] = useState<number | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  /** Collé en bas tant que Robin n'est pas remonté dans l'historique. */
+  const stickToBottom = useRef(true);
+
+  const agentSessionId = pane?.agent_session_id ?? null;
+
+  // Abonnement : uniquement le pane et la session visibles. Jamais les autres.
+  useEffect(() => {
+    setVisiblePane(paneId);
+    return () => {
+      setVisiblePane(null);
+      detachSession();
+    };
+  }, [paneId]);
+
+  useEffect(() => {
+    if (agentSessionId) attachSession(agentSessionId);
+  }, [agentSessionId]);
+
+  // Robin lit ce pane : ses bannières ont servi, elles quittent le centre de notifications
+  // (CA-14). Idem quand le pane n'a plus rien à demander.
+  const projectName = pane?.projectName ?? null;
+  const tabLabel = pane ? paneIdentity(pane).tab : null;
+  const promptRef = prompt && prompt.state !== 'none' ? prompt.promptRef : null;
+  useEffect(() => {
+    if (projectName === null || tabLabel === null) return;
+    void dismissBannersForPane({ id: paneId, projectName, tab: tabLabel }, promptRef ? [promptRef] : []);
+  }, [paneId, projectName, tabLabel, promptRef]);
+
+  // Repli monospace : demandé tant que la vue Term est affichée, puis toutes les 2 s.
+  useEffect(() => {
+    if (view !== 'term') return;
+    requestScreen(paneId);
+    const timer = setInterval(() => requestScreen(paneId), SCREEN_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [view, paneId]);
+
+  // Un `awaiting` qui arrive force le défilement jusqu'au bas du dernier échange (P2).
+  useEffect(() => {
+    if (prompt && prompt.state !== 'none') {
+      stickToBottom.current = true;
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [prompt]);
+
+  const refreshQueue = useCallback(() => {
+    void countPending('text').then(setQueued);
+    void staleTexts().then((jobs) => setStale(jobs.filter((j) => j.paneId === paneId)));
+  }, [paneId]);
+
+  // Relu à chaque envoi et à chaque changement de liaison : un texte devient « à confirmer »
+  // avec le temps, sans que rien d'autre ne bouge.
+  useEffect(() => {
+    refreshQueue();
+  }, [refreshQueue, pending, link]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 2000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  // Filet contre l'écran vide. Un lien profond vers un pane fermé entre temps laissait
+  // `pane` indéfini et la session en `idle` : la condition de squelette restait vraie
+  // pour toujours, et l'écran affichait des rectangles gris sans fin ni explication.
+  // On mémorise QUEL pane a expiré plutôt qu'un booléen remis à zéro dans l'effet :
+  // le changement de pane suffit alors à invalider l'expiration, sans setState synchrone.
+  useEffect(() => {
+    const timer = setTimeout(() => setTimedOutPaneId(paneId), SESSION_RESOLVE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [paneId]);
+  const resolveTimedOut = timedOutPaneId === paneId;
+
+  // Dérivé, pas mis dans l'état : aucune course possible entre l'arrivée du tour serveur
+  // et l'ajout de la bulle locale, quel que soit l'ordre des deux.
+  const stillPending = useMemo(
+    () => withoutEchoed(pending, session.turns, session.sessionId),
+    [pending, session.turns, session.sessionId],
+  );
+  // Horloge à la seconde, seulement quand un message attend sa confirmation (CA-48).
+  const now = useClock(stillPending.some((m) => m.state === 'sent'));
+  const late = useMemo(() => unconfirmed(stillPending, now), [stillPending, now]);
+
+  const closed = session.status === 'closed';
+  // CA-70 : un autre pane passe en attente pendant que celui ci est ouvert. La question
+  // affichée reste celle de ce pane, une bannière annonce l'autre.
+  const otherAwaiting = useMemo(
+    () => allPanes.filter((p) => p.awaiting && p.id !== paneId),
+    [allPanes, paneId],
+  );
+  const working = pane?.working === true;
+  const awaiting = pane?.awaiting === true;
+  const chatCapable = pane?.chatCapable !== false;
+  const hasAgentSession = agentSessionId !== null;
+
+  // Les trois derniers échanges d'abord ; l'historique au dessus sur demande. Le plancher
+  // est posé au premier rendu de la session et ne remonte jamais : un nouvel envoi ajoute
+  // en bas, il ne replie rien en haut.
+  // État dérivé du rendu précédent (motif React « storing information from previous
+  // renders ») : posé pendant le rendu, sans effet ni rendu en cascade.
+  if (session.turns.length > 0 && (!floor || floor.sessionId !== session.sessionId)) {
+    const first = recentExchanges(session.turns)[0];
+    if (first) setFloor({ sessionId: session.sessionId, seq: first.seq });
+  }
+  const turns = useMemo(() => {
+    if (showHistory) return session.turns;
+    if (!floor || floor.sessionId !== session.sessionId) return recentExchanges(session.turns);
+    return session.turns.filter((t) => t.seq >= floor.seq);
+  }, [session.turns, session.sessionId, showHistory, floor]);
+  const hiddenCount = session.turns.length - turns.length;
+  // La jointure `tool_use` vers `tool_result` : une fois, sur tout ce qui est en mémoire.
+  const results = useMemo(() => indexToolResults(session.turns), [session.turns]);
+  const callIds = useMemo(() => toolCallIds(session.turns), [session.turns]);
+  const lastTurn = session.turns[session.turns.length - 1];
+  // Le tour assistant en cours d'écriture : le daemon le complète ligne par ligne (V6).
+  const streamingTurnId =
+    working && lastTurn?.kind === 'assistant' && !lastTurn.stopReason ? lastTurn.id : null;
+  // L'agent travaille mais n'a pas encore commencé à écrire : un point pulse en bas.
+  const tailDot =
+    working && (!lastTurn || lastTurn.kind !== 'assistant' || lastTurn.stopReason === 'end_turn');
+  const finishedAt = useMemo(() => {
+    if (working) return null;
+    if (prompt?.state === 'turn_end') return Date.parse(prompt.endedAt) || null;
+    for (let i = session.turns.length - 1; i >= 0; i--) {
+      const t = session.turns[i];
+      if (t?.kind === 'assistant') return Date.parse(t.ts) || null;
+    }
+    return null;
+  }, [working, prompt, session.turns]);
+
+  const loadOlder = useCallback(async () => {
+    if (!session.sessionId || loadingOlder) return;
+    const first = session.turns[0];
+    setLoadingOlder(true);
+    stickToBottom.current = false;
+    try {
+      const page = await fetchTurns(session.sessionId, first ? { beforeSeq: first.seq } : {});
+      useSession.getState().applyOlder(session.sessionId, page.turns, page.hasMoreBefore);
+    } catch (e) {
+      setToast(`Historique indisponible. ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [session.sessionId, session.turns, loadingOlder]);
+
+  /**
+   * Historique en TIRANT vers le haut (docs/13, point 6) : le premier tirage révèle ce
+   * qui est déjà en mémoire au dessus du dernier échange, les suivants demandent une page
+   * plus ancienne au Mac. Les liens restent pour VoiceOver et pour qui préfère un tap.
+   */
+  const pullOlder = useCallback(() => {
+    if (!showHistory && hiddenCount > 0) {
+      stickToBottom.current = false;
+      setShowHistory(true);
+      return;
+    }
+    if (session.hasMoreBefore && !degraded) void loadOlder();
+  }, [showHistory, hiddenCount, session.hasMoreBefore, degraded, loadOlder]);
+
+  /**
+   * Envoi d'un message, avec ou sans pièces jointes (docs/15). Rend `true` quand le
+   * message est parti ou mis en file, `false` quand rien n'est parti : le composer garde
+   * alors le texte et les vignettes.
+   */
+  const onSend = useCallback(
+    async (text: string, attachments: Attachment[] = []): Promise<boolean> => {
+      if (text.length === 0 && attachments.length === 0) return false;
+      let pieces: Pieces | null = null;
+      if (attachments.length > 0) {
+        if (!agentSessionId) {
+          setToast('Ce pane n’a pas de session d’agent : aucune pièce ne peut lui être envoyée');
+          return false;
+        }
+        // A4 : au delà de 100 Mo en cellulaire, une question, une seule, pour tout le message.
+        const cellular = await needsCellularChoice(totalSize(attachments.filter((a) => !a.path)));
+        if (cellular && !(await confirmCellularSend(totalSize(attachments)))) return false;
+        pieces = { items: attachments, destDir: attachmentsDir(agentSessionId), cellularApproved: cellular };
+      }
+      // Lu AVANT l'envoi : tout tour utilisateur au delà de cette borne est potentiellement
+      // l'écho de ce message.
+      const { sessionId, afterSeq } = transcriptMark();
+      const ts = new Date().toISOString();
+      const outcome = await sendText(paneId, text, prompt, pieces);
+      if (!outcome.ok) {
+        if (outcome.kind === 'locked') {
+          setToast('Réponds d’abord à la question ci dessus');
+          return false;
+        }
+        if (outcome.kind === 'cancelled') return false;
+        if (outcome.kind === 'queued') {
+          setPending((p) => [
+            ...p,
+            {
+              nonce: outcome.nonce,
+              text,
+              state: 'queued',
+              ts,
+              afterSeq,
+              sessionId,
+              ...(outcome.attachments.length > 0 ? { attachments: outcome.attachments } : {}),
+            },
+          ]);
+          return true;
+        }
+        if (outcome.kind === 'refused') {
+          // Rien n'est mis en file : le Mac a répondu et a dit non. On montre sa raison.
+          setToast(`Refusé par le Mac. ${outcome.cause}`);
+          return false;
+        }
+        setToast(`File pleine, ${TEXT_QUEUE_MAX} messages en attente`);
+        return false;
+      }
+      setPending((p) => [
+        ...p,
+        {
+          nonce: outcome.nonce,
+          text,
+          state: outcome.result.applied ? 'sent' : 'failed',
+          ts,
+          afterSeq,
+          sessionId,
+          ...(outcome.attachments.length > 0 ? { attachments: outcome.attachments } : {}),
+        },
+      ]);
+      if (!outcome.result.applied && outcome.result.reason === 'became_awaiting') {
+        setToast('L’agent a posé une question, ton message n’est pas parti');
+        peek(paneId);
+      }
+      stickToBottom.current = true;
+      scrollRef.current?.scrollToEnd({ animated: true });
+      return true;
+    },
+    [paneId, prompt, agentSessionId],
+  );
+
+  /**
+   * Renvoi d'un message en échec : la bulle disparaît, l'envoi repart tel quel. Les
+   * pièces déjà arrivées sur le Mac gardent leur chemin et ne sont pas renvoyées.
+   */
+  const retry = useCallback(
+    (m: PendingMessage) => {
+      setPending((p) => p.filter((x) => x.nonce !== m.nonce));
+      void onSend(m.text, m.attachments ?? []);
+    },
+    [onSend],
+  );
+
+  /** CA-122 : Robin confirme, le texte repart avec une vie neuve par la file. */
+  const sendStale = useCallback(
+    async (job: OutboxJob) => {
+      await confirmStale(job.nonce);
+      const report = await flushOutbox();
+      const refused = report.refused.find((r) => r.nonce === job.nonce);
+      if (refused) setToast(`Refusé par le Mac. ${refused.cause}`);
+      else if (report.sent === 0) setToast('Mac injoignable, le message reste en file');
+      refreshQueue();
+    },
+    [refreshQueue],
+  );
+
+  const discardStale = useCallback(
+    async (job: OutboxJob) => {
+      await dequeue(job.nonce);
+      setPending((p) => p.filter((m) => m.nonce !== job.nonce));
+      refreshQueue();
+    },
+    [refreshQueue],
+  );
+
+  const onAnswer = useCallback(
+    async (option: PromptOption) => {
+      if (!prompt || prompt.state !== 'parsed') return;
+      setPhase(paneId, 'authenticating', option.index);
+      const outcome = await answerPrompt({
+        paneId,
+        optionIndex: option.index,
+        optionKind: option.kind,
+        optionLabel: option.label,
+        promptHash: prompt.promptHash,
+        awaitingSince: prompt.awaitingSince,
+      });
+      if (!outcome.ok) {
+        setPhase(paneId, outcome.kind === 'cancelled' ? 'armed' : 'failed');
+        if (outcome.kind !== 'cancelled') {
+          notify(NotifyType.Error);
+          // La cause EXACTE, pas « Envoi impossible ». Un refus du daemon et un Mac
+          // éteint demandent deux gestes différents : les confondre fait perdre du temps.
+          setNotice(
+            paneId,
+            outcome.kind === 'refused'
+              ? `Refusé par le Mac. ${outcome.cause}`
+              : `Envoi impossible, réessaie. ${outcome.cause}`,
+          );
+        }
+        return;
+      }
+      if (outcome.result.applied) {
+        setPhase(paneId, 'sent');
+        notify(NotifyType.Success);
+        return;
+      }
+      if (outcome.result.reason === 'prompt_changed') {
+        // Rien n'a été envoyé, et ce fait est écrit dans le bandeau. `hash_mismatch` n'est
+        // pas `expired` : ici ce n'est PAS réglé, et Robin a failli répondre à côté.
+        setPhase(paneId, 'hash_mismatch');
+        setNotice(paneId, 'La question a changé sur le Mac. Ta réponse n’a pas été envoyée.');
+        notify(NotifyType.Warning);
+        peek(paneId);
+        return;
+      }
+      if (outcome.result.reason === 'pane_gone') {
+        // CA-69 : le pane a été fermé entre l'affichage et le tap. Rien n'est parti.
+        setPhase(paneId, 'expired');
+        setNotice(paneId, 'Cette session n’existe plus. Rien n’a été envoyé.');
+        notify(NotifyType.Warning);
+        return;
+      }
+      if (outcome.result.reason === 'not_awaiting') {
+        // `expired` : c'est réglé, Robin a répondu sur le Mac.
+        setPhase(paneId, 'expired');
+        setNotice(paneId, 'Répondu sur le Mac.');
+        peek(paneId);
+        return;
+      }
+      setPhase(paneId, 'armed');
+      setNotice(paneId, 'Déjà répondu.');
+    },
+    [paneId, prompt, setNotice, setPhase],
+  );
+
+  /**
+   * `Répondre autrement` : envoi de l'option de refus par le chemin protégé, puis ouverture
+   * du composer une fois le prompt refermé. Jamais un chiffre déguisé en phrase.
+   */
+  const onRespondOtherwise = useCallback(async () => {
+    if (!prompt || prompt.state !== 'parsed') return;
+    const reject = prompt.options.find((o) => o.kind === 'reject');
+    if (!reject) return;
+    await onAnswer(reject);
+    setNotice(paneId, 'Refus envoyé, explique à Claude');
+  }, [onAnswer, paneId, prompt, setNotice]);
+
+  const openMenu = useCallback(() => showPaneMenu(paneId, setToast), [paneId]);
+
+  if (!pane && session.status !== 'ready') {
+    if (resolveTimedOut) {
+      return (
+        <View style={[styles.screen, { paddingTop: insets.top }]}>
+          <NavBar view={view} onView={setView} title="Sessions" onMenu={openMenu} />
+          <EmptyState
+            title="Pane introuvable"
+            body={`Le pane ${paneId} n’apparaît pas dans l’instantané du Mac. Il a pu être fermé, ou la liaison n’a pas encore renvoyé la liste (${LINK_LABEL[link]}).`}
+          >
+            <Button label="Réessayer" onPress={forceReconnect} />
+            <Button label="Voir les sessions" kind="secondary" onPress={() => router.replace('/')} />
+          </EmptyState>
+        </View>
+      );
+    }
+    return (
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <NavBar view={view} onView={setView} title="Sessions" onMenu={openMenu} />
+        <SkeletonList count={4} height={72} />
+      </View>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <View style={{ paddingTop: insets.top }}>
+        <NavBar view={view} onView={setView} title="Sessions" onMenu={openMenu} />
+        <View style={styles.subtitle}>
+          <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1}>
+            {pane ? `${pane.projectName} · ${pane.title ?? pane.agent ?? 'pane'}` : 'Session'}
+          </Txt>
+          <View style={styles.grow} />
+          <Txt variant="monoPath" color={colors.text.tertiary} numberOfLines={1}>
+            {pane ? truncatePath(pane.cwd) : ''}
+          </Txt>
+        </View>
+        <AgentStatus
+          degraded={degraded}
+          closed={closed}
+          awaiting={awaiting}
+          working={working}
+          workingSince={workingSince}
+          finishedAt={finishedAt}
+        />
+      </View>
+
+      {closed ? (
+        <Banner
+          tone="error"
+          text="Cette session n’existe plus."
+          actionLabel="Retour"
+          onAction={() => router.back()}
+        />
+      ) : null}
+      {degraded ? (
+        // CA-120 : hors ligne, le dernier échange vient du cache local et le bandeau le
+        // dit, avec l'âge de ce cache. Rien n'est présenté comme frais.
+        <Banner
+          tone={link === 'offline' ? 'offline' : 'warn'}
+          text={`${link === 'offline' ? 'iPhone hors ligne' : 'Mac endormi ou éteint'}${
+            session.servedFromCacheAt !== null
+              ? `, dernier échange en cache (${shortAgeMs(now - session.servedFromCacheAt)})`
+              : ', état figé'
+          }`}
+          actionLabel="Réessayer"
+          onAction={forceReconnect}
+        />
+      ) : session.servedFromCacheAt !== null ? (
+        // Ouverture depuis le cache, liaison vivante : le Mac réconcilie (design 4.2).
+        <Banner tone="working" text="Dernier échange en cache, mise à jour depuis le Mac…" />
+      ) : null}
+      {!chatCapable ? (
+        <Banner
+          text="Vue chat indisponible pour cet agent"
+          actionLabel="Ouvrir le terminal"
+          onAction={() => setView('term')}
+        />
+      ) : null}
+      {session.status === 'error' ? (
+        <Banner
+          tone="error"
+          text={session.error ?? 'Transcript illisible'}
+          actionLabel="Ouvrir le terminal"
+          onAction={() => setView('term')}
+        />
+      ) : null}
+      {late.length > 0 && !closed ? (
+        // CA-48 : le Mac a accepté le message, le pane ne l'a pas écrit dans son transcript
+        // après 20 s. On n'affirme rien, on envoie voir le terminal.
+        <Banner
+          tone="warn"
+          text={
+            late.length === 1
+              ? 'Non confirmé : le message est parti, le pane ne l’a pas encore reçu'
+              : `Non confirmé : ${late.length} messages partis, le pane ne les a pas encore reçus`
+          }
+          actionLabel="Voir le terminal"
+          onAction={() => setView('term')}
+        />
+      ) : null}
+      {otherAwaiting.length > 0 && !closed ? (
+        <Banner
+          tone="warn"
+          text={
+            otherAwaiting.length === 1 && otherAwaiting[0]
+              ? `Un autre pane attend : ${otherAwaiting[0].projectName} · ${paneIdentity(otherAwaiting[0]).tab}`
+              : `${otherAwaiting.length} autres panes attendent`
+          }
+          actionLabel="Voir"
+          onAction={() =>
+            otherAwaiting.length === 1 && otherAwaiting[0]
+              ? router.push(`/session/${otherAwaiting[0].id}?focus=awaiting`)
+              : router.replace('/')
+          }
+        />
+      ) : null}
+      {!closed ? (
+        <StaleQueue
+          jobs={stale}
+          now={now}
+          onSend={(job) => void sendStale(job)}
+          onDiscard={(job) => void discardStale(job)}
+        />
+      ) : null}
+
+      {view === 'chat' ? (
+        <ScrollView
+          ref={scrollRef}
+          style={styles.grow}
+          contentContainerStyle={styles.chat}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          refreshControl={
+            hiddenCount > 0 || session.hasMoreBefore ? (
+              <RefreshControl
+                refreshing={loadingOlder}
+                onRefresh={pullOlder}
+                tintColor={colors.text.secondary}
+                title={hiddenCount > 0 ? `Historique · ${hiddenCount} messages` : 'Plus ancien'}
+                titleColor={colors.text.tertiary}
+              />
+            ) : undefined
+          }
+          onScrollBeginDrag={() => {
+            stickToBottom.current = false;
+          }}
+          onContentSizeChange={() => {
+            if (stickToBottom.current) scrollRef.current?.scrollToEnd({ animated: false });
+          }}
+        >
+          {session.status === 'loading' && !degraded && !resolveTimedOut ? (
+            <SkeletonList count={4} height={72} />
+          ) : null}
+
+          {session.status === 'loading' && (degraded || resolveTimedOut) ? (
+            // Jamais un squelette sans fin (CA-120) : sans cache et sans Mac, on le dit.
+            <EmptyState
+              title={degraded ? 'Transcript indisponible hors ligne' : 'Transcript en attente du Mac'}
+              body={
+                degraded
+                  ? 'Cette session n’a pas encore été ouverte sur cet iPhone : rien n’est en cache. Le dernier échange arrivera à la reconnexion.'
+                  : 'Le Mac n’a pas encore envoyé le transcript de cette session.'
+              }
+            >
+              <Button label="Réessayer" kind="secondary" onPress={forceReconnect} />
+              <Button label="Ouvrir le terminal" kind="secondary" onPress={() => setView('term')} />
+            </EmptyState>
+          ) : null}
+
+          {session.status === 'ready' && session.turns.length === 0 ? (
+            <EmptyState
+              title="Rien à afficher"
+              body={
+                hasAgentSession
+                  ? 'Le dernier échange arrivera dès que l’agent parle.'
+                  : 'Ce pane n’a pas de session d’agent.'
+              }
+            >
+              <Button label="Ouvrir le terminal" kind="secondary" onPress={() => setView('term')} />
+            </EmptyState>
+          ) : null}
+
+          {hiddenCount > 0 ? (
+            <LinkAction
+              label={`Historique · ${hiddenCount} messages`}
+              accessibilityHint="Tire vers le bas pour le révéler"
+              onPress={() => {
+                stickToBottom.current = false;
+                setShowHistory(true);
+              }}
+            />
+          ) : null}
+          {showHistory && session.hasMoreBefore ? (
+            <LinkAction
+              label={loadingOlder ? 'Chargement…' : 'Charger plus ancien'}
+              disabled={loadingOlder}
+              onPress={() => void loadOlder()}
+            />
+          ) : null}
+
+          {turns.map((turn) => (
+            <TurnView
+              key={turn.id}
+              turn={turn}
+              working={working}
+              streaming={turn.id === streamingTurnId}
+              results={results}
+              callIds={callIds}
+            />
+          ))}
+
+          {stillPending.map((m) => (
+            <UserBubble
+              key={m.nonce}
+              state={m.state}
+              attachments={m.attachments}
+              onRetry={m.state === 'failed' ? () => retry(m) : undefined}
+              turn={{
+                id: m.nonce,
+                kind: 'user',
+                ts: m.ts,
+                seq: Number.MAX_SAFE_INTEGER,
+                uuids: [],
+                blocks: [{ type: 'text', text: m.text }],
+                isSidechain: false,
+              }}
+            />
+          ))}
+
+          {tailDot ? <StreamDot /> : null}
+        </ScrollView>
+      ) : (
+        <View style={styles.grow}>
+          {screen ? (
+            <MonospaceFallback
+              screen={screen.lines.join('\n')}
+              cols={screen.cols}
+              rows={screen.rows}
+              paneLabel={pane ? `${pane.projectName} · ${pane.title ?? ''}` : ''}
+              frozen={degraded ? 'Instantané figé' : null}
+            />
+          ) : prompt?.state === 'unparsable' ? (
+            <MonospaceFallback
+              screen={prompt.rawScreen}
+              cols={prompt.cols}
+              rows={prompt.rows}
+              paneLabel={pane ? `${pane.projectName} · ${pane.title ?? ''}` : ''}
+              frozen={degraded ? 'Instantané figé' : null}
+            />
+          ) : (
+            <EmptyState
+              title={degraded ? 'Écran indisponible' : 'Capture de l’écran…'}
+              body={
+                degraded
+                  ? 'Le Mac est injoignable, l’écran du pane arrivera à la reconnexion.'
+                  : 'Le contenu visible du pane s’affiche ici, rafraîchi toutes les 2 secondes.'
+              }
+            >
+              <Button label="Rafraîchir" kind="secondary" onPress={() => requestScreen(paneId)} />
+            </EmptyState>
+          )}
+          {pane?.awaiting ? (
+            <NumericKeypad
+              onDigit={(d) => {
+                void onSend(String(d));
+              }}
+            />
+          ) : null}
+        </View>
+      )}
+
+      {prompt ? (
+        <ValidationBar
+          prompt={prompt}
+          phase={phase}
+          notice={notice}
+          unavailable={degraded}
+          onAnswer={(o) => void onAnswer(o)}
+          onInterrupt={() => void interrupt(paneId)}
+          onOpenTerminal={() => setView('term')}
+          onRespondOtherwise={() => void onRespondOtherwise()}
+          onFreeText={() => setView('chat')}
+          onRetry={forceReconnect}
+        />
+      ) : null}
+
+      {toast ? (
+        <View style={styles.toast}>
+          <Txt variant="footnote" color={colors.text.primary}>
+            {toast}
+          </Txt>
+        </View>
+      ) : null}
+
+      <View style={{ paddingBottom: insets.bottom }}>
+        <Composer
+          prompt={prompt}
+          working={working}
+          degraded={degraded}
+          disabled={closed || !hasAgentSession}
+          disabledPlaceholder={
+            closed ? 'Cette session n’existe plus' : 'Ce pane n’a pas de session d’agent'
+          }
+          queuedCount={queued}
+          onSend={onSend}
+          onInterrupt={() => void interrupt(paneId)}
+          onLockedTap={() => setToast('Réponds d’abord à la question ci dessus')}
+          onNotice={setToast}
+        />
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function TurnView({
+  turn,
+  working,
+  streaming,
+  results,
+  callIds,
+}: {
+  turn: Turn;
+  working: boolean;
+  streaming: boolean;
+  results: ReturnType<typeof indexToolResults>;
+  callIds: ReadonlySet<string>;
+}) {
+  if (turn.kind === 'user') return <UserBubble turn={turn} state="sent" />;
+  if (turn.kind === 'tool_result') return <OrphanResults turn={turn} callIds={callIds} />;
+  return <AssistantTurn turn={turn} working={working} streaming={streaming} results={results} />;
+}
+
+function NavBar({
+  view,
+  onView,
+  title,
+  onMenu,
+}: {
+  view: ViewMode;
+  onView: (v: ViewMode) => void;
+  title: string;
+  onMenu: () => void;
+}) {
+  return (
+    <View style={styles.nav}>
+      <LinkAction label={`< ${title}`} onPress={() => router.back()} />
+      <View style={styles.grow} />
+      <View style={styles.segmented}>
+        {(['chat', 'term'] as const).map((v) => (
+          <Pressable
+            key={v}
+            accessibilityRole="button"
+            accessibilityState={{ selected: view === v }}
+            onPress={() => onView(v)}
+            style={[styles.segment, view === v && styles.segmentOn]}
+          >
+            <Txt variant="caption" color={view === v ? colors.text.primary : colors.text.secondary}>
+              {v === 'chat' ? 'Chat' : 'Term'}
+            </Txt>
+          </Pressable>
+        ))}
+      </View>
+      <View style={styles.grow} />
+      <LinkPill compact />
+      {/* Menu `...` du design 4.2 : `Ouvrir sur le Mac`. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Plus d’actions"
+        hitSlop={8}
+        onPress={onMenu}
+        style={styles.menu}
+      >
+        <Txt variant="title2" color={colors.text.secondary}>
+          ···
+        </Txt>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg.base },
+  nav: {
+    height: layout.navBarHeight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[4],
+    paddingHorizontal: layout.screenPaddingH,
+  },
+  menu: { minWidth: layout.touchMin, alignItems: 'center', justifyContent: 'center' },
+  subtitle: {
+    height: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+    paddingHorizontal: layout.screenPaddingH,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.subtle,
+  },
+  chat: { paddingHorizontal: layout.screenPaddingH, paddingVertical: space[4] },
+  grow: { flex: 1 },
+  segmented: {
+    flexDirection: 'row',
+    borderRadius: radius.sm,
+    backgroundColor: colors.bg.overlay,
+    padding: 2,
+  },
+  segment: { paddingHorizontal: space[5], paddingVertical: space[3], borderRadius: radius.sm },
+  segmentOn: { backgroundColor: colors.bg.raised },
+  toast: {
+    alignSelf: 'center',
+    marginBottom: space[3],
+    paddingHorizontal: space[5],
+    paddingVertical: space[3],
+    borderRadius: radius.full,
+    backgroundColor: colors.bg.overlay,
+  },
+});

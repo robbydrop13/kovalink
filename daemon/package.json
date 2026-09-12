@@ -1,0 +1,32 @@
+{
+  "name": "@kovalink/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "kovalinkd : le daemon macOS de KovaLink (lot 1).",
+  "main": "./dist/src/main.js",
+  "bin": {
+    "kovalinkd": "./dist/src/main.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "start": "node dist/src/main.js run",
+    "pair": "node dist/src/main.js pair",
+    "test": "node --test dist/test/*.test.js",
+    "typecheck": "tsc -b --pretty"
+  },
+  "dependencies": {
+    "expo-server-sdk": "^6.0.0",
+    "@fastify/websocket": "^11.0.1",
+    "chokidar": "^4.0.1",
+    "fastify": "^5.1.0",
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.18.0",
+    "@kovalink/protocol": "*"
+  },
+  "devDependencies": {
+    "@types/qrcode-terminal": "^0.12.2",
+    "@types/ws": "^8.5.13"
+  }
+}

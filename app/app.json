@@ -1,0 +1,126 @@
+{
+  "expo": {
+    "name": "KovaLink",
+    "slug": "kovalink",
+    "scheme": "kovalink",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0B0D10",
+    "primaryColor": "#4C8DFF",
+    "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/3e16872a-0904-422b-9459-fcb90ed2f95d"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "bundleIdentifier": "io.claap.kovalink",
+      "supportsTablet": false,
+      "requireFullScreen": true,
+      "entitlements": {
+        "aps-environment": "production",
+        "keychain-access-groups": [
+          "$(AppIdentifierPrefix)io.claap.kovalink"
+        ]
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scanner le QR code d'appairage affiché sur ton Mac.",
+        "NSFaceIDUsageDescription": "Confirmer une approbation avec Face ID.",
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        },
+        "UIUserInterfaceStyle": "Dark",
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Choisir une photo ou une vidéo à envoyer vers un dossier de ton Mac.",
+        "NSPhotoLibraryAddUsageDescription": "Enregistrer sur l'iPhone un fichier récupéré depuis ton Mac."
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-local-authentication",
+      "expo-updates",
+      [
+        "expo-notifications",
+        {
+          "color": "#0B0D10"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Scanner le QR d'appairage affiché sur ton Mac."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choisir une photo ou une vidéo à envoyer vers un dossier de ton Mac."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.0"
+          }
+        }
+      ],
+      [
+        "@bacons/apple-targets",
+        {
+          "appleTeamId": "49583398UQ"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "keychainAccessGroup": "49583398UQ.io.claap.kovalink",
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "bundleIdentifier": "io.claap.kovalink.notification-service",
+                  "targetName": "KovaLinkNotificationService",
+                  "entitlements": {
+                    "keychain-access-groups": [
+                      "$(AppIdentifierPrefix)io.claap.kovalink"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "3e16872a-0904-422b-9459-fcb90ed2f95d"
+      }
+    },
+    "owner": "robbydrop",
+    "android": {
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    }
+  }
+}

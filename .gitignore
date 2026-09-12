@@ -1,0 +1,39 @@
+# Dependances
+node_modules/
+.pnp/
+.pnp.js
+
+# Build
+dist/
+build/
+*.tsbuildinfo
+
+# Expo
+app/.expo/
+app/ios/
+app/android/
+app/dist/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Secrets et etat local, ne doivent jamais entrer dans le depot
+*.pem
+.env
+.env.*
+!.env.example
+expo-token
+.kovalink/
+
+# Systeme
+.DS_Store
+*.log
+npm-debug.log*
+
+# Etat local de session
+.claude/scheduled_tasks.lock
+
+# Worktrees des agents, jamais versionnes
+.claude/worktrees/

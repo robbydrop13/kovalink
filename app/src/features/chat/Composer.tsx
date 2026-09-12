@@ -1,0 +1,243 @@
+// Zone de saisie.
+//
+// Deuxième composant du produit par ordre d'importance (D1) : les agents de Robin finissent
+// et attendent l'instruction suivante, et c'est ici qu'il la donne.
+//
+// Aucun bouton micro : la touche micro du clavier iOS fait déjà la dictée, gratuitement,
+// avec le modèle mental que Robin connaît, et elle insère sans envoyer.
+// La touche retour insère un saut de ligne, jamais un envoi : un envoi accidentel vers un
+// agent coûte cher.
+//
+// Pièces jointes (docs/15) : le « + » ouvre Photos, Appareil photo ou Fichiers, les
+// vignettes s'empilent au dessus du champ et se retirent d'un tap. À l'envoi, le composer
+// se fige le temps que les pièces arrivent sur le Mac ; si une pièce échoue, rien ne part
+// et les vignettes restent pour réessayer.
+import { useState } from 'react';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import type { Prompt } from '@/protocol';
+import { colors, layout, radius, space } from '@/theme';
+import { Txt } from '@/ui/Txt';
+import { isComposerLocked, requiresFaceIdForText } from '@/store/prompts';
+import { AttachmentStrip, askAttachmentSource } from './AttachmentViews';
+import type { Attachment } from './attachments';
+
+export interface ComposerProps {
+  prompt: Prompt | undefined;
+  working: boolean;
+  /** Mac injoignable ou hors ligne : l'envoi part dans la file, il n'est pas rejeté (P5). */
+  degraded: boolean;
+  disabled: boolean;
+  disabledPlaceholder?: string;
+  queuedCount: number;
+  /**
+   * Envoi. Rend `true` quand le message est parti ou mis en file (le composer se vide),
+   * `false` quand rien n'est parti (le texte et les vignettes restent).
+   */
+  onSend: (text: string, attachments: Attachment[]) => Promise<boolean>;
+  onInterrupt: () => void;
+  /** Un tap sur un champ verrouillé fait pulser la barre de validation au lieu du clavier. */
+  onLockedTap: () => void;
+  /** Cause d'un sélecteur qui ne s'ouvre pas (permission refusée) : affichée, jamais avalée. */
+  onNotice: (text: string) => void;
+}
+
+export function Composer({
+  prompt,
+  working,
+  degraded,
+  disabled,
+  disabledPlaceholder,
+  queuedCount,
+  onSend,
+  onInterrupt,
+  onLockedTap,
+  onNotice,
+}: ComposerProps) {
+  const [value, setValue] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [sending, setSending] = useState(false);
+  const locked = isComposerLocked(prompt);
+  const faceId = requiresFaceIdForText(prompt);
+
+  const placeholder = locked
+    ? 'Réponds d’abord à la question ci dessus'
+    : disabled
+      ? (disabledPlaceholder ?? 'Indisponible')
+      : faceId
+        ? 'Réponse libre, Face ID demandé'
+        : degraded
+          ? 'Sera envoyé à la reconnexion'
+          : 'Message…';
+
+  const hasContent = value.trim().length > 0 || attachments.length > 0;
+  const canSend = !locked && !disabled && !sending && hasContent;
+  const showInterrupt = working && !hasContent && !locked;
+  const canAttach = !locked && !disabled && !sending;
+
+  const send = async (): Promise<void> => {
+    const text = value.trim();
+    const pieces = attachments;
+    if (pieces.length === 0) {
+      // Sans pièce, le geste d'aujourd'hui : le champ se vide tout de suite, l'envoi part.
+      setValue('');
+      void onSend(text, []);
+      return;
+    }
+    // Avec des pièces, le composer se fige le temps du transfert : le texte reste visible,
+    // et il ne disparaît qu'une fois le message parti ou mis en file.
+    setSending(true);
+    try {
+      if (await onSend(text, pieces)) {
+        setValue('');
+        setAttachments([]);
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <View style={styles.wrap}>
+      {queuedCount > 0 ? (
+        <View style={styles.queue}>
+          <Txt variant="caption" color={colors.text.secondary}>
+            {queuedCount === 1 ? '1 message en attente' : `${queuedCount} messages en attente`}
+          </Txt>
+        </View>
+      ) : null}
+
+      <AttachmentStrip
+        items={attachments}
+        sending={sending}
+        onRemove={(id) => setAttachments((list) => list.filter((a) => a.id !== id))}
+      />
+
+      <View
+        style={[
+          styles.bar,
+          degraded && { borderTopWidth: 2, borderTopColor: colors.link.macUnreachable },
+        ]}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ajouter une pièce jointe"
+          accessibilityState={{ disabled: !canAttach }}
+          disabled={!canAttach}
+          onPress={() =>
+            askAttachmentSource((picked) => setAttachments((list) => [...list, ...picked]), onNotice)
+          }
+          style={styles.attach}
+        >
+          <Txt variant="title2" color={canAttach ? colors.text.secondary : colors.text.disabled}>
+            +
+          </Txt>
+        </Pressable>
+
+        <Pressable
+          style={styles.fieldWrap}
+          onPress={locked ? onLockedTap : undefined}
+          pointerEvents={locked ? 'box-only' : 'auto'}
+        >
+          <TextInput
+            style={[styles.field, locked && styles.fieldLocked]}
+            value={value}
+            onChangeText={setValue}
+            editable={!locked && !disabled && !sending}
+            placeholder={placeholder}
+            placeholderTextColor={colors.text.tertiary}
+            multiline
+            keyboardType="default"
+            keyboardAppearance="dark"
+            accessibilityLabel="Message à envoyer"
+          />
+        </Pressable>
+
+        {showInterrupt ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Interrompre"
+            onPress={onInterrupt}
+            style={styles.interrupt}
+          >
+            <Txt variant="calloutStrong" color={colors.action.interrupt.text}>
+              Interrompre
+            </Txt>
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={sending ? 'Envoi en cours' : 'Envoyer'}
+            accessibilityState={{ disabled: !canSend, busy: sending }}
+            disabled={!canSend}
+            onPress={() => void send()}
+            style={[styles.send, canSend ? styles.sendOn : styles.sendOff]}
+          >
+            <Txt variant="bodyStrong" color={canSend ? colors.text.onFill : colors.text.disabled}>
+              {sending ? '…' : '>'}
+            </Txt>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: { backgroundColor: colors.bg.base },
+  queue: {
+    alignSelf: 'center',
+    paddingHorizontal: space[4],
+    paddingVertical: space[2],
+    marginBottom: space[2],
+    borderRadius: radius.full,
+    backgroundColor: colors.bg.overlay,
+  },
+  bar: {
+    minHeight: layout.composerMinHeight,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: space[4],
+    paddingHorizontal: layout.screenPaddingH,
+    paddingVertical: space[3],
+  },
+  fieldWrap: { flex: 1 },
+  attach: {
+    width: layout.touchMin,
+    height: layout.touchMin,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -space[3],
+  },
+  field: {
+    minHeight: 40,
+    maxHeight: layout.composerMaxHeight,
+    color: colors.text.primary,
+    fontSize: 17,
+    lineHeight: 24,
+    paddingHorizontal: space[5],
+    paddingVertical: space[4],
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    backgroundColor: colors.bg.inset,
+  },
+  fieldLocked: { backgroundColor: colors.bg.raised },
+  send: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendOn: { backgroundColor: colors.accent.primary },
+  sendOff: { backgroundColor: colors.bg.raised },
+  interrupt: {
+    width: 116,
+    height: 44,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.action.interrupt.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

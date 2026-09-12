@@ -1,0 +1,473 @@
+import { execFile } from 'node:child_process';
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import {
+  PROTOCOL_VERSION,
+  PUBLIC_ROUTE_PATHS,
+  ROUTE_PATTERNS,
+  TURNS_INITIAL_LOAD,
+  TURNS_PAGE_SIZE,
+  TURNS_QUERY,
+  TURN_END_SUMMARY_MAX,
+  WS_CLOSE_CODE,
+  type ErrorCode,
+  type ErrorPayload,
+  type KovaLaunchResponse,
+  type Prompt,
+  type Turn,
+} from '@kovalink/protocol';
+import { audit } from '../audit.js';
+import { consumePairing, readPairing } from '../pairing.js';
+import { ForbiddenError } from '../kova/keygate.js';
+import { logger } from '../logger.js';
+import { transcriptPath } from '../paths.js';
+import { formatTurnEndSubtitle } from '../turnEnd.js';
+import { buildTurns, sortAssistantBlocks } from '../transcript/jsonl.js';
+import { readTailLines } from '../transcript/session.js';
+import {
+  loadDevices,
+  mintToken,
+  saveDevices,
+  timingSafeEqualStr,
+  verifyBearer,
+} from '../security/token.js';
+import type { TlsMaterial } from '../security/tls.js';
+import type { UploadStore } from '../fs/uploads.js';
+import { registerFsRoutes } from './fsRoutes.js';
+import { Hub, type Socket } from './hub.js';
+import type { Services } from './services.js';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    deviceId?: string;
+  }
+}
+
+const PUBLIC_ROUTES = new Set<string>(PUBLIC_ROUTE_PATHS);
+
+function fail(reply: FastifyReply, status: number, code: ErrorCode, message: string): void {
+  const payload: ErrorPayload = {
+    code,
+    message,
+    retryable: code === 'KOVA_DOWN' || code === 'IPC_TIMEOUT',
+  };
+  void reply.code(status).send(payload);
+}
+
+/**
+ * Serveur HTTPS et WebSocket.
+ *
+ * Une instance par adresse d'ecoute : loopback et interface Tailscale, exclusivement
+ * (`resolveBinds`). `0.0.0.0` et `::` n'apparaissent nulle part.
+ */
+export async function createHttpServer(
+  services: Services,
+  hub: Hub,
+  tls: TlsMaterial,
+  uploads: UploadStore,
+): Promise<FastifyInstance> {
+  const app = Fastify({
+    https: { key: tls.key, cert: tls.cert, minVersion: 'TLSv1.2' },
+    logger: {
+      level: 'warn',
+      // Redaction non negociable (C8) : le jeton n'apparait dans AUCUN log.
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.query.ticket',
+          '*.token',
+          '*.pairingCode',
+          '*.expoPushToken',
+        ],
+        remove: true,
+      },
+    },
+    trustProxy: false,
+    bodyLimit: 256 * 1024,
+  });
+
+  // Un `POST` sans corps mais avec `content-type: application/json` faisait rendre a
+  // Fastify un 500 « Body cannot be empty ». Aucune de nos routes n'exige un corps :
+  // un corps vide vaut un objet vide, et toutes lisent deja `req.body ?? {}`.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (_req, body: string | Buffer, done) => {
+      const text = typeof body === 'string' ? body.trim() : body.toString('utf8').trim();
+      if (text.length === 0) return done(null, {});
+      try {
+        done(null, JSON.parse(text) as unknown);
+      } catch (e) {
+        const err = e as Error & { statusCode?: number; code?: string };
+        err.statusCode = 400;
+        err.code = 'BAD_REQUEST';
+        done(err, undefined);
+      }
+    },
+  );
+
+  const websocket = (await import('@fastify/websocket')).default;
+  await app.register(websocket, { options: { maxPayload: 256 * 1024 } });
+
+  // Toute reponse d'erreur porte un `ErrorPayload`, y compris celles que Fastify produit
+  // lui meme. Sans ces deux gestionnaires, un 404 rend `{message,error,statusCode}` sans
+  // champ `code` : l'app lisait alors `INTERNAL` et affichait « Mac injoignable » pour une
+  // route qui n'existait simplement pas. Une divergence de contrat doit se DIRE.
+  app.setNotFoundHandler((req, reply) => {
+    fail(reply, 404, 'BAD_REQUEST', `route inconnue: ${req.method} ${req.url.split('?')[0] ?? ''}`);
+  });
+  app.setErrorHandler((err: unknown, req, reply) => {
+    const e = err as { code?: unknown; message?: unknown };
+    const code = (typeof e.code === 'string' ? e.code : 'INTERNAL') as ErrorCode;
+    const message = typeof e.message === 'string' ? e.message : String(err);
+    const known = code === 'BAD_REQUEST' || code === 'FORBIDDEN_ACTION';
+    logger.warn('route en echec', { url: req.url.split('?')[0], err: message });
+    // Le message reel remonte : un 500 muet coute des heures de diagnostic.
+    fail(reply, known ? 400 : 500, known ? code : 'INTERNAL', message);
+  });
+
+  app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
+    const url = req.url.split('?')[0] ?? '';
+    if (PUBLIC_ROUTES.has(url)) return;
+
+    const bearer = req.headers.authorization;
+    const verdict = verifyBearer(bearer, services.master, loadDevices());
+    if (!verdict.ok) {
+      const deviceId = (bearer ?? '').split('.')[0] ?? 'inconnu';
+      services.authFailures.record(deviceId);
+      audit({ action: 'auth', result: 'denied', detail: verdict.code });
+      return fail(reply, 401, verdict.code, 'authentification refusee');
+    }
+    if (services.authFailures.blocked(verdict.deviceId)) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop d echecs d authentification');
+    }
+    services.authFailures.clear(verdict.deviceId);
+    req.deviceId = verdict.deviceId;
+  });
+
+  // --- Routes ------------------------------------------------------------
+
+  /** Sans auth. `ok` et le numero de protocole, RIEN d'autre : ni version ni hostname. */
+  app.get(ROUTE_PATTERNS.health, async () => ({ ok: true, protocol: PROTOCOL_VERSION }));
+
+  /**
+   * Appairage. Le code est a usage unique, TTL `PAIRING_TTL_MS` (5 min), affiche hors bande par
+   * `kovalinkd pair` (QR dans le terminal).
+   */
+  app.post(ROUTE_PATTERNS.pairClaim, async (req, reply) => {
+    const body = (req.body ?? {}) as { pairingCode?: string; deviceName?: string };
+    const pairing = readPairing();
+    if (!pairing) {
+      audit({ action: 'pair.claim', result: 'denied', detail: 'no_active_code' });
+      return fail(reply, 403, 'UNAUTHORIZED', 'aucun appairage en cours');
+    }
+    // Usage unique : consomme immediatement, quoi qu'il arrive ensuite.
+    consumePairing();
+    if (typeof body.pairingCode !== 'string' || body.pairingCode.length !== pairing.code.length) {
+      audit({ action: 'pair.claim', result: 'denied', detail: 'bad_code' });
+      return fail(reply, 403, 'UNAUTHORIZED', 'code d appairage invalide');
+    }
+    if (!timingSafeEqualStr(body.pairingCode, pairing.code)) {
+      audit({ action: 'pair.claim', result: 'denied', detail: 'bad_code' });
+      return fail(reply, 403, 'UNAUTHORIZED', 'code d appairage invalide');
+    }
+
+    const { deviceId, exp, bearer } = mintToken(services.master);
+    const devices = loadDevices();
+    devices[deviceId] = {
+      deviceId,
+      name: typeof body.deviceName === 'string' ? body.deviceName.slice(0, 64) : 'iPhone',
+      pairedAt: new Date().toISOString(),
+      exp,
+      revoked: false,
+    };
+    saveDevices(devices);
+    audit({ deviceId, action: 'pair.claim', result: 'ok' });
+    return {
+      deviceId,
+      token: bearer,
+      tsDns: services.cfg().tsDns,
+      port: services.cfg().port,
+      protocol: PROTOCOL_VERSION,
+    };
+  });
+
+  /** Revocation immediate : le jeton ne vaut plus rien et les WS sont coupes. */
+  app.delete<{ Params: { deviceId: string } }>(ROUTE_PATTERNS.pairDevice, async (req) => {
+    const devices = loadDevices();
+    const target = devices[req.params.deviceId];
+    if (target) {
+      target.revoked = true;
+      delete target.expoPushToken;
+      saveDevices(devices);
+      hub.dropDevice(req.params.deviceId);
+    }
+    audit({ deviceId: req.deviceId, action: 'pair.revoke', result: 'ok', detail: req.params.deviceId });
+    return { revoked: !!target };
+  });
+
+  app.get(ROUTE_PATTERNS.panes, async (req, reply) => {
+    if (!services.rate.allow(req.deviceId ?? '', 'panes')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures');
+    }
+    return {
+      panes: services.panes.all(),
+      tabs: services.panes.allTabs(),
+      etag: services.panes.etag,
+    };
+  });
+
+  /**
+   * Route de la Notification Service Extension. La reference est opaque : elle ne
+   * revele ni le `paneId`, ni le `cwd`, ni le nom du projet, et elle vaut jusqu'a
+   * resolution du prompt ou 10 minutes (R3), pas un seul usage.
+   */
+  app.get<{ Params: { promptRef: string } }>(ROUTE_PATTERNS.prompt, async (req, reply) => {
+    if (!services.rate.allow(req.deviceId ?? '', 'prompt')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures de prompt');
+    }
+    const entry = services.refs.resolve(req.params.promptRef);
+    if (!entry) {
+      // Compte dans `nse_failed` : c'est exactement le cas ou la NSE retombe sur la
+      // banniere aveugle. Le compteur de l'onglet Diagnostic mesure ce chemin, pas une
+      // estimation.
+      audit({ deviceId: req.deviceId, action: 'prompt.fetch', result: 'denied', detail: 'ref_expiree' });
+      return fail(reply, 404, 'SESSION_NOT_FOUND', 'reference inconnue ou expiree');
+    }
+
+    const pane = services.panes.get(entry.paneId);
+    if (!pane) {
+      audit({ deviceId: req.deviceId, action: 'prompt.fetch', result: 'denied', detail: 'pane_ferme' });
+      return fail(reply, 404, 'PANE_NOT_FOUND', 'pane ferme');
+    }
+    audit({ deviceId: req.deviceId, action: 'prompt.fetch', paneId: pane.id, result: 'ok' });
+
+    // Une question attend (detectee par `PromptDetector`) : c'est elle que la NSE doit
+    // afficher, `parsed` ou `unparsable`, jamais une fin de tour reconstruite. Sinon, on
+    // sert l'etat de fin de tour depuis le JSONL.
+    if (pane.awaiting && pane.awaiting_since) {
+      const current = await services.prompts.current(pane.id, pane.awaiting_since);
+      if (current.state === 'parsed' || current.state === 'unparsable') {
+        return { ...current, promptRef: req.params.promptRef };
+      }
+    }
+    if (entry.sessionId) {
+      const lines = readTailLines(transcriptPath(pane.cwd, entry.sessionId));
+      const turns = buildTurns(sortAssistantBlocks(lines));
+      const last = [...turns].reverse().find((t) => t.kind === 'assistant');
+      const text = last?.blocks.find((b) => b.type === 'text');
+      const toolCount = last?.blocks.filter((b) => b.type === 'tool_use').length ?? 0;
+      const prompt: Prompt = {
+        state: 'turn_end',
+        paneId: pane.id,
+        sessionId: entry.sessionId,
+        endedAt: last?.ts ?? new Date().toISOString(),
+        summary: text && text.type === 'text' ? text.text.slice(0, TURN_END_SUMMARY_MAX) : '',
+        subtitle: formatTurnEndSubtitle(null, toolCount),
+        toolCount,
+        durationMs: null,
+        promptRef: req.params.promptRef,
+      };
+      return prompt;
+    }
+    return services.prompts.current(pane.id, pane.awaiting_since);
+  });
+
+  app.post<{ Params: { paneId: string }; Body: { nonce?: string } }>(
+    ROUTE_PATTERNS.paneInterrupt,
+    async (req, reply) => {
+      const deviceId = req.deviceId ?? '';
+      if (!services.rate.allow(deviceId, 'interrupt')) {
+        return fail(reply, 429, 'RATE_LIMITED', 'trop d interruptions');
+      }
+      const nonce = req.body?.nonce;
+      if (typeof nonce !== 'string' || nonce.length === 0) {
+        return fail(reply, 400, 'BAD_REQUEST', 'nonce requis');
+      }
+      if (!services.nonces.reserve(nonce)) return { applied: false, reason: 'duplicate' };
+      try {
+        const res = await services.keygate.emitInterrupt(Number(req.params.paneId), deviceId);
+        if (!res.applied) services.nonces.release(nonce);
+        return res;
+      } catch (e) {
+        services.nonces.release(nonce);
+        throw e;
+      }
+    },
+  );
+
+  app.post<{ Params: { paneId: string }; Body: { text?: string; nonce?: string } }>(
+    ROUTE_PATTERNS.paneText,
+    async (req, reply) => {
+      const deviceId = req.deviceId ?? '';
+      if (!services.rate.allow(deviceId, 'text')) {
+        return fail(reply, 429, 'RATE_LIMITED', 'trop d envois');
+      }
+      const { text, nonce } = req.body ?? {};
+      if (typeof text !== 'string' || typeof nonce !== 'string') {
+        return fail(reply, 400, 'BAD_REQUEST', 'text et nonce requis');
+      }
+      if (!services.nonces.reserve(nonce)) return { applied: false, reason: 'duplicate' };
+      try {
+        const res = await services.keygate.emitText(Number(req.params.paneId), text, deviceId);
+        if (!res.applied) services.nonces.release(nonce);
+        return res;
+      } catch (e) {
+        services.nonces.release(nonce);
+        if (e instanceof ForbiddenError) return fail(reply, 403, e.code, e.message);
+        throw e;
+      }
+    },
+  );
+
+  /**
+   * Repondre a un prompt parse (C1, C20).
+   *
+   * `answerPrompt` relit le pane, recompare le `promptHash` a temps constant et
+   * l'`awaitingSince`, verifie que l'`optionIndex` existe, puis emet UN SEUL `send-keys`
+   * atomique. Si l'ecran a change : 409 `PROMPT_CHANGED`, rien n'est envoye. Les autres
+   * refus (`duplicate`, `not_awaiting`, `pane_gone`) rendent `applied: false` avec leur
+   * raison, comme `interrupt` et `text`.
+   */
+  app.post<{
+    Params: { paneId: string };
+    Body: { optionIndex?: number; promptHash?: string; awaitingSince?: string; nonce?: string };
+  }>(ROUTE_PATTERNS.paneAnswer, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'answer')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop de reponses');
+    }
+    const { optionIndex, promptHash, awaitingSince, nonce } = req.body ?? {};
+    if (
+      typeof optionIndex !== 'number' ||
+      !Number.isInteger(optionIndex) ||
+      typeof promptHash !== 'string' ||
+      typeof awaitingSince !== 'string' ||
+      typeof nonce !== 'string' ||
+      nonce.length === 0
+    ) {
+      return fail(reply, 400, 'BAD_REQUEST', 'optionIndex, promptHash, awaitingSince et nonce requis');
+    }
+    try {
+      const res = await services.answer(
+        { paneId: Number(req.params.paneId), optionIndex, promptHash, awaitingSince, nonce },
+        deviceId,
+      );
+      if (!res.applied && res.reason === 'prompt_changed') {
+        return fail(
+          reply,
+          409,
+          'PROMPT_CHANGED',
+          'la question affichee n est plus celle du pane, aucun octet n a ete envoye',
+        );
+      }
+      return res;
+    } catch (e) {
+      if (e instanceof ForbiddenError) return fail(reply, 403, e.code, e.message);
+      throw e;
+    }
+  });
+
+  /** Repli monospace (~30 lignes), lot 1. Pas de xterm.js, pas de flux d'octets. */
+  app.get<{ Params: { paneId: string } }>(ROUTE_PATTERNS.paneScreen, async (req, reply) => {
+    if (!services.rate.allow(req.deviceId ?? '', 'screen')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures d ecran');
+    }
+    const screen = await services.prompts.screen(Number(req.params.paneId));
+    if (!screen) return fail(reply, 404, 'PANE_NOT_FOUND', 'pane inconnu');
+    return screen;
+  });
+
+  /**
+   * Pagination REELLE. Les trois parametres etaient construits par l'app et purement
+   * ignores ici : `limit` ne limitait rien et `hasMoreBefore` valait `true` en dur, donc
+   * un « charger plus » ne pouvait jamais se terminer. Leurs noms vivent desormais dans
+   * `TURNS_QUERY`, cote protocole.
+   */
+  app.get<{ Params: { sessionId: string }; Querystring: Record<string, string | undefined> }>(
+    ROUTE_PATTERNS.sessionTurns,
+    async (req, reply) => {
+      if (!services.rate.allow(req.deviceId ?? '', 'turns')) {
+        return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures');
+      }
+      const pane = services.panes.findBySession(req.params.sessionId);
+      if (!pane) return fail(reply, 404, 'SESSION_NOT_FOUND', 'session inconnue');
+
+      const num = (raw: string | undefined): number | null => {
+        if (raw === undefined || raw === '') return null;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+      };
+      const rawLimit = num(req.query[TURNS_QUERY.limit]);
+      const limit = Math.min(Math.max(rawLimit ?? TURNS_PAGE_SIZE, 1), TURNS_INITIAL_LOAD);
+      const beforeSeq = num(req.query[TURNS_QUERY.beforeSeq]);
+      const afterSeq = num(req.query[TURNS_QUERY.afterSeq]);
+
+      const lines = readTailLines(transcriptPath(pane.cwd, req.params.sessionId));
+      const all: Turn[] = buildTurns(sortAssistantBlocks(lines));
+      const filtered = all.filter(
+        (t) => (beforeSeq === null || t.seq < beforeSeq) && (afterSeq === null || t.seq > afterSeq),
+      );
+      // On garde la FIN de la fenetre : c'est le dernier echange que Robin vient lire.
+      const page = filtered.slice(-limit);
+      return {
+        sessionId: req.params.sessionId,
+        turns: page,
+        hasMoreBefore: page.length < filtered.length,
+      };
+    },
+  );
+
+  /**
+   * `Lancer Kova` (PRD 5.4, CA-123). `open -a Kova` : macOS lance l'application ou la
+   * met au premier plan. Rien n'atteint un pane, donc pas de `KeyGate` ; mais c'est un
+   * geste sur le Mac, donc audite et limite en debit.
+   */
+  app.post(ROUTE_PATTERNS.kovaLaunch, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'launch')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop de lancements');
+    }
+    const alreadyUp = services.ipc.state === 'up';
+    try {
+      await new Promise<void>((resolve, rejectLaunch) => {
+        execFile('/usr/bin/open', ['-a', 'Kova'], (err) => (err ? rejectLaunch(err) : resolve()));
+      });
+    } catch (e) {
+      audit({ deviceId, action: 'kova.launch', result: 'error', detail: (e as Error).message });
+      return fail(reply, 500, 'INTERNAL', `open -a Kova a echoue : ${(e as Error).message}`);
+    }
+    audit({ deviceId, action: 'kova.launch', result: 'ok', detail: alreadyUp ? 'deja lance' : 'lance' });
+    logger.info('kova lance depuis l app', { deviceId, alreadyUp });
+    const res: KovaLaunchResponse = { launched: true, alreadyUp };
+    return res;
+  });
+
+  // --- Bloc C, les fichiers ----------------------------------------------
+  // Sept routes, servies par `fsRoutes.ts`. Elles ne dependent pas de Kova : l'onglet
+  // Fichiers reste utilisable quand Kova est quitte (CA-123).
+  registerFsRoutes(app, services, uploads);
+
+  // --- WebSocket ---------------------------------------------------------
+
+  app.get(ROUTE_PATTERNS.ws, { websocket: true }, (socket, req) => {
+    const verdict = verifyBearer(req.headers.authorization, services.master, loadDevices());
+    if (!verdict.ok) {
+      // Le jeton ne transite JAMAIS par `Sec-WebSocket-Protocol` : ce champ est
+      // renvoye tel quel dans la reponse de handshake et atterrit dans tous les
+      // journaux d'acces. On exige l'en-tete Authorization.
+      socket.close(WS_CLOSE_CODE.UNAUTHORIZED, 'unauthorized');
+      audit({ action: 'ws.auth', result: 'denied', detail: verdict.code });
+      return;
+    }
+    // L'adresse distante est l'adresse Tailscale du telephone : elle sert a savoir si
+    // SA liaison passe en direct ou par un relais DERP (A11). L'instantane des panes
+    // n'est pas envoye ici : le client l'obtient par `panes.subscribe`, ce qui laisse
+    // `hello.resume` faire son office.
+    const remoteAddress = req.socket?.remoteAddress;
+    hub.add(socket as unknown as Socket, verdict.deviceId, remoteAddress);
+    logger.info('client WS connecte', { deviceId: verdict.deviceId });
+  });
+
+  return app;
+}
