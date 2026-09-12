@@ -15,6 +15,8 @@ import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import type { ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { colors } from '@/theme';
@@ -59,6 +61,8 @@ export default function RootLayout() {
 
   return (
     <RootErrorBoundary>
+      {/* Les balayages des lignes (fermer, favori, renommer) exigent cette racine. */}
+      <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <StatusBar style="light" />
         <Stack
@@ -87,6 +91,9 @@ export default function RootLayout() {
           <Stack.Screen name="activity" />
         </Stack>
       </SafeAreaProvider>
+      </GestureHandlerRootView>
     </RootErrorBoundary>
   );
 }
+
+const styles = StyleSheet.create({ root: { flex: 1 } });

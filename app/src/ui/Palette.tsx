@@ -3,20 +3,21 @@
 // d'emblée, lignes compactes dessous, fermeture par balayage vers le bas (présentation
 // modale) ou par le lien `Fermer`. Le même composant sert aux deux : seules les lignes
 // et l'action au tap changent.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
-} from "react-native";
-import { router } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, layout, radius, space } from "@/theme";
-import { LinkAction } from "@/ui/Button";
-import { EmptyState, SkeletonList } from "@/ui/States";
-import { Txt } from "@/ui/Txt";
+} from 'react-native';
+import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors, layout, radius, space } from '@/theme';
+import { LinkAction } from '@/ui/Button';
+import { EmptyState, SkeletonList } from '@/ui/States';
+import { Txt } from '@/ui/Txt';
+import { SwipeRow, type SwipeActions } from '@/features/sessions/SwipeRow';
 
 /** Une ligne de palette. Tout est du texte déjà formaté : la palette ne calcule rien. */
 export interface PaletteRow {
@@ -37,6 +38,10 @@ export interface PaletteRow {
   indent?: boolean;
   /** Intertitre de section, rendu en légende et non en ligne. */
   section?: boolean;
+  /** Balayage : fermer, favori, renommer (panes ouverts seulement). */
+  swipe?: SwipeActions;
+  /** Étoile : session en favori dans Kova, en tête de liste. */
+  starred?: boolean;
 }
 
 interface Props {
@@ -91,11 +96,11 @@ export function Palette({
         <View style={styles.grabber} accessibilityElementsHidden />
       </View>
       <View style={styles.header}>
-        <Txt variant="title2" color={colors.text.primary}>
+        <Txt variant='title2' color={colors.text.primary}>
           {title}
         </Txt>
         <View style={styles.grow} />
-        <LinkAction label="Fermer" onPress={() => router.back()} />
+        <LinkAction label='Fermer' onPress={() => router.back()} />
       </View>
 
       {banners}
@@ -110,22 +115,22 @@ export function Palette({
           onChangeText={onQuery}
           autoFocus
           autoCorrect={false}
-          autoCapitalize="none"
-          clearButtonMode="while-editing"
-          keyboardAppearance="dark"
-          returnKeyType="search"
+          autoCapitalize='none'
+          clearButtonMode='while-editing'
+          keyboardAppearance='dark'
+          returnKeyType='search'
           accessibilityLabel={accessibilityLabel}
         />
       </View>
       {hint ? (
-        <Txt variant="caption" color={colors.text.tertiary} style={styles.hint}>
+        <Txt variant='caption' color={colors.text.tertiary} style={styles.hint}>
           {hint}
         </Txt>
       ) : null}
 
       <ScrollView
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps='handled'
+        keyboardDismissMode='on-drag'
         contentContainerStyle={[
           styles.content,
           { paddingBottom: insets.bottom + space[8] },
@@ -136,21 +141,18 @@ export function Palette({
           <EmptyState title={emptyTitle} body={emptyBody} />
         ) : null}
         <View style={styles.stack}>
-          {(rows ?? []).map((row) =>
-            row.section ? (
-              <Txt
-                key={row.key}
-                variant="caption"
-                color={colors.text.tertiary}
-                style={styles.section}
-              >
-                {row.title}
-              </Txt>
-            ) : (
+          {(rows ?? []).map((row) => {
+            if (row.section) {
+              return (
+                <Txt key={row.key} variant='caption' color={colors.text.tertiary} style={styles.section}>
+                  {row.title}
+                </Txt>
+              );
+            }
+            const line = (
               <Pressable
-                key={row.key}
-                accessibilityRole="button"
-                accessibilityLabel={`${row.prefix ? `${row.prefix}, ` : ""}${row.title}, ${row.subtitle}${row.badge ? `, ${row.badge}` : ""}`}
+                accessibilityRole='button'
+                accessibilityLabel={`${row.prefix ? `${row.prefix}, ` : ''}${row.title}, ${row.subtitle}${row.badge ? `, ${row.badge}` : ''}`}
                 accessibilityState={{ disabled: row.disabled === true }}
                 disabled={row.disabled === true}
                 onPress={() => onPick(row)}
@@ -163,53 +165,42 @@ export function Palette({
                   row.disabled && styles.dim,
                 ]}
               >
-                <View
-                  style={[
-                    styles.dot,
-                    { backgroundColor: row.tint ?? colors.tabNone },
-                  ]}
-                />
+                <View style={[styles.dot, { backgroundColor: row.tint ?? colors.tabNone }]} />
                 <View style={styles.body}>
                   <View style={styles.line}>
+                    {row.starred ? (
+                      <Txt variant='callout' color={colors.status.awaiting} accessibilityLabel='bookmarked'>
+                        ★
+                      </Txt>
+                    ) : null}
                     {row.prefix ? (
-                      <Txt
-                        variant="callout"
-                        color={colors.text.secondary}
-                        numberOfLines={1}
-                        style={styles.prefix}
-                      >
+                      <Txt variant='callout' color={colors.text.secondary} numberOfLines={1} style={styles.prefix}>
                         {row.prefix}
                       </Txt>
                     ) : null}
-                    <Txt
-                      variant="calloutStrong"
-                      color={colors.text.primary}
-                      numberOfLines={1}
-                      style={styles.title}
-                    >
+                    <Txt variant='calloutStrong' color={colors.text.primary} numberOfLines={1} style={styles.title}>
                       {row.title}
                     </Txt>
                   </View>
-                  <Txt
-                    variant="footnote"
-                    color={colors.text.tertiary}
-                    numberOfLines={1}
-                  >
+                  <Txt variant='footnote' color={colors.text.tertiary} numberOfLines={1}>
                     {row.subtitle}
                   </Txt>
                 </View>
                 {row.badge ? (
-                  <Txt
-                    variant="caption"
-                    color={row.badgeColor ?? colors.text.tertiary}
-                    numberOfLines={1}
-                  >
+                  <Txt variant='caption' color={row.badgeColor ?? colors.text.tertiary} numberOfLines={1}>
                     {row.badge}
                   </Txt>
                 ) : null}
               </Pressable>
-            ),
-          )}
+            );
+            return row.swipe ? (
+              <SwipeRow key={row.key} actions={row.swipe}>
+                {line}
+              </SwipeRow>
+            ) : (
+              <Fragment key={row.key}>{line}</Fragment>
+            );
+          })}
         </View>
       </ScrollView>
     </View>
@@ -218,7 +209,7 @@ export function Palette({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg.base },
-  nav: { alignItems: "center", height: 10 },
+  nav: { alignItems: 'center', height: 10 },
   grabber: {
     width: 36,
     height: 5,
@@ -227,8 +218,8 @@ const styles = StyleSheet.create({
   },
   header: {
     height: layout.navBarHeight,
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: layout.screenPaddingH,
   },
   grow: { flex: 1 },
@@ -251,8 +242,8 @@ const styles = StyleSheet.create({
   stack: { gap: space[2] },
   row: {
     minHeight: 52,
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: space[4],
     paddingHorizontal: space[4],
     paddingVertical: space[3],
@@ -266,7 +257,7 @@ const styles = StyleSheet.create({
   dim: { opacity: 0.5 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   body: { flex: 1, gap: 1 },
-  line: { flexDirection: "row", alignItems: "center", gap: space[2] },
-  prefix: { flexShrink: 0, maxWidth: "45%" },
+  line: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  prefix: { flexShrink: 0, maxWidth: '45%' },
   title: { flexShrink: 1 },
 });

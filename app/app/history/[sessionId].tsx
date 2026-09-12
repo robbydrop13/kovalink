@@ -77,6 +77,7 @@ export default function HistoryScreen() {
         promptCount: 0,
         state: 'closed',
         paneId: null,
+        bookmarked: false,
       },
       setToast,
     );

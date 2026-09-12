@@ -18,16 +18,14 @@ import type { KovaSessionEntry, Pane, Tab } from '@kovalink/protocol';
 import { paths } from '../paths.js';
 import { aiTitleOf, type RawLine } from '../transcript/jsonl.js';
 import { readTailLines } from '../transcript/session.js';
+import { isSessionId } from './ids.js';
+import { bookmarkedIds } from './manage.js';
 
 const HEAD_BYTES = 64 * 1024;
 const TAIL_BYTES = 64 * 1024;
 /** Libelle tronque, comme Kova affiche le premier prompt. */
 const TITLE_MAX = 80;
-const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-export function isSessionId(value: unknown): value is string {
-  return typeof value === 'string' && SESSION_ID.test(value);
-}
+export { isSessionId } from './ids.js';
 
 export interface DiskSession {
   sessionId: string;
@@ -190,6 +188,7 @@ export function mergeSessions(
   kova: Map<string, KovaHistoryEntry>,
   panes: Pane[],
   tabs: Tab[],
+  bookmarks: ReadonlySet<string> = new Set(),
 ): KovaSessionEntry[] {
   const order = new Map<string, number>();
   tabs.forEach((t) => order.set(`${t.window}-${t.tab_index}`, t.tab_index));
@@ -216,6 +215,7 @@ export function mergeSessions(
       promptCount: d?.promptCount ?? 0,
       state: 'open',
       paneId: p.id,
+      bookmarked: bookmarks.has(sessionId),
     });
   }
   const closed = disk
@@ -230,12 +230,13 @@ export function mergeSessions(
       promptCount: d.promptCount,
       state: 'closed',
       paneId: null,
+      bookmarked: bookmarks.has(d.sessionId),
     }));
   return [...out, ...closed];
 }
 
 export function listSessions(panes: Pane[], tabs: Tab[]): KovaSessionEntry[] {
-  return mergeSessions(scanTranscripts(), readKovaHistory(), panes, tabs);
+  return mergeSessions(scanTranscripts(), readKovaHistory(), panes, tabs, bookmarkedIds());
 }
 
 /** Une session de l'index, par identifiant valide. `null` sinon. */

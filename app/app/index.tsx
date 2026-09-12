@@ -24,13 +24,15 @@ import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
 import { TabGroupView } from '@/features/sessions/TabGroupView';
 import { paneHref } from '@/features/sessions/SessionRow';
-import { filterGroups, groupByTab, summaryLine, windowCount } from '@/features/sessions/tabGroups';
+import { confirmClose, promptRename, toggleBookmark } from '@/features/sessions/paneActions';
+import type { SwipeActions } from '@/features/sessions/SwipeRow';
+import { filterGroups, groupByTab, summaryLine, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { isDegraded, useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { isAging, usePrompts } from '@/store/prompts';
 import { forceReconnect } from '@/net/connection';
-import { fetchPanes, postKovaLaunch } from '@/net/http';
+import { fetchPanes, fetchSessions, postKovaLaunch } from '@/net/http';
 import { clockTime } from '@/utils/time';
 import { retryBoot, useBootError, useBootState } from '@/boot';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
@@ -55,6 +57,8 @@ export default function SessionsScreen() {
   const [launching, setLaunching] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  /** Sessions en favori dans Kova, pour l'étoile et le libellé du balayage. */
+  const [bookmarked, setBookmarked] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!toast) return;
@@ -62,17 +66,29 @@ export default function SessionsScreen() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  const loadBookmarks = useCallback(() => {
+    void fetchSessions().then(
+      (res) => setBookmarked(new Set(res.sessions.filter((x) => x.bookmarked).map((x) => x.sessionId))),
+      () => undefined,
+    );
+  }, []);
+
+  useEffect(() => {
+    loadBookmarks();
+  }, [loadBookmarks]);
+
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
       const snapshot = await fetchPanes();
       applySnapshot(snapshot);
+      loadBookmarks();
     } catch {
       forceReconnect();
     } finally {
       setRefreshing(false);
     }
-  }, [applySnapshot]);
+  }, [applySnapshot, loadBookmarks]);
 
   // Kova quitté (CA-123) : le daemon a vidé sa liste et l'a annoncé. Ce qui resterait en
   // cache serait des panes fantômes, on ne les montre pas.
@@ -89,6 +105,26 @@ export default function SessionsScreen() {
   };
   const relaunch = (pane: Pane) =>
     router.push({ pathname: '/new-session', params: { cwd: pane.cwd } });
+  // Balayage : les mêmes gestes que sur le Mac. Fermer est confirmé avec l'état réel.
+  const swipeFor = (pane: Pane, group: TabGroup): SwipeActions => {
+    const sessionId = pane.agent_session_id ?? pane.claude_session_id;
+    const isBookmarked = sessionId !== null && bookmarked.has(sessionId);
+    return {
+      bookmarked: isBookmarked,
+      onClose: () => confirmClose(pane, group.title, setToast),
+      onBookmark: () =>
+        void toggleBookmark(pane, isBookmarked, setToast).then((next) => {
+          if (next === null || !sessionId) return;
+          setBookmarked((prev) => {
+            const out = new Set(prev);
+            if (next) out.add(sessionId);
+            else out.delete(sessionId);
+            return out;
+          });
+        }),
+      onRename: () => promptRename(pane, group.tabId === null ? null : group.title, setToast, () => void refresh()),
+    };
+  };
   const aging = (paneId: number) => isAging(prompts[paneId]);
 
   /**
@@ -240,6 +276,7 @@ export default function SessionsScreen() {
                   onOpen={open}
                   onRelaunch={relaunch}
                   onHeaderPress={() => router.push('/panes')}
+                  swipeFor={swipeFor}
                   onInterrupt={(id) => void interrupt(id)}
                   interruptDisabled={degraded}
                   interruptLabel={(id) => labelFor(id, degraded)}

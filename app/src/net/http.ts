@@ -12,10 +12,14 @@ import {
   type KovaNewTabRequest,
   type KovaNewTabResponse,
   type KovaRecentProjectsResponse,
+  type KovaBookmarkRequest,
+  type KovaBookmarkResponse,
   type KovaResumeRequest,
   type KovaResumeResponse,
   type KovaSessionsResponse,
   type Pane,
+  type PaneTitleRequest,
+  type PaneTitleResponse,
   type PairClaimRequest,
   type PairClaimResponse,
   type Prompt,
@@ -242,6 +246,23 @@ export function fetchRecentProjects(): Promise<KovaRecentProjectsResponse> {
  * `new-tab` sur un projet récent, désigné par son index ET son chemin : le daemon relit sa
  * liste et refuse si elle a bougé. La commande lancée est toujours `claude`, côté daemon.
  */
+/** Fermer un pane : le seul geste destructeur, confirmé côté app avec l'état du pane. */
+export function postClose(paneId: number, nonce: string, timeoutMs = 5000): Promise<ActionResponse> {
+  return request(ROUTES.paneClose(paneId), { method: 'POST', body: { nonce }, timeoutMs });
+}
+
+/** Renommer l'onglet du pane. `null` : titre automatique de Kova. */
+export function postTitle(paneId: number, title: string | null, timeoutMs = 5000): Promise<PaneTitleResponse> {
+  const body: PaneTitleRequest = { title };
+  return request(ROUTES.paneTitle(paneId), { method: 'POST', body, timeoutMs });
+}
+
+/** Favori : ajout ou retrait dans `bookmarks.json` de Kova. */
+export function postBookmark(op: 'add' | 'remove', sessionId: string, timeoutMs = 5000): Promise<KovaBookmarkResponse> {
+  const body: KovaBookmarkRequest = { op, sessionId };
+  return request(ROUTES.kovaBookmark, { method: 'POST', body, timeoutMs });
+}
+
 /** Sessions ouvertes et fermees, comme les palettes de Kova (PRD 3.4). */
 export function fetchSessions(): Promise<KovaSessionsResponse> {
   return request(ROUTES.kovaSessions);

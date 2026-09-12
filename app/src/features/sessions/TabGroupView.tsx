@@ -8,6 +8,7 @@ import { colors, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 import { AwaitingCard } from './AwaitingCard';
 import { SessionRow } from './SessionRow';
+import { SwipeRow, type SwipeActions } from './SwipeRow';
 import type { TabGroup } from './tabGroups';
 
 interface Props {
@@ -18,6 +19,8 @@ interface Props {
   onRelaunch: (pane: Pane) => void;
   /** Tap sur l'en-tête d'onglet : la palette des panes (Cmd+P). */
   onHeaderPress: () => void;
+  /** Balayage d'une ligne : fermer, favori, renommer. */
+  swipeFor: (pane: Pane, group: TabGroup) => SwipeActions;
   onInterrupt: (paneId: number) => void;
   interruptDisabled: boolean;
   interruptLabel: (paneId: number) => string;
@@ -35,6 +38,7 @@ export function TabGroupView({
   onOpen,
   onRelaunch,
   onHeaderPress,
+  swipeFor,
   onInterrupt,
   interruptDisabled,
   interruptLabel,
@@ -64,31 +68,31 @@ export function TabGroupView({
         ) : null}
       </Pressable>
       <View style={styles.panes}>
-        {group.panes.map((pane: Pane) =>
-          pane.awaiting ? (
-            <AwaitingCard
-              key={pane.id}
-              pane={pane}
-              prompt={prompts[pane.id]}
-              aging={aging(pane.id)}
-              onOpen={() => onOpen(pane.id)}
-              interruptDisabled={interruptDisabled}
-              interruptLabel={interruptLabel(pane.id)}
-              onInterrupt={() => onInterrupt(pane.id)}
-            />
-          ) : (
-            <SessionRow
-              key={pane.id}
-              pane={pane}
-              prompt={prompts[pane.id]}
-              onOpen={() => onOpen(pane.id)}
-              onRelaunch={() => onRelaunch(pane)}
-              interruptDisabled={interruptDisabled}
-              interruptLabel={interruptLabel(pane.id)}
-              onInterrupt={() => onInterrupt(pane.id)}
-            />
-          ),
-        )}
+        {group.panes.map((pane: Pane) => (
+          <SwipeRow key={pane.id} actions={swipeFor(pane, group)}>
+            {pane.awaiting ? (
+              <AwaitingCard
+                pane={pane}
+                prompt={prompts[pane.id]}
+                aging={aging(pane.id)}
+                onOpen={() => onOpen(pane.id)}
+                interruptDisabled={interruptDisabled}
+                interruptLabel={interruptLabel(pane.id)}
+                onInterrupt={() => onInterrupt(pane.id)}
+              />
+            ) : (
+              <SessionRow
+                pane={pane}
+                prompt={prompts[pane.id]}
+                onOpen={() => onOpen(pane.id)}
+                onRelaunch={() => onRelaunch(pane)}
+                interruptDisabled={interruptDisabled}
+                interruptLabel={interruptLabel(pane.id)}
+                onInterrupt={() => onInterrupt(pane.id)}
+              />
+            )}
+          </SwipeRow>
+        ))}
       </View>
     </View>
   );

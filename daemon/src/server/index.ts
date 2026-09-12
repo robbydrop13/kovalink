@@ -16,6 +16,10 @@ import {
   type KovaNewTabResponse,
   type KovaRecentProjectsResponse,
   type KovaResumeRequest,
+  type KovaBookmarkRequest,
+  type KovaBookmarkResponse,
+  type PaneTitleRequest,
+  type PaneTitleResponse,
   type KovaSessionsResponse,
   type Prompt,
   type Turn,
@@ -41,6 +45,7 @@ import type { UploadStore } from '../fs/uploads.js';
 import { listRecentProjects, resolveRecentProject } from '../fs/quickdests.js';
 import { findSession, listSessions } from '../kova/sessions.js';
 import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession } from '../kova/resume.js';
+import { ManageError, closePane, renameTab, setBookmark } from '../kova/manage.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { Hub, type Socket } from './hub.js';
 import type { Services } from './services.js';
@@ -308,6 +313,60 @@ export async function createHttpServer(
       }
     },
   );
+
+  /**
+   * Fermer un pane (le seul geste destructeur de l'app, confirme cote app avec l'etat
+   * reel du pane). `close-tab` si le pane est seul dans son onglet, `close-pane` sinon.
+   * Nonce : un double tap ne ferme pas deux panes. Aucune touche n'est emise.
+   */
+  app.post<{ Params: { paneId: string }; Body: { nonce?: string } }>(ROUTE_PATTERNS.paneClose, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'interrupt')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many close requests');
+    }
+    const nonce = req.body?.nonce;
+    if (typeof nonce !== 'string' || nonce.length === 0) return fail(reply, 400, 'BAD_REQUEST', 'nonce required');
+    if (!services.nonces.reserve(nonce)) return { applied: false, reason: 'duplicate' };
+    try {
+      const res = await closePane(services, Number(req.params.paneId), deviceId);
+      if (!res.applied) services.nonces.release(nonce);
+      return res;
+    } catch (e) {
+      services.nonces.release(nonce);
+      if (e instanceof ManageError) return fail(reply, e.code === 'PANE_NOT_FOUND' ? 404 : 400, e.code, e.message);
+      throw e;
+    }
+  });
+
+  /** Renommer l'onglet du pane (`set-tab-title`), titre assaini ici, `null` pour le titre automatique. */
+  app.post<{ Params: { paneId: string }; Body: Partial<PaneTitleRequest> }>(ROUTE_PATTERNS.paneTitle, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'text')) return fail(reply, 429, 'RATE_LIMITED', 'too many renames');
+    try {
+      const res: PaneTitleResponse = await renameTab(services, Number(req.params.paneId), req.body?.title ?? null, deviceId);
+      return res;
+    } catch (e) {
+      if (e instanceof ManageError) return fail(reply, e.code === 'PANE_NOT_FOUND' ? 404 : 400, e.code, e.message);
+      throw e;
+    }
+  });
+
+  /** Favori : ajout ou retrait dans `bookmarks.json` de Kova, identifiant resolu par l'index. */
+  app.post<{ Body: Partial<KovaBookmarkRequest> }>(ROUTE_PATTERNS.kovaBookmark, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'text')) return fail(reply, 429, 'RATE_LIMITED', 'too many bookmark changes');
+    const op = req.body?.op;
+    if (op !== 'add' && op !== 'remove') return fail(reply, 400, 'BAD_REQUEST', 'op must be add or remove');
+    const session = findSession(req.body?.sessionId, services.panes.all(), services.panes.allTabs());
+    if (!session) return fail(reply, 404, 'SESSION_NOT_FOUND', 'unknown session');
+    try {
+      const res: KovaBookmarkResponse = setBookmark(op, { sessionId: session.sessionId, cwd: session.cwd, label: session.title }, deviceId);
+      return res;
+    } catch (e) {
+      if (e instanceof ManageError) return fail(reply, 400, e.code, e.message);
+      throw e;
+    }
+  });
 
   app.post<{ Params: { paneId: string }; Body: { text?: string; nonce?: string } }>(
     ROUTE_PATTERNS.paneText,

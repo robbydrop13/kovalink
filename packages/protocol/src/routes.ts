@@ -18,6 +18,14 @@ export const ROUTES = {
   paneAnswer: (paneId: number): string => `/v1/panes/${paneId}/answer`,
   paneInterrupt: (paneId: number): string => `/v1/panes/${paneId}/interrupt`,
   paneText: (paneId: number): string => `/v1/panes/${paneId}/text`,
+  /**
+   * Gestion depuis l'app, les memes gestes que sur le Mac : fermer (le seul geste
+   * destructeur, confirme cote app), renommer l'onglet (`set-tab-title`, titre assaini
+   * cote daemon), favori (`~/.config/kova/bookmarks.json`, ecriture atomique).
+   */
+  paneClose: (paneId: number): string => `/v1/panes/${paneId}/close`,
+  paneTitle: (paneId: number): string => `/v1/panes/${paneId}/title`,
+  kovaBookmark: '/v1/kova/bookmark',
   paneScreen: (paneId: number): string => `/v1/panes/${paneId}/screen`,
   sessionTurns: (sessionId: string): string =>
     `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
@@ -68,6 +76,9 @@ export const ROUTE_PATTERNS = {
   paneAnswer: '/v1/panes/:paneId/answer',
   paneInterrupt: '/v1/panes/:paneId/interrupt',
   paneText: '/v1/panes/:paneId/text',
+  paneClose: '/v1/panes/:paneId/close',
+  paneTitle: '/v1/panes/:paneId/title',
+  kovaBookmark: '/v1/kova/bookmark',
   paneScreen: '/v1/panes/:paneId/screen',
   sessionTurns: '/v1/sessions/:sessionId/turns',
   kovaLaunch: '/v1/kova/launch',
@@ -188,6 +199,8 @@ export interface KovaSessionEntry {
   state: 'open' | 'closed';
   /** Pane qui la porte quand elle est ouverte. */
   paneId: number | null;
+  /** Presente dans `bookmarks.json` de Kova : etoile, en tete des palettes. */
+  bookmarked: boolean;
 }
 
 export interface KovaSessionsResponse {
@@ -209,4 +222,31 @@ export interface KovaResumeResponse {
   cwd: string;
   launched: boolean;
   alreadyOpen: boolean;
+}
+
+/** Une entree de `~/.config/kova/bookmarks.json`, format de Kova conserve tel quel. */
+export interface KovaBookmark {
+  agent: string;
+  session_id: string;
+  cwd: string;
+  label: string;
+}
+
+/** Corps de `POST /v1/kova/bookmark`. L'identifiant est valide par forme et resolu par le daemon. */
+export interface KovaBookmarkRequest {
+  op: 'add' | 'remove';
+  sessionId: string;
+}
+
+export interface KovaBookmarkResponse {
+  bookmarked: boolean;
+}
+
+/** Corps de `POST /v1/panes/:paneId/title`. `null` : retour au titre automatique. */
+export interface PaneTitleRequest {
+  title: string | null;
+}
+
+export interface PaneTitleResponse {
+  title: string | null;
 }

@@ -13,6 +13,7 @@ function entry(partial: Partial<KovaSessionEntry> & { sessionId: string }): Kova
     promptCount: 1,
     state: 'closed',
     paneId: null,
+    bookmarked: false,
     ...partial,
   };
 }
