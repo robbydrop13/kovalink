@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 
-import type { KovaSessionEntry, Pane } from '@/protocol';
+import type { KovaSessionEntry, Pane, RecentProject } from '@/protocol';
 import { colors } from '@/theme';
 import { Banner } from '@/ui/States';
 import { Palette, type PaletteRow } from '@/ui/Palette';
@@ -18,13 +18,16 @@ import { closedMatching } from '@/features/sessions/closedSessions';
 import { askResume, readSession, sessionAge } from '@/features/sessions/resume';
 import { confirmClose, promptRename, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
-import { fetchSessions } from '@/net/http';
+import { fetchRecentProjects, fetchSessions, postNewTab } from '@/net/http';
+import { matchesQuery } from '@/utils/search';
+import { ImpactStyle, impact } from '@/utils/haptics';
 import { useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { usePrompts } from '@/store/prompts';
 import { t } from '@/i18n/en';
 
 const CLOSED_PREFIX = 'closed:';
+const PROJECT_PREFIX = 'project:';
 
 export default function PanesPaletteScreen() {
   const panes = usePanes((s) => s.panes);
@@ -33,6 +36,9 @@ export default function PanesPaletteScreen() {
   const kova = useConnection((s) => s.kova);
   const [query, setQuery] = useState('');
   const [sessions, setSessions] = useState<KovaSessionEntry[] | null>(null);
+  /** Projets récents de Kova : « New session in … » quand la saisie correspond (Cmd+O fusionné). */
+  const [projects, setProjects] = useState<RecentProject[]>([]);
+  const [launching, setLaunching] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -46,7 +52,15 @@ export default function PanesPaletteScreen() {
   }, []);
   useEffect(() => {
     load();
+    void fetchRecentProjects().then(
+      (res) => setProjects(res.projects),
+      () => setProjects([]),
+    );
   }, [load]);
+  const projectMatches = useMemo(
+    () => (query.trim().length === 0 ? [] : projects.filter((p) => matchesQuery(`${p.label} ${p.path}`, query)).slice(0, 5)),
+    [projects, query],
+  );
   const bookmarked = useMemo(() => new Set((sessions ?? []).filter((x) => x.bookmarked).map((x) => x.sessionId)), [sessions]);
 
   const groups = useMemo(() => groupByTab(kova === 'down' ? [] : panes, tabs), [kova, panes, tabs]);
@@ -115,6 +129,20 @@ export default function PanesPaletteScreen() {
     row.key.startsWith(CLOSED_PREFIX) ? closed.find((s) => s.sessionId === row.key.slice(CLOSED_PREFIX.length)) : undefined;
 
   const pick = (row: PaletteRow) => {
+    if (row.key.startsWith(PROJECT_PREFIX)) {
+      const project = projectMatches.find((p) => String(p.index) === row.key.slice(PROJECT_PREFIX.length));
+      if (!project || launching !== null) return;
+      setLaunching(project.index);
+      impact(ImpactStyle.Medium);
+      void postNewTab(project).then(
+        (res) => router.replace(res.launched ? `/session/${res.paneId}` : `/session/${res.paneId}?view=term`),
+        (e: unknown) => {
+          setNotice(t.projectsCreateFailed(e instanceof Error ? e.message : String(e)));
+          setLaunching(null);
+        },
+      );
+      return;
+    }
     const session = closedOf(row);
     if (session) {
       askResume(session, setNotice);

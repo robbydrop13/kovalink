@@ -8,7 +8,8 @@ import type { FsEntry } from '@/protocol';
 import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
-import { glyphFor, humanSize, shortDate, truncateMiddle } from './format';
+import { Icon, type IconName } from '@/ui/Icon';
+import { humanSize, iconFor, shortDate, truncateMiddle } from './format';
 
 interface Props {
   entry: FsEntry;
@@ -35,16 +36,10 @@ export function FileRow({ entry, onPress, onShare, selected = false, selecting =
     >
       {selecting ? (
         <View style={[styles.check, selected && styles.checkOn]}>
-          {selected ? (
-            <Txt variant="caption" color={colors.text.onFill}>
-              ✓
-            </Txt>
-          ) : null}
+          {selected ? <Icon name="check" size={12} color={colors.text.onFill} /> : null}
         </View>
       ) : (
-        <Txt variant="body" color={isDir ? colors.accent.primary : colors.text.tertiary}>
-          {glyphFor(entry)}
-        </Txt>
+        <Icon name={iconFor(entry)} size={20} color={isDir ? colors.accent.primary : colors.text.tertiary} />
       )}
 
       <View style={styles.body}>
@@ -75,9 +70,7 @@ export function FileRow({ entry, onPress, onShare, selected = false, selecting =
       </View>
 
       {isDir && !selecting ? (
-        <Txt variant="footnote" color={colors.text.tertiary}>
-          ›
-        </Txt>
+        <Icon name="chevron-right" size={16} color={colors.text.tertiary} />
       ) : null}
     </Pressable>
   );
@@ -118,7 +111,7 @@ export function SortHeader({
   dir: 'asc' | 'desc';
   onSort: (key: 'name' | 'size' | 'mtime') => void;
 }) {
-  const arrow = dir === 'asc' ? '↑' : '↓';
+  const arrow: IconName = dir === 'asc' ? 'arrow-up' : 'arrow-down';
   const cell = (key: 'name' | 'size' | 'mtime', label: string, style?: object) => (
     <Pressable
       accessibilityRole="button"
@@ -129,7 +122,8 @@ export function SortHeader({
     >
       <Txt variant="caption" color={sort === key ? colors.accent.primary : colors.text.tertiary}>
         {label}
-        {sort === key ? ` ${arrow}` : ''}
+        {sort === key ? ' ' : ''}
+        {sort === key ? <Icon name={arrow} size={12} color={colors.accent.primary} /> : null}
       </Txt>
     </Pressable>
   );

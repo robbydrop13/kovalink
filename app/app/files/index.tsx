@@ -311,7 +311,7 @@ export default function FilesScreen() {
             gestes différents. */}
         {!store.loading && store.error ? (
           <EmptyState
-            glyph={store.errorCode === 'READ_DENIED' ? '⊘' : '⚠'}
+            icon={store.errorCode === 'READ_DENIED' ? 'slash' : 'alert-triangle'}
             title={titleForError(store.errorCode)}
             body={store.error}
           >
@@ -324,7 +324,7 @@ export default function FilesScreen() {
 
         {!store.loading && !store.error && entries.length === 0 ? (
           <EmptyState
-            glyph="▢"
+            icon="folder"
             title={store.filter ? t.filesNoResults : t.filesEmptyFolder}
             body={store.filter ? t.filesFilterHint : undefined}
           >
@@ -419,7 +419,7 @@ function Nav({
 }) {
   return (
     <View style={styles.nav}>
-      <LinkAction label={t.filesBack} onPress={onBack} />
+      <LinkAction icon="chevron-left" label={t.filesBack} onPress={onBack} />
       <Txt variant="title2" color={colors.text.primary} numberOfLines={1}>
         {title}
       </Txt>

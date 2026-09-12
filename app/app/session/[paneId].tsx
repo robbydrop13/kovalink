@@ -30,8 +30,10 @@ import { Button, LinkAction } from '@/ui/Button';
 import { LinkPill } from '@/ui/LinkPill';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
+import { Icon } from '@/ui/Icon';
 import { AgentStatus } from '@/features/chat/AgentStatus';
-import { AssistantTurn, OrphanResults, StreamDot, UserBubble } from '@/features/chat/Bubble';
+import { AssistantTurn, OrphanResults, QuietSystemRow, StreamDot, SystemRow, UserBubble } from '@/features/chat/Bubble';
+import { feedItems } from '@/features/chat/systemEvents';
 import { Composer } from '@/features/chat/Composer';
 import { StaleQueue } from '@/features/chat/StaleQueue';
 import { confirmCellularSend } from '@/features/chat/AttachmentViews';
@@ -750,16 +752,20 @@ export default function SessionScreen() {
             />
           ) : null}
 
-          {turns.map((turn) => (
-            <TurnView
-              key={turn.id}
-              turn={turn}
-              working={working}
-              streaming={turn.id === streamingTurnId}
-              results={results}
-              callIds={callIds}
-            />
-          ))}
+          {feedItems(turns).map((item) =>
+            item.kind === 'quiet' ? (
+              <QuietSystemRow key={item.key} turns={item.turns} />
+            ) : (
+              <TurnView
+                key={item.turn.id}
+                turn={item.turn}
+                working={working}
+                streaming={item.turn.id === streamingTurnId}
+                results={results}
+                callIds={callIds}
+              />
+            ),
+          )}
 
           {stillPending.map((m) => (
             <UserBubble
@@ -876,6 +882,7 @@ function TurnView({
   callIds: ReadonlySet<string>;
 }) {
   if (turn.kind === 'user') return <UserBubble turn={turn} state="sent" />;
+  if (turn.kind === 'system') return <SystemRow turn={turn} />;
   if (turn.kind === 'tool_result') return <OrphanResults turn={turn} callIds={callIds} />;
   return <AssistantTurn turn={turn} working={working} streaming={streaming} results={results} />;
 }
@@ -893,7 +900,7 @@ function NavBar({
 }) {
   return (
     <View style={styles.nav}>
-      <LinkAction label={`< ${title}`} onPress={() => router.back()} />
+      <LinkAction icon="chevron-left" label={title} onPress={() => router.back()} />
       <View style={styles.grow} />
       <View style={styles.segmented}>
         {(['chat', 'term'] as const).map((v) => (
@@ -920,9 +927,7 @@ function NavBar({
         onPress={onMenu}
         style={styles.menu}
       >
-        <Txt variant="title2" color={colors.text.secondary}>
-          ···
-        </Txt>
+        <Icon name="more-horizontal" size={24} color={colors.text.secondary} />
       </Pressable>
     </View>
   );

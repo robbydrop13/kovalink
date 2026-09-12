@@ -34,7 +34,7 @@ export const system = {
 
   // --- Réglages ------------------------------------------------------------------------
   settingsTitle: 'Settings',
-  settingsBack: '< Sessions',
+  settingsBack: 'Sessions',
   settingsSectionNotifications: 'NOTIFICATIONS',
   settingsSectionMac: 'MAC',
   settingsSectionSecurity: 'SECURITY',
@@ -107,12 +107,11 @@ export const system = {
 
   // --- Activité ------------------------------------------------------------------------
   activityTitle: 'Activity',
-  activityBack: '‹ Back',
+  activityBack: 'Back',
   activityTabFiles: 'Files',
   activityTabDiagnostic: 'Diagnostic',
   activityRetry: 'Retry',
   activityRefresh: 'Refresh',
-  activityEmptyGlyph: '▢',
   activityEmptyTitle: 'No file access',
   activityEmptyBody: (days: number) =>
     `The log keeps ${days} days. Nothing was read or written over that period.`,

@@ -81,7 +81,7 @@ export default function ActivityScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
-        <LinkAction label={t.activityBack} onPress={() => router.back()} />
+        <LinkAction icon="chevron-left" label={t.activityBack} onPress={() => router.back()} />
         <Txt variant="title2" color={colors.text.primary}>
           {t.activityTitle}
         </Txt>
@@ -115,7 +115,7 @@ export default function ActivityScreen() {
         {!loading && !error && data && tab === 'files' ? (
           data.files.length === 0 ? (
             <EmptyState
-              glyph={t.activityEmptyGlyph}
+              icon="activity"
               title={t.activityEmptyTitle}
               body={t.activityEmptyBody(data.retentionDays)}
             />

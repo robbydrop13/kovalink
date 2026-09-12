@@ -1,6 +1,9 @@
 // Chaînes visibles : chat, actions, transferts. Voir `../en.ts`.
 export const chat = {
   // Actions partagées entre écrans.
+  systemLabel: 'System',
+  systemEvents: (n: number) => (n === 1 ? '1 system event' : `${n} system events`),
+  systemShowRaw: 'Show raw content',
   actionCancel: 'Cancel',
   actionRetry: 'Retry',
   actionSend: 'Send',

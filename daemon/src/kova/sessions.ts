@@ -16,7 +16,7 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import type { KovaSessionEntry, Pane, Tab } from '@kovalink/protocol';
 import { paths } from '../paths.js';
-import { aiTitleOf, type RawLine } from '../transcript/jsonl.js';
+import { aiTitleOf, classifySystemLine, type RawLine } from '../transcript/jsonl.js';
 import { readTailLines } from '../transcript/session.js';
 import { isSessionId } from './ids.js';
 import { bookmarkedIds } from './manage.js';
@@ -59,8 +59,8 @@ function humanPromptOf(line: RawLine): string | null {
   }
   if (text === null) return null;
   const trimmed = text.replace(/\[Image #\d+\]\s*/g, '').trim();
-  // Injections de Claude Code (`<command-name>`, `<task-notification>`, `<local-command-stdout>`).
-  if (trimmed === '' || trimmed.startsWith('<')) return null;
+  // Injections du harnais (`<task-notification>`, `<command-name>`, `isMeta`...) : pas un prompt.
+  if (trimmed === '' || classifySystemLine(line, trimmed) !== null) return null;
   return trimmed;
 }
 

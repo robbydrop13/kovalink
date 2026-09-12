@@ -5,6 +5,7 @@ import { Animated, StyleSheet, View } from 'react-native';
 import { colors, motion, radius, space } from '@/theme';
 import { Button } from './Button';
 import { Txt } from './Txt';
+import { Icon, type IconName } from './Icon';
 
 export function Banner({
   text,
@@ -40,23 +41,20 @@ export function Banner({
 }
 
 export function EmptyState({
-  glyph,
+  icon,
   title,
   body,
   children,
 }: {
-  glyph?: string;
+  /** Icône Feather au dessus du titre. */
+  icon?: IconName;
   title: string;
   body?: string;
   children?: ReactNode;
 }) {
   return (
     <View style={styles.empty}>
-      {glyph ? (
-        <Txt variant="display" color={colors.text.tertiary}>
-          {glyph}
-        </Txt>
-      ) : null}
+      {icon ? <Icon name={icon} size={24} color={colors.text.tertiary} /> : null}
       <Txt variant="display" color={colors.text.primary} align="center">
         {title}
       </Txt>

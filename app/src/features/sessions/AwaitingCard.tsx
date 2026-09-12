@@ -85,6 +85,7 @@ export function AwaitingCard({
       <Button label={t.actionOpen} onPress={onOpen} height={layout.touchPrimary} />
       <View style={styles.footer}>
         <LinkAction
+          icon="square"
           label={interruptLabel}
           color={colors.action.interrupt.text}
           disabled={interruptDisabled}

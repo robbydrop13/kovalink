@@ -253,6 +253,53 @@ describe('parseur JSONL', () => {
     assert.equal(JSON.stringify(turns).includes('xxxx'), false, 'jamais les octets');
   });
 
+  describe('tours system : ce que le harnais injecte sous le role user (capture IMG_5371)', () => {
+    // Ligne REELLE du transcript de Robin (10 septembre, resultat raccourci) : une
+    // notification de sous-agent, rendue en bulle « de Robin » par l'app d'alors.
+    const notification: RawLine = {
+      type: 'user',
+      uuid: 'f29935ad-9c5b-44c1-9851-3ca72a66abc0',
+      timestamp: '2026-09-10T13:25:46.065Z',
+      origin: { kind: 'task-notification' },
+      promptSource: 'system',
+      message: {
+        role: 'user',
+        content:
+          '<task-notification>\n<task-id>a68188c6696762ab8</task-id>\n<tool-use-id>toolu_01T6hVLPEdkJLvf4G3RcgzYP</tool-use-id>\n<status>completed</status>\n<summary>Agent "PRD produit KovaLink" finished</summary>\n<note>A task-notification fires each time this agent stops.</note>\n<result>Done. 3 files changed, tests pass.</result>\n</task-notification>',
+      },
+    };
+
+    it('une notification de sous-agent est un tour system, avec sa balise et son resume', () => {
+      const [turn] = buildTurns([notification]);
+      assert.equal(turn?.kind, 'system');
+      assert.equal(turn?.systemTag, 'task-notification');
+      assert.equal(turn?.summary, 'Agent "PRD produit KovaLink" finished');
+    });
+
+    it('isMeta seul suffit, meme sans balise', () => {
+      const [turn] = buildTurns([{ ...user('# /loop schedule a recurring prompt\n\nParse the input below'), isMeta: true }]);
+      assert.equal(turn?.kind, 'system');
+      assert.equal(turn?.systemTag, null);
+      assert.equal(turn?.summary, '# /loop schedule a recurring prompt');
+    });
+
+    it('un vrai message de Robin qui commence par < reste un tour user', () => {
+      const [turn] = buildTurns([{ ...user('<div> est-il encore utile ici ?'), origin: { kind: 'human' } }]);
+      assert.equal(turn?.kind, 'user');
+      const [plain] = buildTurns([user('<task-notification-like> mais tape par moi')]);
+      assert.equal(plain?.kind, 'user', 'une balise hors table ne compte pas');
+    });
+
+    it('bash-input et system-reminder sont des evenements systeme, et n ouvrent pas un echange', () => {
+      const [a] = buildTurns([user('<bash-input>ls -la</bash-input>')]);
+      const [b] = buildTurns([user('<system-reminder>\nThe user sent a new message while you were working\n</system-reminder>')]);
+      assert.equal(a?.kind, 'system');
+      assert.equal(a?.systemTag, 'bash-input');
+      assert.equal(b?.kind, 'system');
+      assert.equal(b?.summary, 'The user sent a new message while you were working');
+    });
+  });
+
   it('les blocs thinking ne transportent aucun texte', () => {
     const turns = buildTurns([
       assistant('req_A', 0, [{ type: 'thinking', thinking: 'secret', signature: 'x' }]),

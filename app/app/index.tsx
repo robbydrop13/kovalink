@@ -12,7 +12,7 @@
 // carte EN ATTENTE comme sur la ligne TRAVAILLE : c'est le geste sûr, on le rend le plus
 // facile possible, et le scénario S3 décrit un pane qui travaille.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -22,11 +22,12 @@ import { Button, LinkAction } from '@/ui/Button';
 import { LinkPill } from '@/ui/LinkPill';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
+import { Icon } from '@/ui/Icon';
 import { TabGroupView } from '@/features/sessions/TabGroupView';
 import { paneHref } from '@/features/sessions/SessionRow';
 import { confirmClose, promptRename, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
-import { filterGroups, groupByTab, summaryLine, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
+import { groupByTab, summaryLine, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { isDegraded, useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
@@ -57,7 +58,6 @@ export default function SessionsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
   /** Sessions en favori dans Kova, pour l'étoile et le libellé du balayage. */
   const [bookmarked, setBookmarked] = useState<Set<string>>(new Set());
 
@@ -95,7 +95,7 @@ export default function SessionsScreen() {
   // cache serait des panes fantômes, on ne les montre pas.
   const kovaDown = kova === 'down';
   const groups = useMemo(() => groupByTab(kovaDown ? [] : panes, tabs), [kovaDown, panes, tabs]);
-  const shown = useMemo(() => filterGroups(groups, query), [groups, query]);
+  const shown = groups;
   const windows = windowCount(shown);
   const summary = kovaDown ? null : summaryLine(panes);
   // Un pane sans agent s'ouvre sur la vue Term ; une session périmée propose de relancer
@@ -179,8 +179,8 @@ export default function SessionsScreen() {
         <LinkPill onPress={() => router.push('/settings')} />
         {/* Le bloc C ne dépend pas de Kova : l'accès aux fichiers reste offert même quand
             la liste des sessions est vide parce que Kova est quitté (CA-123). */}
-        <LinkAction label={t.sessionsNavFiles} onPress={() => router.push('/files')} />
-        <LinkAction label={t.sessionsNavSettings} onPress={() => router.push('/settings')} />
+        <LinkAction icon="folder" label={t.sessionsNavFiles} onPress={() => router.push('/files')} />
+        <LinkAction icon="settings" label={t.sessionsNavSettings} onPress={() => router.push('/settings')} />
       </View>
 
       {degraded ? (
@@ -205,18 +205,20 @@ export default function SessionsScreen() {
 
       {!kovaDown && panes.length > 0 ? (
         <View style={styles.searchRow}>
-          <TextInput
-            style={styles.search}
-            placeholder={t.sessionsSearchPlaceholder}
-            placeholderTextColor={colors.text.tertiary}
-            value={query}
-            onChangeText={setQuery}
-            autoCorrect={false}
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-            keyboardAppearance="dark"
+          {/* Un faux champ : un tap ouvre la palette Panes (Cmd+P), le clavier s'ouvre là-bas,
+              une seule fois. La liste regroupée reste intacte derrière. */}
+          <Pressable
+            accessibilityRole="search"
             accessibilityLabel={t.sessionsSearchAccessibilityLabel}
-          />
+            accessibilityHint={t.sessionsSearchHint}
+            onPress={() => router.push('/panes')}
+            style={({ pressed }) => [styles.search, pressed && styles.searchPressed]}
+          >
+            <Icon name="search" size={16} color={colors.text.tertiary} />
+            <Txt variant="callout" color={colors.text.tertiary}>
+              {t.sessionsSearchPlaceholder}
+            </Txt>
+          </Pressable>
           {summary ? (
             <Txt variant="footnote" color={colors.status.awaiting} numberOfLines={1}>
               {summary}
@@ -244,7 +246,7 @@ export default function SessionsScreen() {
               accessibilityHint={t.sessionsLaunchKovaHint}
               onPress={() => void launchKova()}
             />
-            <Button label={t.sessionsBrowseMac} kind="secondary" onPress={() => router.push('/files')} />
+            <Button icon="folder" label={t.sessionsBrowseMac} kind="secondary" onPress={() => router.push('/files')} />
           </EmptyState>
         ) : null}
 
@@ -291,6 +293,7 @@ export default function SessionsScreen() {
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + space[3] }]}>
         <View style={styles.bottomButton}>
           <Button
+            icon="grid"
             label={t.sessionsPanesButton}
             kind="secondary"
             height={layout.touchPrimary}
@@ -301,6 +304,7 @@ export default function SessionsScreen() {
         </View>
         <View style={styles.bottomButton}>
           <Button
+            icon="folder"
             label={t.sessionsProjectsButton}
             kind="secondary"
             height={layout.touchPrimary}
@@ -338,12 +342,14 @@ const styles = StyleSheet.create({
   searchRow: { paddingHorizontal: layout.screenPaddingH, paddingVertical: space[3], gap: space[2] },
   search: {
     height: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
     borderRadius: radius.md,
     paddingHorizontal: space[4],
     backgroundColor: colors.bg.raised,
-    color: colors.text.primary,
-    fontSize: 15,
   },
+  searchPressed: { backgroundColor: colors.bg.pressed },
   bottomBar: {
     flexDirection: 'row',
     gap: space[4],

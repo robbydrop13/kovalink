@@ -13,12 +13,13 @@
 // ligne `user` du JSONL chacun. Ils ne sont JAMAIS dans les blocs du tour assistant. La
 // jointure par `toolUseId` (`indexToolResults`, protocole) est faite une fois par l'écran.
 import { useEffect, useState } from 'react';
-import { Animated, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import type { ToolResultBlock, Turn } from '@/protocol';
 import { t } from '@/i18n/en';
 import { colors, layout, motion, radius, space } from '@/theme';
 import { imageCount, textOf } from '@/store/session';
 import { Txt } from '@/ui/Txt';
+import { Icon, type IconName } from '@/ui/Icon';
 import { AttachmentChips } from './AttachmentViews';
 import { splitAttachmentLines, type Attachment } from './attachments';
 import { Markdown } from './Markdown';
@@ -47,7 +48,8 @@ export function UserBubble({
   error?: string;
 }) {
   const { width } = useWindowDimensions();
-  const mark = state === 'queued' ? 'o' : state === 'failed' ? '!' : 'v';
+  // État d'envoi en icône : `clock` en file, `alert-circle` en échec, `check` livré.
+  const markIcon: IconName = state === 'queued' ? 'clock' : state === 'failed' ? 'alert-circle' : 'check';
   const markColor =
     state === 'failed' ? colors.status.error : state === 'queued' ? colors.text.tertiary : colors.status.success;
   const raw = textOf(turn.blocks);
@@ -82,21 +84,73 @@ export function UserBubble({
           {timeOf(turn.ts)}
         </Txt>
         {state === 'failed' && onRetry ? (
-          <Txt
-            variant="footnote"
-            color={colors.status.error}
+          <Pressable
             accessibilityRole="button"
             accessibilityLabel={t.bubbleResendA11y}
+            hitSlop={8}
             onPress={onRetry}
+            style={styles.resend}
           >
-            {`${mark} ${t.bubbleResend}`}
-          </Txt>
+            <Icon name="alert-circle" size={14} color={colors.status.error} />
+            <Txt variant="footnote" color={colors.status.error}>
+              {t.bubbleResend}
+            </Txt>
+          </Pressable>
         ) : (
-          <Txt variant="footnote" color={markColor}>
-            {mark}
-          </Txt>
+          <Icon name={markIcon} size={14} color={markColor} accessibilityLabel={state ?? 'sent'} />
         )}
       </View>
+    </View>
+  );
+}
+
+/**
+ * Évènement du harnais (`kind: 'system'`) : ligne repliée, discrète, centrée, « System ·
+ * résumé ». Jamais une bulle, jamais à droite : Robin ne l'a pas écrit. Un tap déplie le
+ * contenu brut en monospace.
+ */
+export function SystemRow({ turn }: { turn: Turn }) {
+  const [open, setOpen] = useState(false);
+  const raw = textOf(turn.blocks);
+  const summary = turn.summary || turn.systemTag || t.systemLabel;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${t.systemLabel}, ${summary}`}
+      accessibilityState={{ expanded: open }}
+      onPress={() => setOpen((v) => !v)}
+      style={styles.systemWrap}
+    >
+      <Txt variant="footnote" color={colors.text.tertiary} align="center" numberOfLines={open ? undefined : 1}>
+        {t.systemLabel} · {summary}
+      </Txt>
+      {open ? (
+        <View style={styles.systemRaw}>
+          <Txt variant="monoCode" color={colors.text.secondary} selectable>
+            {raw}
+          </Txt>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+/** Évènements discrets regroupés : un compteur, dépliable en lignes système. */
+export function QuietSystemRow({ turns }: { turns: Turn[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.systemWrap}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t.systemEvents(turns.length)}
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((v) => !v)}
+      >
+        <Txt variant="caption" color={colors.text.disabled} align="center">
+          {t.systemEvents(turns.length)}
+        </Txt>
+      </Pressable>
+      {open ? turns.map((turn) => <SystemRow key={turn.id} turn={turn} />) : null}
     </View>
   );
 }
@@ -206,6 +260,16 @@ const styles = StyleSheet.create({
   },
   meta: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
   assistantWrap: { alignSelf: 'stretch', marginVertical: space[3], gap: space[2] },
+  resend: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  systemWrap: { alignSelf: 'stretch', alignItems: 'center', marginVertical: space[2], gap: space[2], paddingHorizontal: space[4] },
+  systemRaw: {
+    alignSelf: 'stretch',
+    padding: space[3],
+    borderRadius: radius.md,
+    backgroundColor: colors.bg.inset,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+  },
   textBlock: { paddingVertical: space[2] },
   thinking: { paddingHorizontal: space[3], paddingVertical: space[1] },
   streamDot: {

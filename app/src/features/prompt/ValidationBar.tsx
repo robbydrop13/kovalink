@@ -227,7 +227,7 @@ function Header({ awaitingSince, title }: { awaitingSince: string; title: string
   const aging = isAgingSince(awaitingSince);
   return (
     <View style={styles.header}>
-      <StatusGlyph state="awaiting" size={10} />
+      <StatusGlyph state="awaiting" size={12} />
       <Txt variant="caption" color={aging ? colors.status.error : colors.text.secondary}>
         {title}
       </Txt>

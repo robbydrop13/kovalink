@@ -91,9 +91,10 @@ export function SessionRow({
         </Txt>
         <PermissionNote mode={pane.permissionMode} />
         <View style={styles.actions}>
-          {stale && onRelaunch ? <LinkAction label={t.paneRelaunchClaude} onPress={onRelaunch} /> : null}
+          {stale && onRelaunch ? <LinkAction icon="refresh-cw" label={t.paneRelaunchClaude} onPress={onRelaunch} /> : null}
           {working && onInterrupt ? (
             <LinkAction
+              icon="square"
               label={interruptLabel}
               color={colors.action.interrupt.text}
               disabled={interruptDisabled}

@@ -13,6 +13,7 @@ import { t } from '@/i18n/en';
 import { colors, radius, space } from '@/theme';
 import { useSession } from '@/store/session';
 import { Txt } from '@/ui/Txt';
+import { Icon } from '@/ui/Icon';
 import { StateGlyph, TOOL_ROW_HEIGHT, ToolRow } from './ToolRow';
 import { groupState, isCollapsible, isEditTool, toolRowState } from './toolLabel';
 
@@ -90,9 +91,7 @@ export function ToolGroup({ calls, results, working }: Props) {
         <Txt variant="footnote" color={colors.text.tertiary} numberOfLines={1} style={styles.detail}>
           {detail}
         </Txt>
-        <Txt variant="footnote" color={colors.text.tertiary}>
-          {'>'}
-        </Txt>
+        <Icon name="chevron-right" size={16} color={colors.text.tertiary} />
       </Pressable>
     </View>
   );

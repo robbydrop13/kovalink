@@ -34,7 +34,7 @@ export function AgentStatus(props: AgentStatusInput) {
       accessibilityLabel={t.statusA11y(label)}
       style={[styles.bar, { borderLeftColor: color }]}
     >
-      <StatusGlyph state={glyph} size={10} />
+      <StatusGlyph state={glyph} size={12} />
       <Txt variant="calloutStrong" color={color} numberOfLines={1}>
         {label}
       </Txt>

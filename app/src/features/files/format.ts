@@ -94,19 +94,18 @@ export function previewKind(entry: Pick<FsEntry, 'mime' | 'ext' | 'kind'>): Prev
   return 'none';
 }
 
-/** Glyphe de ligne. Un caractère, pas une bibliothèque d'icônes. */
-export function glyphFor(entry: FsEntry): string {
-  if (entry.kind === 'dir') return '▸';
-  if (entry.kind === 'symlink') return '↳';
+/** Nom d'icône Feather d'une ligne de fichier (rendu par `src/ui/Icon.tsx`). */
+export function iconFor(entry: FsEntry): 'folder' | 'link' | 'image' | 'file-text' | 'file' {
+  if (entry.kind === 'dir') return 'folder';
+  if (entry.kind === 'symlink') return 'link';
   switch (previewKind(entry)) {
     case 'image':
-      return '▣';
+      return 'image';
     case 'pdf':
-      return '▤';
     case 'markdown':
     case 'text':
-      return '▢';
+      return 'file-text';
     default:
-      return '▫';
+      return 'file';
   }
 }

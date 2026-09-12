@@ -18,6 +18,7 @@ import type { Prompt } from '@/protocol';
 import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
+import { Icon } from '@/ui/Icon';
 import { isComposerLocked, requiresFaceIdForText } from '@/store/prompts';
 import { draftOf, useDrafts } from '@/store/drafts';
 import { AttachmentStrip, askAttachmentSource } from './AttachmentViews';
@@ -148,9 +149,7 @@ export function Composer({
           }
           style={styles.attach}
         >
-          <Txt variant="title2" color={canAttach ? colors.text.secondary : colors.text.disabled}>
-            +
-          </Txt>
+          <Icon name="plus" size={24} color={canAttach ? colors.text.secondary : colors.text.disabled} />
         </Pressable>
 
         <Pressable
@@ -179,6 +178,7 @@ export function Composer({
             onPress={onInterrupt}
             style={styles.interrupt}
           >
+            <Icon name="square" size={14} color={colors.action.interrupt.text} />
             <Txt variant="calloutStrong" color={colors.action.interrupt.text}>
               {t.composerInterrupt}
             </Txt>
@@ -192,9 +192,7 @@ export function Composer({
             onPress={() => void send()}
             style={[styles.send, canSend ? styles.sendOn : styles.sendOff]}
           >
-            <Txt variant="bodyStrong" color={canSend ? colors.text.onFill : colors.text.disabled}>
-              {sending ? '…' : '>'}
-            </Txt>
+            <Icon name={sending ? 'loader' : 'send'} size={20} color={canSend ? colors.text.onFill : colors.text.disabled} />
           </Pressable>
         )}
       </View>
@@ -257,6 +255,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: colors.action.interrupt.border,
+    flexDirection: 'row',
+    gap: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },

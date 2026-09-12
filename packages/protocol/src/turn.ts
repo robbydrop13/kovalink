@@ -60,7 +60,17 @@ export interface Turn {
    * `tool_result` : turn de jointure, jamais une bulle. Voir `ToolResultBlock`.
    * Ses `blocks` ne contiennent QUE des `tool_result`.
    */
-  kind: 'user' | 'assistant' | 'tool_result';
+  /**
+   * `system` : ligne `user` INJECTEE PAR LE HARNAIS (notification de sous-agent, rappel
+   * `<system-reminder>`, sortie de commande locale, `isMeta`). Jamais un message de Robin :
+   * l'app la rend en ligne discrete, pas en bulle, et ne la compte ni comme echange ni
+   * comme echo d'un envoi.
+   */
+  kind: 'user' | 'assistant' | 'tool_result' | 'system';
+  /** Tours `system` : balise de tete (`task-notification`, `system-reminder`...), `null` si `isMeta` seul. */
+  systemTag?: string | null;
+  /** Tours `system` : `<summary>` du harnais, sinon la premiere ligne utile, tronquee. */
+  summary?: string;
   ts: string;
   seq: number;
   uuids: string[];

@@ -176,7 +176,7 @@ export default function ShareScreen() {
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 96 }]}>
         {items.length === 0 ? (
           <EmptyState
-            glyph="▢"
+            icon="upload"
             title={t.shareEmptyTitle}
             body={t.shareEmptyBody}
           >

@@ -26,6 +26,7 @@ import { colors, layout, radius, space } from '@/theme';
 import { Button, LinkAction } from '@/ui/Button';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
+import { Icon } from '@/ui/Icon';
 import { fetchText, fileUrl, type DownloadPhase } from '@/net/files';
 import { saveToDevice, shareFile } from '@/features/files/pick';
 import { humanSize, previewKind, truncateMiddle } from '@/features/files/format';
@@ -216,7 +217,7 @@ function Body({
     // La visionneuse PDF native d'iOS est celle de la WebView : elle pagine, zoome et
     // rend un document de 50 pages sans qu'on écrive un rendu maison (CA-98).
     if (Platform.OS !== 'ios') {
-      return <EmptyState glyph="▤" title={t.previewPdfIosOnly} body={path} />;
+      return <EmptyState icon="file-text" title={t.previewPdfIosOnly} body={path} />;
     }
     return (
       <WebView
@@ -230,7 +231,7 @@ function Body({
 
   if ((kind === 'text' || kind === 'markdown') && text !== null) {
     if (text.length === 0) {
-      return <EmptyState glyph="▢" title={t.previewEmptyFile} body={t.previewEmptyBody} />;
+      return <EmptyState icon="file" title={t.previewEmptyFile} body={t.previewEmptyBody} />;
     }
     const lines = text.split('\n');
     return (
@@ -257,9 +258,7 @@ function Body({
   // spécifié, pas un écran d'erreur.
   return (
     <ScrollView contentContainerStyle={styles.metaBox}>
-      <Txt variant="display" color={colors.text.tertiary}>
-        ▫
-      </Txt>
+      <Icon name="file" size={24} color={colors.text.tertiary} />
       <Txt variant="title2" color={colors.text.primary} align="center">
         {t.previewUnavailable}
       </Txt>

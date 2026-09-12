@@ -80,6 +80,64 @@ function isConversationLine(l: RawLine): boolean {
 }
 
 /**
+ * Balises par lesquelles le harnais de Claude Code parle au modele sous le role `user`.
+ * TABLE FERMEE, relevee sur le transcript de Robin (12 septembre : 55 `task-notification`,
+ * `bash-input`, `bash-stdout`) et sur les formes connues du harnais. Un message de Robin
+ * qui commencerait par un `<` quelconque n'y est pas.
+ */
+export const HARNESS_TAGS: readonly string[] = [
+  'task-notification',
+  'system-reminder',
+  'system-notification',
+  'cross-session-message',
+  'local-command-stdout',
+  'local-command-stderr',
+  'local-command-caveat',
+  'command-name',
+  'command-message',
+  'command-args',
+  'bash-input',
+  'bash-stdout',
+  'bash-stderr',
+  'ide_opened_file',
+  'ide_selection',
+];
+
+const SUMMARY_MAX = 120;
+
+export interface SystemClassification {
+  tag: string | null;
+  summary: string;
+}
+
+function firstLine(text: string): string {
+  const line = text
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0 && !l.startsWith('<'));
+  const s = line ?? text.trim().slice(0, SUMMARY_MAX);
+  return s.length > SUMMARY_MAX ? `${s.slice(0, SUMMARY_MAX - 1)}…` : s;
+}
+
+/**
+ * Une ligne `user` est-elle un evenement du harnais ? Oui si `isMeta`, si son origine
+ * n'est pas humaine (`origin.kind`), si `promptSource` est `system`, ou si son texte
+ * commence par une balise de la table. Rend la balise et un resume lisible.
+ */
+export function classifySystemLine(line: RawLine, text: string): SystemClassification | null {
+  const trimmed = text.trim();
+  const m = /^<([a-z][a-z0-9_-]*)[\s>]/.exec(trimmed);
+  const tag = m && HARNESS_TAGS.includes(m[1] as string) ? (m[1] as string) : null;
+  const origin = (line['origin'] as { kind?: unknown } | undefined)?.kind;
+  const foreign = typeof origin === 'string' && origin !== 'human';
+  const meta = line['isMeta'] === true || line['promptSource'] === 'system';
+  if (tag === null && !foreign && !meta) return null;
+  const summaryTag = /<summary>([\s\S]*?)<\/summary>/.exec(trimmed);
+  const summary = summaryTag ? firstLine(summaryTag[1] ?? '') : firstLine(trimmed.replace(/<[^>]+>/g, ' '));
+  return { tag, summary };
+}
+
+/**
  * Message de Robin ABSORBE EN COURS DE TOUR.
  *
  * Quand Robin ecrit pendant que l'agent travaille, Claude Code n'ecrit AUCUNE ligne
@@ -271,9 +329,19 @@ export function buildTurns(lines: RawLine[], startSeq = 0): Turn[] {
     const blocks = blocksOf(msg.content);
     if (blocks.length === 0) continue;
     const isToolResult = blocks.every((b) => b.type === 'tool_result');
+    const system = isToolResult
+      ? null
+      : classifySystemLine(
+          line,
+          blocks
+            .filter((b): b is Extract<Block, { type: 'text' }> => b.type === 'text')
+            .map((b) => b.text)
+            .join('\n'),
+        );
     turns.push({
       id: line.uuid ?? `u${counter}`,
-      kind: isToolResult ? 'tool_result' : 'user',
+      kind: isToolResult ? 'tool_result' : system ? 'system' : 'user',
+      ...(system ? { systemTag: system.tag, summary: system.summary } : {}),
       ts: line.timestamp ?? new Date(0).toISOString(),
       seq: seqOf(line),
       uuids: line.uuid ? [line.uuid] : [],
@@ -339,7 +407,11 @@ export function analyzeTurnEnd(lines: RawLine[]): TurnEndAnalysis {
   conv.forEach((line, i) => {
     const blocks = blocksOf((line.message as RawMessage).content);
     if (line.type === 'user') {
-      const isHuman = !blocks.every((b) => b.type === 'tool_result');
+      const text = blocks
+        .filter((b): b is Extract<Block, { type: 'text' }> => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n');
+      const isHuman = !blocks.every((b) => b.type === 'tool_result') && classifySystemLine(line, text) === null;
       if (isHuman) lastUserPromptAt = i;
       for (const b of blocks) if (b.type === 'tool_result') pendingToolUse.delete(b.toolUseId);
       return;

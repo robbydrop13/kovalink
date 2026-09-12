@@ -12,10 +12,11 @@
     "ota": "eas update --channel preview",
     "protocol:sync": "npm --prefix .. run build",
     "start": "npm run protocol:sync && expo start --go --clear",
-    "test": "node --import ./test/register.mjs --test test/*.test.ts && bash scripts/check-i18n.sh",
+    "test": "node --import ./test/register.mjs --test test/*.test.ts && bash scripts/check-i18n.sh && bash scripts/check-icons.sh",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
     "@kovalink/protocol": "file:../packages/protocol",
     "expo": "~57.0.21",
     "expo-camera": "~57.0.4",

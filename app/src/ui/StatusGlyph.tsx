@@ -1,25 +1,29 @@
-// Glyphe d'état. Chaque état est décodable par la FORME et la position, pas seulement par la
-// couleur (P4) : losange plein pour `awaiting`, barre pleine animée pour `working`, cercle
-// creux pour `idle`.
+// Glyphe d'état, en icônes Feather : chaque état reste décodable par la FORME, pas
+// seulement par la couleur (P4) : `pause-circle` pour `awaiting`, `activity` qui pulse
+// pour `working`, `circle` creux pour `idle`, `x-circle` pour `closed`.
 import { useEffect, useState } from 'react';
-import { Animated, View } from 'react-native';
+import { Animated } from 'react-native';
 import { colors, motion } from '@/theme';
 import { t } from '@/i18n/en';
+import { Icon } from './Icon';
 
 export type AgentState = 'awaiting' | 'working' | 'idle' | 'closed';
 
-export function StatusGlyph({ state, size = 12 }: { state: AgentState; size?: number }) {
+const ICON = {
+  awaiting: { name: 'pause-circle', color: colors.status.awaiting },
+  working: { name: 'activity', color: colors.status.working },
+  idle: { name: 'circle', color: colors.status.idle },
+  closed: { name: 'x-circle', color: colors.status.closed },
+} as const;
+
+export function StatusGlyph({ state, size = 14 }: { state: AgentState; size?: 12 | 14 | 16 | 20 | 24 }) {
   const [pulse] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     if (state !== 'working') return;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 0.45,
-          duration: motion.pulse / 2,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulse, { toValue: 0.45, duration: motion.pulse / 2, useNativeDriver: true }),
         Animated.timing(pulse, { toValue: 1, duration: motion.pulse / 2, useNativeDriver: true }),
       ]),
     );
@@ -27,61 +31,15 @@ export function StatusGlyph({ state, size = 12 }: { state: AgentState; size?: nu
     return () => loop.stop();
   }, [state, pulse]);
 
-  if (state === 'awaiting') {
-    return (
-      <View
-        accessibilityLabel={t.glyphWaiting}
-        style={{
-          width: size,
-          height: size,
-          backgroundColor: colors.status.awaiting,
-          transform: [{ rotate: '45deg' }],
-        }}
-      />
-    );
-  }
-
-  if (state === 'working') {
-    return (
-      <Animated.View
-        accessibilityLabel={t.glyphWorking}
-        style={{
-          width: size * 0.35,
-          height: size,
-          borderRadius: 2,
-          backgroundColor: colors.status.working,
-          opacity: pulse,
-        }}
-      />
-    );
-  }
-
-  if (state === 'closed') {
-    return (
-      <View
-        accessibilityLabel={t.glyphClosed}
-        style={{
-          width: size * 0.5,
-          height: size,
-          borderRightWidth: 2,
-          borderTopWidth: 2,
-          borderBottomWidth: 2,
-          borderColor: colors.status.closed,
-        }}
-      />
-    );
-  }
-
-  return (
-    <View
-      accessibilityLabel={t.glyphIdle}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderWidth: 1.5,
-        borderColor: colors.status.idle,
-      }}
-    />
-  );
+  const label =
+    state === 'awaiting'
+      ? t.glyphWaiting
+      : state === 'working'
+        ? t.glyphWorking
+        : state === 'closed'
+          ? t.glyphClosed
+          : t.glyphIdle;
+  const icon = <Icon name={ICON[state].name} size={size} color={ICON[state].color} accessibilityLabel={label} />;
+  if (state !== 'working') return icon;
+  return <Animated.View style={{ opacity: pulse }}>{icon}</Animated.View>;
 }

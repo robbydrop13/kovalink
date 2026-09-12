@@ -116,6 +116,9 @@ export const sessions = {
   sessionsMacAsleepBanner: (time: string) => `Mac asleep or off, last state at ${time}`,
   sessionsSearchPlaceholder: 'Tab, project or pane title',
   sessionsSearchAccessibilityLabel: 'Search sessions',
+  sessionsSearchHint: 'Opens the panes palette, like Cmd+P in Kova',
+  panesNewSessionIn: (project: string) => `New session in ${project}`,
+  panesSectionProjects: 'PROJECTS',
   sessionsKovaDownTitle: 'Kova is not running',
   sessionsKovaDownBody: 'Files on the Mac remain accessible.',
   sessionsLaunchKova: 'Launch Kova',
@@ -168,7 +171,7 @@ export const sessions = {
   projectsWantedMissing: (cwd: string) => `${cwd} is not in Kova's recent projects: open the folder once on the Mac.`,
 
   // Historique d'une session fermée (lecture seule)
-  historyBack: '< Back',
+  historyBack: 'Back',
   historyReadOnly: 'read only',
   historyClosedSession: 'Closed session',
   historyUnavailable: (cause: string) => `Transcript unavailable. ${cause}`,

@@ -2,7 +2,7 @@
 export const files = {
   // Écran Fichiers (`app/files/index.tsx`).
   filesTitle: 'Files',
-  filesBack: '‹ Back',
+  filesBack: 'Back',
   filesSelect: 'Select',
   filesSelectedCount: (n: number) => `${n} selected`,
   filesCachedBanner: (time: string) =>

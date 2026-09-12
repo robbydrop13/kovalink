@@ -74,7 +74,7 @@ export default function SettingsScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
-        <LinkAction label={t.settingsBack} onPress={() => router.back()} />
+        <LinkAction icon="chevron-left" label={t.settingsBack} onPress={() => router.back()} />
         <View style={styles.grow} />
         <Txt variant="title2" color={colors.text.primary}>
           {t.settingsTitle}

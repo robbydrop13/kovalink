@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { colors, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
+import { Icon, type IconName } from '@/ui/Icon';
 import { ImpactStyle, impact } from '@/utils/haptics';
 import { t } from '@/i18n/en';
 
@@ -19,11 +20,13 @@ export interface SwipeActions {
 const ACTION_WIDTH = 84;
 
 function ActionButton({
+  icon,
   label,
   color,
   textColor,
   onPress,
 }: {
+  icon: IconName;
   label: string;
   color: string;
   textColor: string;
@@ -36,6 +39,7 @@ function ActionButton({
       onPress={onPress}
       style={({ pressed }) => [styles.action, { backgroundColor: color }, pressed && styles.pressed]}
     >
+      <Icon name={icon} size={20} color={textColor} />
       <Txt variant="footnote" color={textColor}>
         {label}
       </Txt>
@@ -61,17 +65,18 @@ export function SwipeRow({ actions, children }: { actions: SwipeActions; childre
       renderRightActions={() => (
         <View style={styles.group}>
           <ActionButton
+            icon="star"
             label={actions.bookmarked ? t.swipeUnbookmark : t.swipeBookmark}
             color={colors.status.awaiting}
             textColor={colors.text.inverse}
             onPress={() => run(actions.onBookmark)}
           />
-          <ActionButton label={t.swipeClose} color={colors.action.reject.bg} textColor={colors.action.reject.text} onPress={() => run(actions.onClose)} />
+          <ActionButton icon="x" label={t.swipeClose} color={colors.action.reject.bg} textColor={colors.action.reject.text} onPress={() => run(actions.onClose)} />
         </View>
       )}
       renderLeftActions={() => (
         <View style={styles.group}>
-          <ActionButton label={t.swipeRename} color={colors.accent.primary} textColor={colors.text.onFill} onPress={() => run(actions.onRename)} />
+          <ActionButton icon="edit-2" label={t.swipeRename} color={colors.accent.primary} textColor={colors.text.onFill} onPress={() => run(actions.onRename)} />
         </View>
       )}
     >
@@ -82,6 +87,6 @@ export function SwipeRow({ actions, children }: { actions: SwipeActions; childre
 
 const styles = StyleSheet.create({
   group: { flexDirection: 'row', gap: space[2], paddingHorizontal: space[2] },
-  action: { width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md },
+  action: { width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: radius.md },
   pressed: { opacity: 0.8 },
 });

@@ -11,6 +11,7 @@ import { router } from 'expo-router';
 import { t } from '@/i18n/en';
 import { colors, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
+import { Icon } from '@/ui/Icon';
 import { fileUrl } from '@/net/files';
 import { humanSize, truncateMiddle } from '@/features/files/format';
 import { pickFromCamera, pickFromFiles, pickFromPhotos, type Candidate } from '@/features/files/pick';
@@ -121,9 +122,7 @@ function StripThumb({ item, sending, onRemove }: { item: Attachment; sending: bo
           onPress={onRemove}
           style={styles.remove}
         >
-          <Txt variant="caption" color={colors.text.onFill}>
-            ×
-          </Txt>
+          <Icon name="x" size={12} color={colors.text.onFill} />
         </Pressable>
       ) : null}
     </View>
@@ -141,9 +140,7 @@ function LocalThumb({ item }: { item: Attachment }) {
 function FileTile({ name, size }: { name: string; size: number | null }) {
   return (
     <View style={[styles.thumb, styles.fileTile]}>
-      <Txt variant="title2" color={colors.text.tertiary}>
-        ▫
-      </Txt>
+      <Icon name={name === 'photo' ? 'image' : 'file'} size={20} color={colors.text.tertiary} />
       <Txt variant="caption" color={colors.text.secondary} numberOfLines={1}>
         {truncateMiddle(name, 12)}
       </Txt>

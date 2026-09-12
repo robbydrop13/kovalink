@@ -17,6 +17,7 @@ import { colors, layout, radius, space } from '@/theme';
 import { LinkAction } from '@/ui/Button';
 import { EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
+import { Icon } from '@/ui/Icon';
 import { SwipeRow, type SwipeActions } from '@/features/sessions/SwipeRow';
 import { t } from '@/i18n/en';
 
@@ -101,7 +102,7 @@ export function Palette({
           {title}
         </Txt>
         <View style={styles.grow} />
-        <LinkAction label={t.actionClose} onPress={() => router.back()} />
+        <LinkAction icon="x" label={t.actionClose} onPress={() => router.back()} />
       </View>
 
       {banners}
@@ -170,9 +171,7 @@ export function Palette({
                 <View style={styles.body}>
                   <View style={styles.line}>
                     {row.starred ? (
-                      <Txt variant='callout' color={colors.status.awaiting} accessibilityLabel={t.paletteBookmarked}>
-                        ★
-                      </Txt>
+                      <Icon name="star" size={14} color={colors.status.awaiting} accessibilityLabel={t.paletteBookmarked} />
                     ) : null}
                     {row.prefix ? (
                       <Txt variant='callout' color={colors.text.secondary} numberOfLines={1} style={styles.prefix}>

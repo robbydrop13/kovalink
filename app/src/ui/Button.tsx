@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, type ViewStyle } from 'react-native';
 import { ImpactStyle, impact } from '@/utils/haptics';
 import { colors, layout, radius } from '@/theme';
 import { Txt } from './Txt';
+import { Icon, type IconName } from './Icon';
 
 export type ButtonKind = 'primary' | 'secondary' | 'interrupt' | 'destructive';
 
@@ -12,6 +13,8 @@ interface Props {
   disabled?: boolean;
   height?: number;
   style?: ViewStyle;
+  /** Icône Feather devant le libellé. */
+  icon?: IconName;
   accessibilityHint?: string;
 }
 
@@ -23,6 +26,7 @@ export function Button({
   height = layout.touchPrimary,
   style,
   accessibilityHint,
+  icon,
 }: Props) {
   return (
     <Pressable
@@ -37,6 +41,7 @@ export function Button({
       }}
       style={({ pressed }) => [styles.base, { height }, kindStyle(kind, pressed, disabled), style]}
     >
+      {icon ? <Icon name={icon} size={20} color={labelColor(kind, disabled)} /> : null}
       <Txt variant="bodyStrong" color={labelColor(kind, disabled)} numberOfLines={1}>
         {label}
       </Txt>
@@ -84,12 +89,15 @@ export function LinkAction({
   color = colors.accent.primary,
   disabled = false,
   accessibilityHint,
+  icon,
 }: {
   label: string;
   onPress: () => void;
   color?: string;
   disabled?: boolean;
   accessibilityHint?: string;
+  /** Icône Feather devant le libellé. */
+  icon?: IconName;
 }) {
   return (
     <Pressable
@@ -102,6 +110,7 @@ export function LinkAction({
       onPress={onPress}
       style={styles.link}
     >
+      {icon ? <Icon name={icon} size={14} color={disabled ? colors.text.disabled : color} /> : null}
       <Txt variant="footnote" color={disabled ? colors.text.disabled : color}>
         {label}
       </Txt>
@@ -112,9 +121,11 @@ export function LinkAction({
 const styles = StyleSheet.create({
   base: {
     borderRadius: radius.md,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
     paddingHorizontal: 16,
   },
-  link: { minHeight: 32, justifyContent: 'center' },
+  link: { minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
 });

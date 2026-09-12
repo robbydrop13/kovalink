@@ -11,7 +11,8 @@ import { colors, layout, space } from '@/theme';
 import { Button, LinkAction } from '@/ui/Button';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
-import { AssistantTurn, OrphanResults, UserBubble } from '@/features/chat/Bubble';
+import { AssistantTurn, OrphanResults, QuietSystemRow, SystemRow, UserBubble } from '@/features/chat/Bubble';
+import { feedItems } from '@/features/chat/systemEvents';
 import { resumeSession } from '@/features/sessions/resume';
 import { fetchTurns } from '@/net/http';
 import { merge, toolCallIds } from '@/store/session';
@@ -88,7 +89,7 @@ export default function HistoryScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
-        <LinkAction label={t.historyBack} onPress={() => router.back()} />
+        <LinkAction icon="chevron-left" label={t.historyBack} onPress={() => router.back()} />
         <View style={styles.grow} />
         <Txt variant="caption" color={colors.text.tertiary}>
           {t.historyReadOnly}
@@ -117,8 +118,11 @@ export default function HistoryScreen() {
           </View>
         ) : null}
         <View style={styles.turns}>
-          {(turns ?? []).map((turn) => {
+          {feedItems(turns ?? []).map((item) => {
+            if (item.kind === 'quiet') return <QuietSystemRow key={item.key} turns={item.turns} />;
+            const turn = item.turn;
             if (turn.kind === 'user') return <UserBubble key={turn.id} turn={turn} state="sent" />;
+            if (turn.kind === 'system') return <SystemRow key={turn.id} turn={turn} />;
             if (turn.kind === 'tool_result') return <OrphanResults key={turn.id} turn={turn} callIds={callIds} />;
             return <AssistantTurn key={turn.id} turn={turn} working={false} streaming={false} results={results} />;
           })}
@@ -127,6 +131,7 @@ export default function HistoryScreen() {
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + space[3] }]}>
         <Button
+          icon="refresh-cw"
           label={resuming ? t.historyResuming : t.historyResume}
           disabled={resuming}
           accessibilityHint={t.historyResumeHint}

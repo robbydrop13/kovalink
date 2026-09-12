@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, layout, radius, space } from '@/theme';
 import { Button, LinkAction } from '@/ui/Button';
 import { Txt } from '@/ui/Txt';
+import { Icon, type IconName } from '@/ui/Icon';
 import { baseUrl, health, HttpError, pairClaim } from '@/net/http';
 import {
   decodePairPayload,
@@ -361,16 +362,16 @@ export default function PairScreen() {
 }
 
 function CheckRow({ label, state }: { label: string; state: CheckState }) {
-  const mark =
+  const icon: IconName =
     state === 'ok'
-      ? 'v'
+      ? 'check-circle'
       : state === 'failed'
-        ? '!'
+        ? 'alert-circle'
         : state === 'running'
-          ? '.'
+          ? 'loader'
           : state === 'skipped'
-            ? '-'
-            : ' ';
+            ? 'minus-circle'
+            : 'circle';
   const tint =
     state === 'ok'
       ? colors.status.success
@@ -379,9 +380,7 @@ function CheckRow({ label, state }: { label: string; state: CheckState }) {
         : colors.text.tertiary;
   return (
     <View style={styles.checkRow}>
-      <Txt variant="calloutStrong" color={tint}>
-        [{mark}]
-      </Txt>
+      <Icon name={icon} size={16} color={tint} accessibilityLabel={state} />
       <Txt variant="callout" color={state === 'pending' ? colors.text.tertiary : colors.text.primary}>
         {label}
       </Txt>

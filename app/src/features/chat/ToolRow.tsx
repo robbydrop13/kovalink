@@ -12,6 +12,7 @@ import type { ToolResultBlock, ToolUseBlock } from '@/protocol';
 import { t } from '@/i18n/en';
 import { colors, motion, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
+import { Icon } from '@/ui/Icon';
 import { isEditTool, toolLabel, toolRowState, type ToolRowState } from './toolLabel';
 
 const MAX_LINES = 40;
@@ -119,16 +120,16 @@ export function StateGlyph({ state }: { state: ToolRowState }) {
   }
   if (state === 'done') {
     return (
-      <Txt variant="footnote" color={colors.status.success} style={styles.glyph}>
-        ✓
-      </Txt>
+      <View style={styles.glyph}>
+        <Icon name="check" size={14} color={colors.status.success} />
+      </View>
     );
   }
   if (state === 'failed') {
     return (
-      <Txt variant="footnote" color={colors.status.error} style={styles.glyph}>
-        ✕
-      </Txt>
+      <View style={styles.glyph}>
+        <Icon name="x" size={14} color={colors.status.error} />
+      </View>
     );
   }
   return <View style={[styles.dot, styles.dotHollow]} />;
@@ -145,7 +146,7 @@ const styles = StyleSheet.create({
   },
   pressed: { backgroundColor: colors.bg.pressed },
   target: { flexShrink: 1 },
-  glyph: { width: 14, textAlign: 'center' },
+  glyph: { width: 14, alignItems: 'center' },
   dot: { width: 8, height: 8, borderRadius: 4, marginHorizontal: 3 },
   dotHollow: { borderWidth: 1.5, borderColor: colors.text.disabled },
   body: {

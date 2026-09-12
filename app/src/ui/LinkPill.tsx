@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, radius } from '@/theme';
 import { LINK_LABEL, useConnection, type LinkState } from '@/store/connection';
 import { Txt } from './Txt';
+import { Icon } from './Icon';
 import { t } from '@/i18n/en';
 
 const TINT: Record<LinkState, string> = {
@@ -36,7 +37,7 @@ export function LinkPill({ compact = false, onPress }: { compact?: boolean; onPr
       onPress={onPress ?? (() => undefined)}
       style={styles.pill}
     >
-      <View style={[styles.dot, { backgroundColor: tint }]} />
+      <Icon name={link === 'offline' || link === 'macUnreachable' ? 'wifi-off' : 'wifi'} size={12} color={tint} />
       <Txt variant="caption" color={tint}>
         {label}
       </Txt>
