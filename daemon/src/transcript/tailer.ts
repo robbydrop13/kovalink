@@ -94,6 +94,20 @@ function headMatches(state: TailState): boolean {
   return true;
 }
 
+/** Etat d'un transcript qui n'existe pas encore : tout a zero, pret a etre rouvert. */
+function unbornState(path: string): TailState {
+  return {
+    path,
+    offset: 0,
+    inode: 0,
+    head: Buffer.alloc(0),
+    decoder: new StringDecoder('utf8'),
+    carry: '',
+    bytesRead: 0,
+    lineStart: 0,
+  };
+}
+
 /**
  * Ouverture : fenetre glissante depuis la FIN, doublee jusqu'a `wantLines` lignes de
  * conversation ou `MAX_INITIAL_BYTES`. Le plafond est indispensable : avec des lignes
@@ -101,7 +115,18 @@ function headMatches(state: TailState): boolean {
  * la specification interdit.
  */
 export function openTail(path: string, wantLines = 200): { state: TailState; lines: RawLine[] } {
-  const st = statSync(path);
+  let st: Stats;
+  try {
+    st = statSync(path);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    // Claude Code ne cree le JSONL qu'au PREMIER message : une session fraichement
+    // lancee dans Kova a un identifiant mais pas encore de transcript (vu sur le pane
+    // « Claap · cc » le 12 septembre 2026, l'app affichait IO_ERROR ENOENT). C'est une
+    // conversation vide, pas une erreur : etat a l'offset 0, inode 0, et `readMore`
+    // rouvrira le fichier des qu'il existe (l'inode aura change).
+    return { state: unbornState(path), lines: [] };
+  }
   const state: TailState = {
     path,
     offset: st.size,
@@ -193,6 +218,9 @@ export interface TailHandle {
  * Surveillance d'un JSONL. `chokidar` (FSEvents) coalesce a 80 ms : cette latence est
  * sans consequence sur une conversation.
  */
+/** Cadence de sonde d'un transcript qui n'existe pas encore. */
+const UNBORN_POLL_MS = 1_000;
+
 export class TranscriptTailer extends EventEmitter {
   private readonly handles = new Map<string, TailHandle>();
 
@@ -209,11 +237,6 @@ export class TranscriptTailer extends EventEmitter {
     if (existing) return openTail(existing.state.path, wantLines).lines;
 
     const { state, lines } = openTail(path, wantLines);
-    const { watch } = await import('chokidar');
-    const watcher = watch(path, {
-      ignoreInitial: true,
-      awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
-    });
     const onChange = (): void => {
       try {
         const res = readMore(state);
@@ -224,14 +247,40 @@ export class TranscriptTailer extends EventEmitter {
         logger.warn('tail jsonl en erreur', { sessionId, err: (e as Error).message });
       }
     };
-    watcher.on('change', onChange);
-    watcher.on('add', onChange);
-    watcher.on('unlink', () => this.emit('closed', sessionId));
+
+    // Transcript pas encore ne : son dossier `projects/<slug>/` peut lui aussi manquer,
+    // chokidar n'a donc rien a surveiller. On sonde a la seconde jusqu'a la naissance du
+    // fichier, puis on bascule sur le watcher.
+    let closer: () => void = () => {};
+    const startWatcher = async (): Promise<void> => {
+      const { watch } = await import('chokidar');
+      const watcher = watch(path, {
+        ignoreInitial: true,
+        awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
+      });
+      watcher.on('change', onChange);
+      watcher.on('add', onChange);
+      watcher.on('unlink', () => this.emit('closed', sessionId));
+      closer = () => void watcher.close();
+    };
+    if (state.inode === 0) {
+      const timer = setInterval(() => {
+        onChange();
+        if (state.inode !== 0) {
+          clearInterval(timer);
+          void startWatcher();
+        }
+      }, UNBORN_POLL_MS);
+      timer.unref?.();
+      closer = () => clearInterval(timer);
+    } else {
+      await startWatcher();
+    }
 
     this.handles.set(sessionId, {
       sessionId,
       state,
-      close: () => void watcher.close(),
+      close: () => closer(),
     });
     return lines;
   }

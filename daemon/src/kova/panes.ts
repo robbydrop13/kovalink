@@ -59,7 +59,9 @@ export function toPane(raw: Record<string, unknown>): Pane {
     claude_session_name: strOrNull(raw['claude_session_name']),
     projectName: basename(cwd) || cwd,
     hasTranscript: transcript,
-    chatCapable: agent === 'claude' && transcript,
+    // Une session claude fraiche a un identifiant mais pas encore de JSONL (cree au
+    // premier message) : c'est une conversation vide, le chat s'ouvre quand meme.
+    chatCapable: agent === 'claude' && sessionId !== null,
     permissionMode: meta.permissionMode,
     color: colorOf(window, tabIndex),
     // Resolu par le `PaneStore` a partir de `list-tabs`, jamais par Kova.

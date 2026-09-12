@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -151,5 +151,29 @@ describe('offsets d octet des lignes (seq stable)', () => {
       const same = full.find((f) => f['uuid'] === l['uuid']);
       assert.equal(at(same), at(l));
     }
+  });
+});
+
+describe('transcript pas encore ne', () => {
+  it('ouvre vide sans erreur, puis lit le fichier des sa creation', () => {
+    // Claude Code ne cree le JSONL qu au premier message : le dossier projects/<slug>
+    // peut lui aussi manquer. Vu sur le pane « Claap · cc », l app montrait IO_ERROR.
+    const dir = join(mkdtempSync(join(tmpdir(), 'kl-unborn-')), 'pas-encore-la');
+    const path = join(dir, 'session.jsonl');
+    const opened = openTail(path);
+    assert.deepEqual(opened.lines, []);
+    assert.equal(opened.state.inode, 0);
+    // Toujours absent : rien, et toujours pas d erreur.
+    assert.deepEqual(readMore(opened.state), { lines: [], reopened: false });
+    // Naissance du fichier : reouverture, lignes rendues.
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path, JSON.stringify({ type: 'user', uuid: 'u1', message: { role: 'user', content: 'salut' } }) + '\n');
+    const res = readMore(opened.state);
+    assert.equal(res.reopened, true);
+    assert.equal(res.lines.length, 1);
+    assert.notEqual(opened.state.inode, 0);
+    // Et la suite est lue en incremental.
+    appendFileSync(path, JSON.stringify({ type: 'assistant', uuid: 'a1', message: { role: 'assistant', content: [] } }) + '\n');
+    assert.equal(readMore(opened.state).lines.length, 1);
   });
 });
