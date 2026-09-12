@@ -12,16 +12,19 @@
 // vignettes s'empilent au dessus du champ et se retirent d'un tap. À l'envoi, le composer
 // se fige le temps que les pièces arrivent sur le Mac ; si une pièce échoue, rien ne part
 // et les vignettes restent pour réessayer.
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import type { Prompt } from '@/protocol';
 import { colors, layout, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 import { isComposerLocked, requiresFaceIdForText } from '@/store/prompts';
+import { draftOf, useDrafts } from '@/store/drafts';
 import { AttachmentStrip, askAttachmentSource } from './AttachmentViews';
 import type { Attachment } from './attachments';
 
 export interface ComposerProps {
+  /** Le brouillon est gardé PAR PANE (store + SQLite) : quitter et revenir le retrouve. */
+  paneId: number;
   prompt: Prompt | undefined;
   working: boolean;
   /** Mac injoignable ou hors ligne : l'envoi part dans la file, il n'est pas rejeté (P5). */
@@ -42,6 +45,7 @@ export interface ComposerProps {
 }
 
 export function Composer({
+  paneId,
   prompt,
   working,
   degraded,
@@ -53,7 +57,9 @@ export function Composer({
   onLockedTap,
   onNotice,
 }: ComposerProps) {
-  const [value, setValue] = useState('');
+  const value = useDrafts((s) => draftOf(s.byPane, paneId));
+  const setDraft = useDrafts((s) => s.set);
+  const setValue = useCallback((text: string) => setDraft(paneId, text), [setDraft, paneId]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [sending, setSending] = useState(false);
   const locked = isComposerLocked(prompt);
@@ -79,8 +85,19 @@ export function Composer({
     const pieces = attachments;
     if (pieces.length === 0) {
       // Sans pièce, le geste d'aujourd'hui : le champ se vide tout de suite, l'envoi part.
+      // Mais RIEN ne disparaît sans être parti : si l'envoi rend `false` (refus, Face ID
+      // annulé, file pleine) ou lève, le texte revient dans le champ. Le 12 septembre un
+      // message a disparu de l'app sans bulle ni erreur : c'était ce chemin.
       setValue('');
-      void onSend(text, []);
+      onSend(text, []).then(
+        (ok) => {
+          if (!ok) setValue(text);
+        },
+        (e: unknown) => {
+          setValue(text);
+          onNotice(`Envoi impossible. ${e instanceof Error ? e.message : String(e)}`);
+        },
+      );
       return;
     }
     // Avec des pièces, le composer se fige le temps du transfert : le texte reste visible,
@@ -91,6 +108,8 @@ export function Composer({
         setValue('');
         setAttachments([]);
       }
+    } catch (e) {
+      onNotice(`Envoi impossible. ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setSending(false);
     }

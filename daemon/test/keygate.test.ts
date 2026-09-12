@@ -112,8 +112,43 @@ function makeFixture(overrides: Record<string, unknown> = {}) {
     ...overrides,
   });
   let promptState: 'none' | 'parsed' | 'unparsable' = 'unparsable';
+  /**
+   * Faux composer de Claude Code, pilote par le test : `composerText` est ce que la ligne
+   * `❯` montre. Par defaut il suit ce qui a ete colle et se vide sur un retour chariot,
+   * comme le vrai TUI quand tout va bien. `absorbDelayMs` simule la conversion d'un
+   * chemin d'image ; `ignoreEnters` le nombre de retours chariot que le TUI avale.
+   */
+  const screen = { composerText: '', absorbDelayMs: 0, ignoreEnters: 0, reads: 0, enters: 0 };
+  fake.on('command', (payload: Record<string, unknown>) => {
+    if (payload['cmd'] !== 'send-keys' || payload['pane_id'] !== 66) return;
+    const text = payload['text'] as string;
+    if (text === '\u0015') {
+      screen.composerText = '';
+      return;
+    }
+    if (text === KEY_TABLE.enter) {
+      screen.enters += 1;
+      if (screen.ignoreEnters > 0) screen.ignoreEnters -= 1;
+      else screen.composerText = '';
+      return;
+    }
+    const open = text.indexOf(`${ESC}[200~`);
+    const close = text.lastIndexOf(`${ESC}[201~`);
+    if (open < 0 || close < 0) return;
+    const pasted = text.slice(open + 6, close).split('\n')[0] ?? '';
+    if (screen.absorbDelayMs > 0) {
+      screen.composerText = '';
+      setTimeout(() => {
+        screen.composerText = pasted;
+      }, screen.absorbDelayMs);
+    } else screen.composerText = pasted;
+  });
   const prompts = {
     current: async () => ({ state: promptState, paneId: 66 }),
+    screen: async () => {
+      screen.reads += 1;
+      return { paneId: 66, cols: 80, rows: 24, lines: ['─────', `❯ ${screen.composerText}`, '─────'], cursor: { row: 0, col: 0 }, capturedAt: '' };
+    },
     setState: (s: typeof promptState) => {
       promptState = s;
     },
@@ -123,7 +158,7 @@ function makeFixture(overrides: Record<string, unknown> = {}) {
     panes,
     prompts as never,
   );
-  return { gate, sent, panes, prompts };
+  return { gate, sent, panes, prompts, screen };
 }
 
 describe('KeyGate', () => {
@@ -160,6 +195,73 @@ describe('KeyGate', () => {
     assert.equal(sent[1]?.text, KEY_TABLE.enter);
   });
 
+  it('emitText attend que le composer montre le texte avant le retour chariot (image collee)', async () => {
+    // Mesure : Claude Code convertit un chemin d'image en `[Image #n]` en 300 a 700 ms
+    // et perd tout retour chariot recu pendant ce temps. Le message du 12 septembre a
+    // 15:25 (texte + capture, `ok` dans l'audit) est reste dans le champ pour cette raison.
+    const { gate, sent, screen } = makeFixture();
+    screen.absorbDelayMs = 400;
+    const t0 = Date.now();
+    const res = await gate.emitText(66, 'regarde\n/tmp/kovalink/attachments/s/photo.png');
+    assert.equal(res.applied, true);
+    assert.ok(Date.now() - t0 >= 400, 'le retour chariot a attendu l absorption');
+    assert.deepEqual(sent.map((x) => x.text === KEY_TABLE.enter), [false, true]);
+    assert.equal(screen.composerText, '', 'le champ est vide apres envoi');
+  });
+
+  it('emitText renvoie le retour chariot si le TUI a avale le premier, et le dit dans l audit', async () => {
+    const { gate, screen } = makeFixture();
+    screen.ignoreEnters = 1;
+    const res = await gate.emitText(66, 'continue');
+    assert.equal(res.applied, true);
+    assert.equal(screen.enters, 2);
+    assert.equal(screen.composerText, '');
+  });
+
+  it('emitText efface le champ et refuse quand trois retours chariot restent sans effet', async () => {
+    const { gate, sent, screen } = makeFixture();
+    screen.ignoreEnters = 99;
+    const res = await gate.emitText(66, 'perdu ?');
+    assert.equal(res.applied, false);
+    assert.equal(res.reason, 'not_submitted');
+    assert.equal(screen.enters, 3);
+    assert.equal(sent[sent.length - 1]?.text, '\u0015', 'Ctrl-U en dernier : jamais de texte orphelin');
+    assert.equal(screen.composerText, '');
+  });
+
+  it('emitText, prompt parse apparu APRES le collage : aucun retour chariot, champ vide, refus explicite', async () => {
+    // Regression du bug 3 : envoi pendant que le pane travaille, le detecteur signale un
+    // prompt parse entre le collage et la validation. Jamais l'etat intermediaire « texte
+    // dans le champ sans Entree ».
+    const { gate, sent, panes, prompts, screen } = makeFixture();
+    prompts.setState('none');
+    // Le prompt parse apparait au moment ou le collage atteint le pane.
+    const onPaste = (payload: Record<string, unknown>): void => {
+      if (payload['cmd'] !== 'send-keys' || !String(payload['text']).includes('[200~')) return;
+      panes.setAwaiting(66, true, new Date().toISOString());
+      prompts.setState('parsed');
+      fake.off('command', onPaste);
+    };
+    fake.on('command', onPaste);
+    const res = await gate.emitText(66, 'oui vas y');
+    assert.equal(res.applied, false);
+    assert.equal(res.reason, 'became_awaiting');
+    assert.equal(sent.some((x) => x.text === KEY_TABLE.enter), false, 'aucun retour chariot');
+    assert.equal(sent[sent.length - 1]?.text, '\u0015', 'le texte colle est efface');
+    assert.equal(screen.composerText, '');
+  });
+
+  it('emitLaunch n envoie l Entree que sur un pane sans agent ni processus', async () => {
+    const { gate, sent } = makeFixture({ agent: null, agent_session_id: null });
+    const res = await gate.emitLaunch(66);
+    assert.equal(res.applied, true);
+    assert.deepEqual(sent.map((x) => x.text), [KEY_TABLE.enter]);
+    const live = makeFixture();
+    await assert.rejects(() => live.gate.emitLaunch(66), ForbiddenError);
+    const shell = makeFixture({ agent: null, agent_session_id: null, child_processes: [{ name: 'claude', pid: 1 }] });
+    await assert.rejects(() => shell.gate.emitLaunch(66), ForbiddenError);
+  });
+
   it('emitText ne laisse partir aucun retour chariot si un prompt parse est en attente', async () => {
     const { gate, sent, panes, prompts } = makeFixture();
     panes.setAwaiting(66, true, new Date().toISOString());
@@ -171,12 +273,13 @@ describe('KeyGate', () => {
   });
 
   it('emitText passe quand le prompt est unparsable : c est le repli de A6', async () => {
-    const { gate, sent, panes, prompts } = makeFixture();
+    const { gate, sent, panes, prompts, screen } = makeFixture();
     panes.setAwaiting(66, true, new Date().toISOString());
     prompts.setState('unparsable');
     const res = await gate.emitText(66, 'debloque toi');
     assert.equal(res.applied, true);
     assert.equal(sent.length, 2);
+    assert.equal(screen.composerText, '');
   });
 
   it('emitAnswer emet le chiffre ET le retour chariot dans un seul send-keys', async () => {
@@ -306,7 +409,7 @@ describe('point d entree unique des ecritures (K1, analyse syntaxique)', () => {
     assert.throws(() => claimRawChannel(), /deja ete reclame/);
   });
 
-  it('KeyGate expose exactement quatre operations d ecriture, et pas une de plus', () => {
+  it('KeyGate expose exactement cinq operations d ecriture, et pas une de plus', () => {
     const source = ts.createSourceFile(
       'keygate.ts',
       readFileSync(join(SRC_DIR, 'kova/keygate.ts'), 'utf8'),
@@ -325,7 +428,7 @@ describe('point d entree unique des ecritures (K1, analyse syntaxique)', () => {
       ts.forEachChild(node, visit);
     };
     visit(source);
-    assert.deepEqual(ops.sort(), ['emitAnswer', 'emitInterrupt', 'emitKeys', 'emitText']);
+    assert.deepEqual(ops.sort(), ['emitAnswer', 'emitInterrupt', 'emitKeys', 'emitLaunch', 'emitText']);
   });
 
   it('emitAnswer n a qu un seul appelant hors de KeyGate : prompt/answer.ts', () => {
@@ -335,7 +438,9 @@ describe('point d entree unique des ecritures (K1, analyse syntaxique)', () => {
   it('les autres operations de KeyGate ne sont appelees que depuis les routes HTTPS', () => {
     // Liste fermee : un nouvel appelant doit etre ajoute ICI, en connaissance de cause.
     // Le hub WS n'y figure plus : la surface d'ecriture n'existe qu'une fois, en HTTPS.
-    const callers = where((f) => f.calls.has('emitInterrupt') || f.calls.has('emitText') || f.calls.has('emitKeys'));
+    const callers = where(
+      (f) => f.calls.has('emitInterrupt') || f.calls.has('emitText') || f.calls.has('emitKeys') || f.calls.has('emitLaunch'),
+    );
     assert.deepEqual(callers, ['server/index.ts']);
   });
 });

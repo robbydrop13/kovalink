@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -173,25 +173,42 @@ describe('projets recents de Kova (Cmd+O depuis l app)', () => {
     }
   }
 
-  it('liste les projets dedupliques, du plus recent au plus ancien, avec leur index', () => {
+  it('liste les projets dedupliques, du plus recent au plus ancien, libelle = nom du dossier', () => {
     withRecents(
       [
         { path: '/usr', last_opened: 100 },
         { path: '/etc', last_opened: 300 },
         { path: '/usr', last_opened: 200 },
         { path: '/nulle/part', last_opened: 999 },
+        { path: '/usr/local/bin', last_opened: 50 },
       ],
       () => {
         const list = listRecentProjects();
         assert.deepEqual(
-          list.map((p) => [p.index, p.path, p.lastOpenedMs]),
+          list.map((p) => [p.index, p.path, p.label, p.lastOpenedMs]),
           [
-            [0, '/etc', 300_000],
-            [1, '/usr', 200_000],
+            [0, '/etc', 'etc', 300_000],
+            [1, '/usr', 'usr', 200_000],
+            [2, '/usr/local/bin', 'bin', 50_000],
           ],
         );
       },
     );
+  });
+
+  it('ne tronque pas la liste : plus de vingt projets restent tous proposes', () => {
+    const root = mkdtempSync(join(tmpdir(), 'kovalink-many-'));
+    const projects = Array.from({ length: 25 }, (_, i) => {
+      const path = join(root, `projet-${i}`);
+      mkdirSync(path);
+      return { path, last_opened: 1000 - i };
+    });
+    withRecents(projects, () => {
+      const list = listRecentProjects();
+      assert.equal(list.length, 25);
+      assert.equal(list[0]?.path, projects[0]?.path);
+      assert.equal(list[24]?.label, 'projet-24');
+    });
   });
 
   it('resout un index seulement si le chemin confirme concorde encore', () => {

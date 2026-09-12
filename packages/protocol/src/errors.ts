@@ -46,6 +46,8 @@ export type ActionReason =
   | 'not_awaiting'
   | 'pane_gone'
   | 'became_awaiting'
+  /** Texte colle puis efface : le TUI n'a jamais honore le retour chariot. */
+  | 'not_submitted'
   | 'forbidden'
   | 'kova_down';
 

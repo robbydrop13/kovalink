@@ -43,6 +43,8 @@ import type { Services } from './services.js';
 
 /** La SEULE commande que `new-tab` lance. Constante, jamais une chaine du client. */
 const NEW_TAB_COMMAND = 'claude';
+/** Delai d'apparition du nouveau pane dans le store, par l'evenement `pane-open`. */
+const NEW_TAB_PANE_WAIT_MS = 3_000;
 
 /** Fenetre de lecture d'une page d'historique, doublee jusqu'au plafond si elle est vide. */
 const TURNS_PAGE_BYTES = 256 * 1024;
@@ -512,7 +514,19 @@ export async function createHttpServer(
     const paneId = typeof data.pane_id === 'number' ? data.pane_id : -1;
     audit({ deviceId, action: 'kova.newTab', paneId, path: cwd, result: 'ok', detail: `tab=${tabId}` });
     logger.info('nouvel onglet kova depuis l app', { deviceId, cwd, tabId, paneId });
-    const res: KovaNewTabResponse = { tabId, paneId, cwd };
+    // Mesure : `command` est tape dans le shell, pas execute. On attend que le pane
+    // apparaisse dans le store (evenement `pane-open`), puis KeyGate envoie l'Entree.
+    const deadline = Date.now() + NEW_TAB_PANE_WAIT_MS;
+    while (!services.panes.get(paneId) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    let launched = false;
+    try {
+      launched = (await services.keygate.emitLaunch(paneId, deviceId)).applied;
+    } catch (e) {
+      logger.warn('lancement de claude dans le nouvel onglet refuse', { paneId, err: (e as Error).message });
+    }
+    const res: KovaNewTabResponse = { tabId, paneId, cwd, launched };
     return res;
   });
 

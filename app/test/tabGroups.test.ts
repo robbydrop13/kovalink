@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Pane, Tab } from '@/protocol';
-import { filterGroups, groupByTab, summaryLine, windowCount } from '@/features/sessions/tabGroups';
+import { filterGroups, groupByTab, isStaleSession, summaryLine, windowCount } from '@/features/sessions/tabGroups';
 
 function pane(partial: Partial<Pane> & { id: number; tab: number }): Pane {
   return {
@@ -50,61 +50,83 @@ function tab(partial: Partial<Tab> & { id: number; tab_index: number }): Tab {
   };
 }
 
+// État réel de Kova le 12 septembre à 17:29 (`list-tabs` et `list-panes`, lecture seule).
+// `pane.tab` est un INDEX : le pane 11 porte `tab: 3`, et l'onglet d'index 3 est
+// « TrailCoach » (id 10). L'onglet d'ID 3 est « Link ». Une jointure sur l'id mettait
+// trail-coach sous « Link » et nommait les autres onglets par leur projet.
 const TABS: Tab[] = [
   tab({ id: 11, tab_index: 0, title: 'Courses', color: 2 }),
-  tab({ id: 3, tab_index: 2, title: 'Link', color: 3, pane_count: 2 }),
-  tab({ id: 18, tab_index: 3, title: 'QR appairage', color: 3 }),
-  tab({ id: 10, tab_index: 4, title: 'TrailCoach', color: 4, active: true }),
-  tab({ id: 8, tab_index: 5, title: 'Dollary', color: 5 }),
+  tab({ id: 3, tab_index: 1, title: 'Link', color: 3, pane_count: 2, active: true }),
+  tab({ id: 18, tab_index: 2, title: 'QR appairage', color: 3 }),
+  tab({ id: 10, tab_index: 3, title: 'TrailCoach', color: 4 }),
+  tab({ id: 8, tab_index: 4, title: 'Dollary', color: 5 }),
 ];
 
 // Volontairement dans le désordre : l'ordre affiché vient de `tab_index`, pas de la liste.
 const PANES: Pane[] = [
-  pane({ id: 9, tab: 8, cwd: '/Users/robin/AI directory/Perso/Investissements', projectName: 'Investissements', agent: null, title: 'zsh' }),
-  pane({ id: 13, tab: 11, cwd: '/Users/robin/AI directory/Perso', projectName: 'Perso', working: true }),
-  pane({ id: 4, tab: 3, cwd: '/Users/robin/dev/link', projectName: 'link', agent: null, title: '..al-tools/link' }),
-  pane({ id: 3, tab: 3, cwd: '/Users/robin/dev/link', projectName: 'link', awaiting: true, awaiting_since: '2026-09-12T13:11:43.000Z' }),
-  pane({ id: 20, tab: 18, cwd: '/Users/robin/dev/link', projectName: 'link', agent: null, title: '..al-tools/link' }),
-  pane({ id: 11, tab: 10, cwd: '/Users/robin/AI directory/Perso/Sport/trail-coach', projectName: 'trail-coach', working: true }),
+  pane({ id: 9, tab: 4, cwd: '/Users/robin/AI directory/Perso/Investissements', projectName: 'Investissements', agent: null, title: 'claude', child_processes: [{ name: 'claude', pid: 28232, version: null }] }),
+  pane({ id: 13, tab: 0, cwd: '/Users/robin/AI directory/Perso', projectName: 'Perso', working: true }),
+  pane({ id: 4, tab: 1, cwd: '/Users/robin/dev/link', projectName: 'link', agent: null, title: '..al-tools/link' }),
+  pane({ id: 3, tab: 1, cwd: '/Users/robin/dev/link', projectName: 'link', awaiting: true, awaiting_since: '2026-09-12T13:11:43.000Z' }),
+  pane({ id: 20, tab: 2, cwd: '/Users/robin/dev/link', projectName: 'link', agent: null, title: '..al-tools/link' }),
+  pane({ id: 11, tab: 3, cwd: '/Users/robin/AI directory/Perso/Sport/trail-coach', projectName: 'trail-coach', working: true }),
 ];
 
 describe('groupByTab', () => {
-  it('un groupe par onglet, dans l’ordre de la barre d’onglets du Mac, ses panes dessous', () => {
+  it('joint pane.tab à tab.tab_index, jamais à tab.id : le pane 11 (tab 3) tombe sous TrailCoach', () => {
     const groups = groupByTab(PANES, TABS);
     assert.deepEqual(
-      groups.map((g) => [g.title, g.color, g.panes.map((p) => p.id)]),
+      groups.map((g) => [g.title, g.tabId, g.color, g.panes.map((p) => p.id)]),
       [
-        ['Courses', 2, [13]],
-        ['Link', 3, [4, 3]],
-        ['QR appairage', 3, [20]],
-        ['TrailCoach', 4, [11]],
-        ['Dollary', 5, [9]],
+        ['Courses', 11, 2, [13]],
+        ['Link', 3, 3, [4, 3]],
+        ['QR appairage', 18, 3, [20]],
+        ['TrailCoach', 10, 4, [11]],
+        ['Dollary', 8, 5, [9]],
       ],
     );
+    const trail = groups.find((g) => g.panes.some((p) => p.id === 11));
+    assert.equal(trail?.title, 'TrailCoach');
+    assert.notEqual(trail?.title, 'Link');
+  });
+
+  it('tous les onglets et tous les panes, agent ou pas : rien n’est filtré (Cmd+P)', () => {
+    const groups = groupByTab(PANES, TABS);
+    assert.equal(groups.length, TABS.length);
+    assert.equal(groups.flatMap((g) => g.panes).length, PANES.length);
+    assert.deepEqual(groups.map((g) => g.title), ['Courses', 'Link', 'QR appairage', 'TrailCoach', 'Dollary']);
   });
 
   it('marque l’onglet actif sur le Mac', () => {
     const active = groupByTab(PANES, TABS).filter((g) => g.active);
-    assert.deepEqual(active.map((g) => g.title), ['TrailCoach']);
+    assert.deepEqual(active.map((g) => g.title), ['Link']);
   });
 
-  it('un pane dont l’onglet n’est pas encore connu forme son propre groupe, en fin de fenêtre', () => {
-    const orphan = pane({ id: 21, tab: 19, cwd: '/private/tmp', projectName: 'tmp', agent: null, title: '/private/tmp', color: null });
+  it('un pane dont l’onglet n’est pas encore connu forme son propre groupe, à son index', () => {
+    const orphan = pane({ id: 21, tab: 5, cwd: '/private/tmp', projectName: 'tmp', agent: null, title: '/private/tmp', color: null });
     const groups = groupByTab([...PANES, orphan], TABS);
     const last = groups[groups.length - 1];
-    assert.equal(last?.tabId, 19);
-    assert.equal(last?.title, 'tmp', 'le projet du premier pane sert de nom');
+    assert.equal(last?.tabIndex, 5);
+    assert.equal(last?.tabId, null);
+    assert.equal(last?.title, '/private/tmp', 'le titre Kova du premier pane sert de nom');
     assert.deepEqual(last?.panes.map((p) => p.id), [21]);
   });
 
   it('un onglet sans pane n’apparaît pas ; une seconde fenêtre vient après la première', () => {
-    const tabs = [...TABS, tab({ id: 30, tab_index: 0, window: 1, title: 'Autre fenêtre' }), tab({ id: 31, tab_index: 1, title: 'Vide' })];
-    const panes = [...PANES, pane({ id: 40, tab: 30, window: 1, projectName: 'autre' })];
+    const tabs = [...TABS, tab({ id: 30, tab_index: 0, window: 1, title: 'Autre fenêtre' }), tab({ id: 31, tab_index: 7, title: 'Vide' })];
+    const panes = [...PANES, pane({ id: 40, tab: 0, window: 1, projectName: 'autre' })];
     const groups = groupByTab(panes, tabs);
     assert.equal(groups.some((g) => g.title === 'Vide'), false);
     assert.equal(groups[groups.length - 1]?.title, 'Autre fenêtre');
+    assert.equal(groups[0]?.title, 'Courses', 'la fenêtre 1 ne se mélange pas à la fenêtre 0');
     assert.equal(windowCount(groups), 2);
     assert.equal(windowCount(groupByTab(PANES, TABS)), 1);
+  });
+
+  it('une session périmée : agent perdu par Kova mais claude encore en processus enfant', () => {
+    assert.equal(isStaleSession(PANES[0] as Pane), true, 'pane 9');
+    assert.equal(isStaleSession(PANES[2] as Pane), false, 'un shell sans processus');
+    assert.equal(isStaleSession(PANES[1] as Pane), false, 'un agent vivant');
   });
 });
 
@@ -123,9 +145,9 @@ describe('filterGroups', () => {
   });
 
   it('sinon ne garde que les panes qui correspondent, et retire l’onglet vidé', () => {
-    const out = filterGroups(groups, 'zsh');
+    const out = filterGroups(groups, 'investissements');
     assert.deepEqual(out.map((g) => [g.title, g.panes.map((p) => p.id)]), [['Dollary', [9]]]);
-    assert.deepEqual(filterGroups(groups, 'investissements').map((g) => g.title), ['Dollary']);
+    assert.deepEqual(filterGroups(groups, 'perso').map((g) => g.title), ['Courses', 'TrailCoach', 'Dollary']);
   });
 
   it('plusieurs mots : tous requis', () => {

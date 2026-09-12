@@ -249,6 +249,8 @@ export interface PendingMessage {
   afterSeq: number;
   /** Session visée. Un `seq` ne veut rien dire d'une session à l'autre : il repart de zéro. */
   sessionId: string | null;
+  /** Cause d'un état `failed`, affichée sous la bulle : un refus n'est jamais muet. */
+  error?: string;
   /**
    * Pièces jointes (docs/15). `text` reste le texte de Robin seul : le message envoyé au
    * Mac est `text` suivi d'un chemin par pièce, et c'est sous cette forme que le

@@ -1,5 +1,13 @@
-import { DECIDING_KEYS, KEY_TABLE, type ActionResponse, type KeyName } from '@kovalink/protocol';
+import {
+  DECIDING_KEYS,
+  KEY_TABLE,
+  isAttachmentPath,
+  type ActionResponse,
+  type KeyName,
+} from '@kovalink/protocol';
+import { basename } from 'node:path';
 import { audit } from '../audit.js';
+import { logger } from '../logger.js';
 import type { PromptState } from '../prompt/state.js';
 import type { KovaIpc } from './ipc.js';
 import type { PaneStore } from './panes.js';
@@ -7,6 +15,51 @@ import type { PaneStore } from './panes.js';
 import { sendKeys } from './sendKeys.js';
 
 export const MAX_TEXT = 8192;
+
+/** Ctrl-U : Claude Code vide son champ de saisie. Sert a ne jamais laisser un texte orphelin. */
+const CLEAR_LINE = '\u0015';
+/** Cadence et plafond de la lecture d'ecran qui encadre un envoi de texte. */
+const COMPOSER_POLL_MS = 150;
+const ABSORB_MAX_MS = 3_000;
+const SUBMIT_WAIT_MS = 1_200;
+const ENTER_ATTEMPTS = 3;
+/** Le composer de Claude Code commence par ce caractere. */
+const COMPOSER_PREFIX = '❯';
+const NEEDLE_LEN = 20;
+
+/** La ligne du composer de Claude Code : la derniere qui commence par `❯`, sinon `null`. */
+export function composerLine(lines: readonly string[]): string | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i] ?? '';
+    if (l.trimStart().startsWith(COMPOSER_PREFIX)) return l;
+  }
+  return null;
+}
+
+/**
+ * Ce que le composer doit montrer quand il a absorbe le texte : le debut de la premiere
+ * ligne non vide. Si cette ligne est un chemin de piece jointe, Claude Code la reecrit en
+ * `[Image #n]` (image) ou la garde telle quelle (autre fichier) : les deux formes valent.
+ */
+export function composerNeedles(text: string): string[] {
+  const first = text
+    .normalize('NFC')
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!first) return [];
+  if (isAttachmentPath(first)) return ['[Image #', basename(first)];
+  return [first.slice(0, NEEDLE_LEN)];
+}
+
+export function composerShows(lines: readonly string[], text: string): boolean {
+  const line = composerLine(lines);
+  if (line === null) return false;
+  const needles = composerNeedles(text);
+  return needles.length > 0 && needles.some((n) => line.includes(n));
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 export class ForbiddenError extends Error {
   constructor(
@@ -57,8 +110,9 @@ export type EmitResult = ActionResponse;
  *
  * LA REGLE QUI COMPTE (C23) : aucun retour chariot ne part sans verification d'etat.
  *
- * Quatre operations, et quatre seulement : `emitAnswer`, `emitInterrupt`, `emitText`,
- * `emitKeys`. Le test `keygate.test.ts` verifie cette liste et le nombre d'appelants.
+ * Cinq operations, et cinq seulement : `emitAnswer`, `emitInterrupt`, `emitText`,
+ * `emitKeys`, `emitLaunch`. Le test `keygate.test.ts` verifie cette liste et le nombre
+ * d'appelants.
  */
 export class KeyGate {
   constructor(
@@ -119,13 +173,69 @@ export class KeyGate {
     return { applied: true };
   }
 
+  /** Lignes visibles du pane, `null` si l'ecran n'est pas lisible. */
+  private async composer(paneId: number): Promise<readonly string[] | null> {
+    try {
+      const screen = await this.prompts.screen(paneId);
+      return screen?.lines ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Attend que le composer ait ABSORBE le collage : deux lectures identiques d'affilee
+   * qui montrent le texte. Mesure sur la machine (Claude Code 2.1.269) : un chemin
+   * d'image colle est converti en `[Image #n]` en 300 a 700 ms, et un retour chariot
+   * recu pendant cette conversion est PERDU. C'est exactement le message de Robin du
+   * 12 septembre a 15:25 : texte et capture restes dans le champ, `ok` dans l'audit.
+   * Rend `true` si l'absorption a ete observee, `false` si l'ecran est illisible ou si
+   * le plafond est atteint (on tente quand meme la validation, puis on verifie).
+   */
+  private async waitAbsorbed(paneId: number, text: string): Promise<boolean> {
+    const deadline = Date.now() + ABSORB_MAX_MS;
+    let previous: string | null = null;
+    while (Date.now() < deadline) {
+      const lines = await this.composer(paneId);
+      if (lines === null) return false;
+      const line = composerLine(lines);
+      if (line !== null && line === previous && composerShows(lines, text)) return true;
+      previous = line;
+      await sleep(COMPOSER_POLL_MS);
+    }
+    return false;
+  }
+
+  /** Vrai des que le composer ne montre plus le texte : le message est parti. */
+  private async submitted(paneId: number, text: string): Promise<boolean> {
+    const deadline = Date.now() + SUBMIT_WAIT_MS;
+    while (Date.now() < deadline) {
+      await sleep(COMPOSER_POLL_MS);
+      const lines = await this.composer(paneId);
+      if (lines === null) return true; // ecran illisible : on ne peut pas prouver le contraire
+      if (!composerShows(lines, text)) return true;
+    }
+    return false;
+  }
+
+  /** Vide le champ de saisie : jamais de texte orphelin dans le terminal. */
+  private async clearComposer(paneId: number): Promise<void> {
+    try {
+      await sendKeys(this.ipc, paneId, CLEAR_LINE);
+    } catch (e) {
+      logger.warn('impossible de vider le composer apres un refus', { paneId, err: (e as Error).message });
+    }
+  }
+
   /**
    * Operation 2, envoyer un message libre.
    *
    * Deux appels separes (PRD R8, CA-09) : la separation laisse le TUI enregistrer le
-   * collage avant la validation. La fenetre entre les deux est GARDEE (C23). Si le
-   * texte est parti mais pas le retour chariot, il reste dans le composer du pane,
-   * visible sur le Mac : rien n'est perdu, et Robin voit pourquoi.
+   * collage avant la validation, et l'ATTENTE entre les deux est mesuree sur l'ecran,
+   * pas fixee : le retour chariot ne part que quand le composer montre le texte absorbe
+   * (voir `waitAbsorbed`). La fenetre entre les deux reste GARDEE (C23), et si le retour
+   * chariot est refuse ou n'a pas ete honore, le texte deja colle est EFFACE (Ctrl-U)
+   * avant de repondre : rien ne reste dans le champ sans que l'app le sache.
    */
   async emitText(paneId: number, text: string, deviceId?: string): Promise<EmitResult> {
     const pane = this.panes.get(paneId);
@@ -144,37 +254,58 @@ export class KeyGate {
     }
 
     const payload = sanitizeFreeText(text);
+    const deny = (detail: string, reason: 'became_awaiting' | 'not_submitted'): EmitResult => {
+      audit({ deviceId, action: 'pane.sendText', paneId, result: 'denied', detail });
+      return { applied: false, reason };
+    };
 
-    if (await this.hasParsedPromptPending(paneId)) {
-      audit({
-        deviceId,
-        action: 'pane.sendText',
-        paneId,
-        result: 'denied',
-        detail: 'became_awaiting',
-      });
-      return { applied: false, reason: 'became_awaiting' };
-    }
+    if (await this.hasParsedPromptPending(paneId)) return deny('became_awaiting', 'became_awaiting');
 
     await sendKeys(this.ipc, paneId, payload); // appel 1, le texte
+    const absorbed = await this.waitAbsorbed(paneId, text);
 
-    // Le second appel est un retour chariot nu. Entre les deux, l'agent a pu basculer
-    // en awaiting : ce retour chariot validerait alors l'option surlignee d'une
-    // question que Robin n'a jamais vue. On referme la fenetre.
-    if (await this.hasParsedPromptPending(paneId)) {
-      audit({
-        deviceId,
-        action: 'pane.sendText',
-        paneId,
-        result: 'denied',
-        detail: 'became_awaiting',
-      });
-      return { applied: false, reason: 'became_awaiting' };
+    for (let attempt = 1; attempt <= ENTER_ATTEMPTS; attempt++) {
+      // Entre le collage et la validation, l'agent a pu basculer en awaiting : ce retour
+      // chariot validerait alors l'option surlignee d'une question que Robin n'a jamais
+      // vue. On referme la fenetre, et on efface ce qui vient d'etre colle.
+      if (await this.hasParsedPromptPending(paneId)) {
+        await this.clearComposer(paneId);
+        return deny('became_awaiting_after_paste', 'became_awaiting');
+      }
+      await sendKeys(this.ipc, paneId, KEY_TABLE.enter); // appel 2, la validation
+      if (await this.submitted(paneId, text)) {
+        // Jamais le texte dans le journal : Robin y tape parfois des secrets.
+        audit({
+          deviceId,
+          action: 'pane.sendText',
+          paneId,
+          result: 'ok',
+          detail: `len=${text.length}${attempt > 1 ? ` enter=${attempt}` : ''}${absorbed ? '' : ' absorb=timeout'}`,
+        });
+        return { applied: true };
+      }
     }
+    // Le texte est toujours dans le champ apres trois validations : on l'efface et on le dit.
+    await this.clearComposer(paneId);
+    logger.warn('texte colle mais jamais valide par le TUI, champ vide', { paneId, len: text.length });
+    return deny('not_submitted', 'not_submitted');
+  }
 
-    await sendKeys(this.ipc, paneId, KEY_TABLE.enter); // appel 2, la validation
-    // Jamais le texte dans le journal : Robin y tape parfois des secrets.
-    audit({ deviceId, action: 'pane.sendText', paneId, result: 'ok', detail: `len=${text.length}` });
+  /**
+   * Operation 4, lancer l'agent dans un onglet que `new-tab` vient de creer (Cmd+O).
+   *
+   * Mesure sur la machine : le champ `command` de `new-tab` est TAPE dans le shell du
+   * nouveau pane, sans etre execute. Ce retour chariot l'execute. Il n'est accepte que
+   * sur un pane SANS agent, au repos : sur un agent vivant, il validerait n'importe quoi.
+   */
+  async emitLaunch(paneId: number, deviceId?: string): Promise<EmitResult> {
+    const pane = this.panes.get(paneId);
+    if (!pane) return { applied: false, reason: 'pane_gone' };
+    if (pane.agent !== null || pane.child_processes.length > 0) {
+      throw new ForbiddenError('FORBIDDEN_ACTION', 'lancement refuse : ce pane a deja un processus');
+    }
+    await sendKeys(this.ipc, paneId, KEY_TABLE.enter);
+    audit({ deviceId, action: 'pane.launch', paneId, result: 'ok' });
     return { applied: true };
   }
 

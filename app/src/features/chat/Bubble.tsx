@@ -36,11 +36,14 @@ export function UserBubble({
   state,
   onRetry,
   attachments,
+  error,
 }: {
   turn: Turn;
   state?: SendState;
   onRetry?: () => void;
   attachments?: Attachment[];
+  /** Cause d'un échec, sous la bulle, en rouge. */
+  error?: string;
 }) {
   const { width } = useWindowDimensions();
   const mark = state === 'queued' ? 'o' : state === 'failed' ? '!' : 'v';
@@ -60,6 +63,13 @@ export function UserBubble({
         <View style={[styles.userBubble, { maxWidth: width * layout.bubbleMaxWidthRatio }]}>
           <Txt variant="body" color={colors.text.primary}>
             {text}
+          </Txt>
+        </View>
+      ) : null}
+      {state === 'failed' && error ? (
+        <View style={{ maxWidth: width * layout.bubbleMaxWidthRatio }}>
+          <Txt variant="footnote" color={colors.status.error}>
+            {error}
           </Txt>
         </View>
       ) : null}

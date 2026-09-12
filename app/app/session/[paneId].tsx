@@ -66,7 +66,7 @@ import {
 } from '@/store/session';
 import { answerPrompt } from '@/actions/answer';
 import { flushOutbox } from '@/actions/outboxRunner';
-import { sendText, type Pieces } from '@/actions/sendText';
+import { sendText, type Pieces, type SendTextOutcome } from '@/actions/sendText';
 import {
   TEXT_QUEUE_MAX,
   confirmStale,
@@ -79,6 +79,8 @@ import {
 import { needsCellularChoice } from '@/store/transfers';
 import { shortAgeMs, truncatePath } from '@/utils/time';
 import { useClock } from '@/utils/useClock';
+import { bootWarn } from '@/env';
+import { useOutboxNotices } from '@/store/outboxNotices';
 
 type ViewMode = 'chat' | 'term';
 
@@ -92,6 +94,20 @@ const SESSION_RESOLVE_TIMEOUT_MS = 8_000;
 const SCREEN_REFRESH_MS = 2_000;
 /** Guet d'une bulle en file : la vidange a lieu hors de cet écran, à la reconnexion. */
 const QUEUE_POLL_MS = 2_000;
+
+/** Cause lisible d'un `applied: false` du daemon. Toujours une phrase, jamais un code nu. */
+function refusalLabel(reason: string | undefined): string {
+  switch (reason) {
+    case 'became_awaiting':
+      return 'L’agent a posé une question, ton message n’est pas parti';
+    case 'not_submitted':
+      return 'Le pane n’a pas validé le message, le champ du Mac a été vidé';
+    case 'pane_gone':
+      return 'Ce pane n’existe plus sur le Mac';
+    default:
+      return `Message non transmis au pane (${reason ?? 'raison inconnue'})`;
+  }
+}
 
 export default function SessionScreen() {
   const params = useLocalSearchParams<{ paneId: string; focus?: string; view?: string }>();
@@ -181,10 +197,21 @@ export default function SessionScreen() {
       // le compte « Non confirmé » si son écho ne suit pas.
       const inQueue = new Set([...live, ...stale].map((j) => j.nonce));
       const left = (m: PendingMessage): boolean => m.state === 'queued' && !inQueue.has(m.nonce);
+      // Refusée par la vidange : échec visible avec la cause, jamais « envoyée ». Une
+      // seule session est ouverte à la fois : les refus en attente sont tous pour elle.
+      const notices = useOutboxNotices.getState();
+      const refused = { ...notices.refused };
+      const firstCause = Object.values(refused)[0];
+      if (firstCause) setToast(`Refusé par le Mac. ${firstCause}`);
+      for (const nonce of Object.keys(refused)) notices.forget(nonce);
       setPending((p) => {
         if (!p.some(left)) return p;
         const ts = new Date().toISOString();
-        return p.map((m) => (left(m) ? { ...m, state: 'sent', ts } : m));
+        return p.map((m) => {
+          if (!left(m)) return m;
+          const cause = refused[m.nonce];
+          return cause ? { ...m, state: 'failed', error: cause } : { ...m, state: 'sent', ts };
+        });
       });
     });
   }, [paneId]);
@@ -335,13 +362,28 @@ export default function SessionScreen() {
       // l'écho de ce message.
       const { sessionId, afterSeq } = transcriptMark();
       const ts = new Date().toISOString();
-      const outcome = await sendText(paneId, text, prompt, pieces);
+      // RÈGLE : aucun envoi ne disparaît sans message visible ET sans ligne de journal.
+      // Toute issue autre que « parti » ou « en file » rend `false` (le composer garde le
+      // texte) après un toast, et `bootWarn` la trace.
+      let outcome: SendTextOutcome;
+      try {
+        outcome = await sendText(paneId, text, prompt, pieces);
+      } catch (e) {
+        bootWarn('envoi de texte, exception', e);
+        setToast(`Envoi impossible. ${e instanceof Error ? e.message : String(e)}`);
+        return false;
+      }
       if (!outcome.ok) {
         if (outcome.kind === 'locked') {
+          bootWarn('envoi de texte refusé', 'prompt parsé en attente');
           setToast('Réponds d’abord à la question ci dessus');
           return false;
         }
-        if (outcome.kind === 'cancelled') return false;
+        if (outcome.kind === 'cancelled') {
+          bootWarn('envoi de texte annulé', 'Face ID refusé ou annulé');
+          setToast('Face ID annulé, le message est conservé dans le champ');
+          return false;
+        }
         if (outcome.kind === 'queued') {
           setPending((p) => [
             ...p,
@@ -359,27 +401,35 @@ export default function SessionScreen() {
         }
         if (outcome.kind === 'refused') {
           // Rien n'est mis en file : le Mac a répondu et a dit non. On montre sa raison.
+          bootWarn('envoi de texte refusé par le Mac', outcome.cause);
           setToast(`Refusé par le Mac. ${outcome.cause}`);
           return false;
         }
+        bootWarn('envoi de texte refusé', 'file pleine');
         setToast(`File pleine, ${TEXT_QUEUE_MAX} messages en attente`);
         return false;
       }
+      const applied = outcome.result.applied;
+      const cause = applied ? null : refusalLabel(outcome.result.reason);
       setPending((p) => [
         ...p,
         {
           nonce: outcome.nonce,
           text,
-          state: outcome.result.applied ? 'sent' : 'failed',
+          state: applied ? 'sent' : 'failed',
           ts,
           afterSeq,
           sessionId,
+          ...(cause ? { error: cause } : {}),
           ...(outcome.attachments.length > 0 ? { attachments: outcome.attachments } : {}),
         },
       ]);
-      if (!outcome.result.applied && outcome.result.reason === 'became_awaiting') {
-        setToast('L’agent a posé une question, ton message n’est pas parti');
-        peek(paneId);
+      if (!applied) {
+        // Le Mac a accepté la requête mais n'a rien validé dans le pane : la bulle passe en
+        // échec avec la cause, et le message reste renvoyable. Jamais silencieux.
+        bootWarn('envoi de texte non appliqué', outcome.result.reason ?? 'raison absente');
+        setToast(cause ?? 'Message non transmis au pane');
+        if (outcome.result.reason === 'became_awaiting') peek(paneId);
       }
       stickToBottom.current = true;
       scrollRef.current?.scrollToEnd({ animated: true });
@@ -714,6 +764,7 @@ export default function SessionScreen() {
             <UserBubble
               key={m.nonce}
               state={m.state}
+              error={m.error}
               attachments={m.attachments}
               onRetry={m.state === 'failed' ? () => retry(m) : undefined}
               turn={{
@@ -795,6 +846,7 @@ export default function SessionScreen() {
 
       <View style={{ paddingBottom: insets.bottom }}>
         <Composer
+          paneId={paneId}
           prompt={prompt}
           working={working}
           degraded={degraded}

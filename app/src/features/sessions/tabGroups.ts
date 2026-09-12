@@ -6,11 +6,14 @@
 import type { Pane, Tab } from '@/protocol';
 
 export interface TabGroup {
-  /** `w<window>-t<tab>` : stable d'un instantané à l'autre, sert de clé React. */
+  /** `w<window>-i<tab_index>` : la clé de jointure, stable d'un instantané à l'autre. */
   key: string;
   window: number;
-  tabId: number;
-  /** Nom d'onglet tel que Kova l'affiche (`custom_title` sinon le titre par défaut). */
+  /** Index de l'onglet dans sa fenêtre : c'est ce que `pane.tab` porte. */
+  tabIndex: number;
+  /** Identifiant Kova de l'onglet, `null` tant que `list-tabs` ne l'a pas donné. */
+  tabId: number | null;
+  /** Nom d'onglet tel que `list-tabs` le rend en direct (`custom_title` sinon le défaut). */
   title: string;
   color: number | null;
   /** Onglet au premier plan sur le Mac. */
@@ -18,27 +21,37 @@ export interface TabGroup {
   panes: Pane[];
 }
 
-/** Nom d'un onglet sans titre : celui de son premier pane, comme Kova le fait. */
-function fallbackTitle(panes: Pane[], tabId: number): string {
+/** Nom d'un onglet dont `list-tabs` n'est pas encore arrivé : celui de son premier pane. */
+function fallbackTitle(panes: Pane[], tabIndex: number): string {
   const first = panes[0];
-  return first?.projectName || first?.title || `Onglet ${tabId}`;
+  return first?.title || first?.projectName || `Onglet ${tabIndex + 1}`;
 }
+
+const keyOf = (window: number, tabIndex: number): string => `w${window}-i${tabIndex}`;
 
 /**
  * Groupes par onglet, ordonnés comme la barre d'onglets : fenêtre, puis `tab_index`.
- * L'ordre des panes dans un onglet est celui de `list-panes`. Un pane dont l'onglet n'est
- * pas (encore) connu forme son propre groupe, à la fin de sa fenêtre : la liste des
- * panes et celle des onglets arrivent par deux chemins, et un `pane-open` précède
- * parfois l'instantané des onglets.
+ *
+ * LA JOINTURE : `pane.tab` est l'INDEX de l'onglet dans sa fenêtre, pas son identifiant
+ * (vérifié sur la machine : le pane 11 porte `tab: 3` et l'onglet « TrailCoach » a
+ * `id: 10, tab_index: 3` ; l'onglet d'`id: 3` est « Link »). Le daemon joint déjà la
+ * couleur sur `(window, tab_index)` ; le nom suit la même règle. Une jointure sur `id`
+ * mettait le pane trail-coach sous « Link » et nommait les autres onglets par leur
+ * projet.
+ *
+ * L'ordre des panes dans un onglet est celui de `list-panes`. Un pane dont l'onglet
+ * n'est pas (encore) connu forme son propre groupe à son index : la liste des panes et
+ * celle des onglets arrivent par deux chemins. RIEN n'est filtré : tous les onglets,
+ * tous les panes, agent ou pas, comme le sélecteur Cmd+P de Kova.
  */
 export function groupByTab(panes: Pane[], tabs: Tab[]): TabGroup[] {
-  const byTab = new Map<string, TabGroup>();
-  const keyOf = (window: number, tabId: number): string => `w${window}-t${tabId}`;
+  const byKey = new Map<string, TabGroup>();
 
   for (const tab of tabs) {
-    byTab.set(keyOf(tab.window, tab.id), {
-      key: keyOf(tab.window, tab.id),
+    byKey.set(keyOf(tab.window, tab.tab_index), {
+      key: keyOf(tab.window, tab.tab_index),
       window: tab.window,
+      tabIndex: tab.tab_index,
       tabId: tab.id,
       title: tab.title ?? '',
       color: tab.color,
@@ -48,35 +61,37 @@ export function groupByTab(panes: Pane[], tabs: Tab[]): TabGroup[] {
   }
   for (const pane of panes) {
     const key = keyOf(pane.window, pane.tab);
-    let group = byTab.get(key);
+    let group = byKey.get(key);
     if (!group) {
       group = {
         key,
         window: pane.window,
-        tabId: pane.tab,
+        tabIndex: pane.tab,
+        tabId: null,
         title: '',
         color: pane.color ?? null,
         active: false,
         panes: [],
       };
-      byTab.set(key, group);
+      byKey.set(key, group);
     }
     group.panes.push(pane);
   }
 
-  const order = new Map<string, number>();
-  tabs.forEach((t) => order.set(keyOf(t.window, t.id), t.tab_index));
-  const groups = [...byTab.values()].filter((g) => g.panes.length > 0);
+  const groups = [...byKey.values()].filter((g) => g.panes.length > 0);
   for (const g of groups) {
-    if (g.title === '') g.title = fallbackTitle(g.panes, g.tabId);
+    if (g.title === '') g.title = fallbackTitle(g.panes, g.tabIndex);
   }
-  return groups.sort((a, b) => {
-    if (a.window !== b.window) return a.window - b.window;
-    const ia = order.get(a.key) ?? Number.MAX_SAFE_INTEGER;
-    const ib = order.get(b.key) ?? Number.MAX_SAFE_INTEGER;
-    if (ia !== ib) return ia - ib;
-    return a.tabId - b.tabId;
-  });
+  return groups.sort((a, b) => a.window - b.window || a.tabIndex - b.tabIndex);
+}
+
+/**
+ * Pane sans agent reconnu par Kova mais avec un `claude` encore en processus enfant :
+ * une session périmée, que Kova marque de même. Elle s'affiche, avec son badge, et
+ * propose de relancer Claude dans ce dossier.
+ */
+export function isStaleSession(pane: Pane): boolean {
+  return pane.agent === null && pane.child_processes.some((c) => c.name === 'claude');
 }
 
 /** Comparaison sans accents ni casse : « trail » trouve « TrailCoach », « lien » ne trouve rien. */

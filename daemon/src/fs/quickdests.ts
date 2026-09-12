@@ -12,6 +12,9 @@ function recentProjectsFile(): string {
   );
 }
 
+/** Plafond de securite seulement : le fichier de Robin en compte une vingtaine. */
+const RECENT_PROJECTS_MAX = 200;
+
 interface RawProject {
   path?: unknown;
   last_opened?: unknown;
@@ -143,10 +146,13 @@ export function buildQuickDests(panes: Pane[], cfg: KovalinkConfig): FsQuickDest
  */
 export function listRecentProjects(): RecentProject[] {
   const home = homedir();
-  return readRecentProjects().map((p, index) => ({
+  // TOUS les projets du fichier, dedupliques, du plus recent au plus ancien : c'est le
+  // menu Cmd+O de Kova. Le libelle est celui de Kova, le nom du dossier ; le chemin
+  // complet s'affiche dessous.
+  return readRecentProjects(RECENT_PROJECTS_MAX).map((p, index) => ({
     index,
     path: p.path,
-    label: shortLabel(p.path, home),
+    label: p.path === home ? 'Dossier personnel' : basename(p.path) || p.path,
     lastOpenedMs: p.lastOpenedMs,
   }));
 }
@@ -158,7 +164,7 @@ export function listRecentProjects(): RecentProject[] {
  */
 export function resolveRecentProject(index: number, expectedPath: string): string | null {
   if (!Number.isInteger(index) || index < 0) return null;
-  const project = readRecentProjects()[index];
+  const project = readRecentProjects(RECENT_PROJECTS_MAX)[index];
   if (!project || project.path !== expectedPath) return null;
   return project.path;
 }

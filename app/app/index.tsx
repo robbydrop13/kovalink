@@ -16,12 +16,14 @@ import { RefreshControl, ScrollView, StyleSheet, TextInput, View } from 'react-n
 import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { Pane } from '@/protocol';
 import { colors, layout, radius, space } from '@/theme';
 import { Button, LinkAction } from '@/ui/Button';
 import { LinkPill } from '@/ui/LinkPill';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
 import { TabGroupView } from '@/features/sessions/TabGroupView';
+import { paneHref } from '@/features/sessions/SessionRow';
 import { filterGroups, groupByTab, summaryLine, windowCount } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { openOnMac } from '@/features/sessions/openOnMac';
@@ -80,7 +82,14 @@ export default function SessionsScreen() {
   const shown = useMemo(() => filterGroups(groups, query), [groups, query]);
   const windows = windowCount(shown);
   const summary = kovaDown ? null : summaryLine(panes);
-  const open = (paneId: number) => router.push(`/session/${paneId}`);
+  // Un pane sans agent s'ouvre sur la vue Term ; une session périmée propose de relancer
+  // Claude dans son dossier via la feuille « Nouvelle session », préfiltrée.
+  const open = (paneId: number) => {
+    const pane = panes.find((p) => p.id === paneId);
+    router.push(pane ? paneHref(pane) : `/session/${paneId}`);
+  };
+  const relaunch = (pane: Pane) =>
+    router.push({ pathname: '/new-session', params: { cwd: pane.cwd } });
   const onMac = (paneId: number) => setToast(openOnMac(paneId));
   const aging = (paneId: number) => isAging(prompts[paneId]);
 
@@ -232,6 +241,7 @@ export default function SessionsScreen() {
                   aging={aging}
                   onOpen={open}
                   onOpenOnMac={onMac}
+                  onRelaunch={relaunch}
                   onInterrupt={(id) => void interrupt(id)}
                   interruptDisabled={degraded}
                   interruptLabel={(id) => labelFor(id, degraded)}

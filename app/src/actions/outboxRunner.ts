@@ -17,6 +17,7 @@ import { totalSize } from '@/features/chat/attachments';
 import { bootWarn } from '@/env';
 import { AttachmentError } from './attachments';
 import { materialize, payloadOf } from './sendText';
+import { useOutboxNotices } from '@/store/outboxNotices';
 
 let running = false;
 
@@ -64,7 +65,18 @@ export async function flushOutbox(): Promise<FlushReport> {
             report.held += 1;
             continue;
           }
-          await postText(job.paneId, await materialize(job), job.nonce);
+          const result = await postText(job.paneId, await materialize(job), job.nonce);
+          if (!result.applied) {
+            // Le Mac a répondu mais n'a rien validé dans le pane (question apparue,
+            // retour chariot jamais honoré). Ce n'est ni envoyé ni à rejouer en boucle :
+            // on le retire, et la cause remonte jusqu'à la bulle.
+            const cause = `non appliqué : ${result.reason ?? 'raison inconnue'}`;
+            bootWarn('file d’attente, texte non appliqué', cause);
+            await dequeue(job.nonce);
+            report.refused.push({ nonce: job.nonce, cause });
+            useOutboxNotices.getState().refuse(job.nonce, cause);
+            continue;
+          }
         }
         await dequeue(job.nonce);
         report.sent += 1;
@@ -80,6 +92,7 @@ export async function flushOutbox(): Promise<FlushReport> {
           bootWarn(`file d’attente, ${job.kind} refusé`, cause);
           await dequeue(job.nonce);
           report.refused.push({ nonce: job.nonce, cause });
+          useOutboxNotices.getState().refuse(job.nonce, cause);
           continue;
         }
         bootWarn(`file d’attente, ${job.kind} différé`, e);

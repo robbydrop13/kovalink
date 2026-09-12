@@ -16,6 +16,7 @@ interface Props {
   aging: (paneId: number) => boolean;
   onOpen: (paneId: number) => void;
   onOpenOnMac: (paneId: number) => void;
+  onRelaunch: (pane: Pane) => void;
   onInterrupt: (paneId: number) => void;
   interruptDisabled: boolean;
   interruptLabel: (paneId: number) => string;
@@ -32,6 +33,7 @@ export function TabGroupView({
   aging,
   onOpen,
   onOpenOnMac,
+  onRelaunch,
   onInterrupt,
   interruptDisabled,
   interruptLabel,
@@ -40,7 +42,7 @@ export function TabGroupView({
   return (
     <View
       style={[styles.group, { borderLeftColor: tint }]}
-      accessibilityLabel={`Onglet ${group.title}${group.active ? ', actif sur le Mac' : ''}, ${group.panes.length} pane${group.panes.length > 1 ? 's' : ''}`}
+      accessibilityLabel={`Onglet ${group.tabIndex + 1}, ${group.title}${group.active ? ', actif sur le Mac' : ''}, ${group.panes.length} pane${group.panes.length > 1 ? 's' : ''}`}
     >
       <View style={styles.header}>
         <View style={[styles.dot, { backgroundColor: tint }]} />
@@ -76,6 +78,7 @@ export function TabGroupView({
               prompt={prompts[pane.id]}
               onOpen={() => onOpen(pane.id)}
               onOpenOnMac={() => onOpenOnMac(pane.id)}
+              onRelaunch={() => onRelaunch(pane)}
               interruptDisabled={interruptDisabled}
               interruptLabel={interruptLabel(pane.id)}
               onInterrupt={() => onInterrupt(pane.id)}

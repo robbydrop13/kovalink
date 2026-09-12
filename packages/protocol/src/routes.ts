@@ -153,9 +153,14 @@ export interface KovaNewTabRequest {
   path: string;
 }
 
-/** Reponse de `POST /v1/kova/new-tab` : l'onglet et le pane crees, `claude` lance dedans. */
+/**
+ * Reponse de `POST /v1/kova/new-tab` : l'onglet et le pane crees. `launched` dit si le
+ * retour chariot qui execute `claude` est parti (le champ `command` de Kova est tape,
+ * pas execute) ; sinon la commande attend dans le shell du nouveau pane.
+ */
 export interface KovaNewTabResponse {
   tabId: number;
   paneId: number;
   cwd: string;
+  launched: boolean;
 }

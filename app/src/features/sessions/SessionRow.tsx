@@ -12,6 +12,7 @@ import { StatusGlyph } from '@/ui/StatusGlyph';
 import { Txt } from '@/ui/Txt';
 import { shortAge } from '@/utils/time';
 import { PermissionNote, bypassAccessibilitySuffix } from './PaneIdentity';
+import { isStaleSession } from './tabGroups';
 
 interface Props {
   pane: Pane;
@@ -19,17 +20,28 @@ interface Props {
   onOpen: () => void;
   /** `Ouvrir sur le Mac` : `focus-pane`, en lien visible. */
   onOpenOnMac?: () => void;
+  /** Session périmée : relancer Claude dans ce dossier (feuille « Nouvelle session »). */
+  onRelaunch?: () => void;
   onInterrupt?: () => void;
   interruptDisabled?: boolean;
   interruptLabel?: string;
 }
 
-/** Libellé d'état en badge : travaille, terminé il y a N, inactif, ou shell sans agent. */
+/**
+ * Libellé d'état en badge : attend, travaille, terminé il y a N, inactif, session périmée
+ * (agent perdu par Kova mais `claude` encore en processus enfant), ou shell sans agent.
+ */
 export function paneBadge(pane: Pane, prompt: Prompt | undefined, now = Date.now()): string {
   if (pane.awaiting) return 'attend';
   if (pane.working) return 'travaille';
+  if (isStaleSession(pane)) return 'session périmée';
   if (prompt?.state === 'turn_end') return `terminé il y a ${shortAge(prompt.endedAt, now)}`;
   return pane.agent ? 'inactif' : 'shell';
+}
+
+/** Un pane sans agent s'ouvre sur la vue Term : il n'y a pas de transcript à montrer. */
+export function paneHref(pane: Pane): string {
+  return pane.agent ? `/session/${pane.id}` : `/session/${pane.id}?view=term`;
 }
 
 /** Titre d'un pane tel que Kova le montre, le projet venant en sous-titre. */
@@ -44,11 +56,13 @@ export function SessionRow({
   prompt,
   onOpen,
   onOpenOnMac,
+  onRelaunch,
   onInterrupt,
   interruptDisabled = false,
   interruptLabel = 'Interrompre',
 }: Props) {
   const working = pane.working;
+  const stale = isStaleSession(pane);
   const badge = paneBadge(pane, prompt);
   const subtitle = pane.agent && pane.agent !== pane.title ? `${pane.projectName} · ${pane.agent}` : pane.projectName;
   return (
@@ -66,8 +80,11 @@ export function SessionRow({
           <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.title}>
             {paneLabel(pane)}
           </Txt>
-          <View style={[styles.badge, working && styles.badgeWorking]}>
-            <Txt variant="caption" color={working ? colors.status.working : colors.text.tertiary}>
+          <View style={[styles.badge, working && styles.badgeWorking, stale && styles.badgeStale]}>
+            <Txt
+              variant="caption"
+              color={working ? colors.status.working : stale ? colors.status.awaiting : colors.text.tertiary}
+            >
               {badge}
             </Txt>
           </View>
@@ -78,6 +95,7 @@ export function SessionRow({
         <PermissionNote mode={pane.permissionMode} />
         <View style={styles.actions}>
           {onOpenOnMac ? <LinkAction label={OPEN_ON_MAC_LABEL} onPress={onOpenOnMac} /> : null}
+          {stale && onRelaunch ? <LinkAction label="Relancer Claude" onPress={onRelaunch} /> : null}
           {working && onInterrupt ? (
             <LinkAction
               label={interruptLabel}
@@ -115,5 +133,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.overlay,
   },
   badgeWorking: { backgroundColor: colors.status.workingBg },
+  badgeStale: { backgroundColor: colors.status.awaitingBg },
   actions: { flexDirection: 'row', gap: space[6], marginTop: space[1] },
 });

@@ -6,7 +6,7 @@
 // aucun chemin libre ne part de l'iPhone : le daemon résout un index dans SA liste.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { RecentProject } from '@/protocol';
@@ -28,6 +28,9 @@ function fold(s: string): string {
 
 export default function NewSessionScreen() {
   const insets = useSafeAreaInsets();
+  /** `cwd` : relance d'une session périmée, le projet du pane est mis en avant. */
+  const params = useLocalSearchParams<{ cwd?: string }>();
+  const wantedCwd = typeof params.cwd === 'string' && params.cwd.length > 0 ? params.cwd : null;
   const link = useConnection((s) => s.link);
   const kova = useConnection((s) => s.kova);
   const degraded = isDegraded(link);
@@ -58,12 +61,19 @@ export default function NewSessionScreen() {
   const shown = useMemo(() => {
     if (!projects) return [];
     const words = fold(query).split(/\s+/).filter((w) => w.length > 0);
-    if (words.length === 0) return projects;
-    return projects.filter((p) => {
-      const hay = fold(`${p.label} ${p.path}`);
-      return words.every((w) => hay.includes(w));
-    });
-  }, [projects, query]);
+    const list =
+      words.length === 0
+        ? projects
+        : projects.filter((p) => {
+            const hay = fold(`${p.label} ${p.path}`);
+            return words.every((w) => hay.includes(w));
+          });
+    // Le projet de la session à relancer passe en tête, sans rien cacher des autres.
+    if (!wantedCwd) return list;
+    const wanted = list.filter((p) => p.path === wantedCwd);
+    return wanted.length > 0 ? [...wanted, ...list.filter((p) => p.path !== wantedCwd)] : list;
+  }, [projects, query, wantedCwd]);
+  const wantedMissing = wantedCwd !== null && projects !== null && !projects.some((p) => p.path === wantedCwd);
 
   const open = useCallback(
     async (project: RecentProject) => {
@@ -73,8 +83,9 @@ export default function NewSessionScreen() {
       impact(ImpactStyle.Medium);
       try {
         const res = await postNewTab(project);
-        // `replace` : le retour depuis la session ramène à la liste, pas à cet écran.
-        router.replace(`/session/${res.paneId}`);
+        // `replace` : le retour depuis la session ramène à la liste, pas à cet écran. Sans
+        // `launched`, la commande attend dans le shell du nouveau pane : la vue Term le montre.
+        router.replace(res.launched ? `/session/${res.paneId}` : `/session/${res.paneId}?view=term`);
       } catch (e) {
         setError(`Création impossible. ${e instanceof Error ? e.message : String(e)}`);
         setLaunching(null);
@@ -104,6 +115,12 @@ export default function NewSessionScreen() {
         />
       ) : null}
       {error ? <Banner tone="error" text={error} actionLabel="Réessayer" onAction={load} /> : null}
+      {wantedMissing ? (
+        <Banner
+          tone="warn"
+          text={`${wantedCwd} n’est pas dans les projets récents de Kova : ouvre le dossier une fois sur le Mac.`}
+        />
+      ) : null}
 
       <View style={styles.searchRow}>
         <TextInput
@@ -125,7 +142,9 @@ export default function NewSessionScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[8] }]}
       >
         <Txt variant="caption" color={colors.text.tertiary} style={styles.hint}>
-          Un tap ouvre un onglet Kova sur le Mac, avec Claude lancé dans ce dossier.
+          {wantedCwd && !wantedMissing
+            ? 'Relancer Claude : le dossier de la session périmée est en tête.'
+            : 'Un tap ouvre un onglet Kova sur le Mac, avec Claude lancé dans ce dossier.'}
         </Txt>
         {projects === null ? <SkeletonList count={5} height={56} /> : null}
         {projects !== null && shown.length === 0 ? (
@@ -137,6 +156,7 @@ export default function NewSessionScreen() {
         <View style={styles.stack}>
           {shown.map((p) => {
             const busy = launching === p.index;
+            const wanted = p.path === wantedCwd;
             return (
               <Pressable
                 key={p.index}
@@ -146,7 +166,7 @@ export default function NewSessionScreen() {
                 accessibilityState={{ disabled: blocked || (launching !== null && !busy) }}
                 disabled={blocked || launching !== null}
                 onPress={() => void open(p)}
-                style={({ pressed }) => [styles.row, pressed && styles.pressed, blocked && styles.dim]}
+                style={({ pressed }) => [styles.row, wanted && styles.wanted, pressed && styles.pressed, blocked && styles.dim]}
               >
                 <View style={styles.body}>
                   <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1}>
@@ -201,6 +221,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.raised,
   },
   pressed: { backgroundColor: colors.bg.pressed },
+  wanted: { borderWidth: 1, borderColor: colors.accent.primary },
   dim: { opacity: 0.5 },
   body: { flex: 1, gap: 2 },
 });
