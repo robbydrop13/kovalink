@@ -23,7 +23,7 @@ import { draftOf, useDrafts } from '@/store/drafts';
 import { ImpactStyle, NotifyType, impact, notify } from '@/utils/haptics';
 import { AttachmentStrip, askAttachmentSource } from './AttachmentViews';
 import type { Attachment } from './attachments';
-import { barAction, canEdit, type BarAction } from './barAction';
+import { barAction, canEdit, micState, type BarAction } from './barAction';
 import { discardRecording, startRecording, transcribeRecording, VoiceError, type RecorderHandle } from './voice';
 
 export interface MessageBarProps {
@@ -57,15 +57,8 @@ function levelRatio(db: number | null): number {
   return Math.max(0, Math.min(1, (db + 50) / 50));
 }
 
-/** Le bouton rond de droite : un seul, dont le contenu s'échange en 150 ms. */
-function ActionButton({ action, onSend, onStop, onMicIn, onMicMove, onMicOut }: {
-  action: BarAction;
-  onSend: () => void;
-  onStop: () => void;
-  onMicIn: (pageX: number) => void;
-  onMicMove: (pageX: number) => void;
-  onMicOut: () => void;
-}) {
+/** Le bouton rond de droite : un seul, dont le contenu s'échange en 150 ms. Absent au repos. */
+function ActionButton({ action, onSend, onStop }: { action: BarAction; onSend: () => void; onStop: () => void }) {
   // Échange en 150 ms : à chaque changement de nature, le nouveau contenu apparaît en fondu.
   const [opacity] = useState(() => new Animated.Value(1));
   const kind = action.kind;
@@ -75,20 +68,12 @@ function ActionButton({ action, onSend, onStop, onMicIn, onMicMove, onMicOut }: 
   }, [kind, opacity]);
   const shown = action;
 
-  if (shown.kind === 'none') return <View style={styles.actionSlot} />;
-  const fill =
-    shown.kind === 'send' && shown.enabled ? colors.accent.primary : shown.kind === 'stop' ? colors.action.reject.bg : 'transparent';
-  const tint =
-    shown.kind === 'send' && shown.enabled
-      ? colors.text.onFill
-      : shown.kind === 'stop'
-        ? colors.action.reject.text
-        : shown.kind === 'mic' && shown.enabled
-          ? colors.text.secondary
-          : colors.text.disabled;
-  const name = shown.kind === 'send' ? 'arrow-up' : shown.kind === 'stop' ? 'square' : shown.kind === 'busy' ? 'loader' : 'mic';
-  const label = shown.kind === 'send' ? t.actionSend : shown.kind === 'stop' ? t.composerInterrupt : shown.kind === 'busy' ? t.composerSending : t.voiceButton;
-  const enabled = shown.kind === 'stop' || (shown.kind === 'send' && shown.enabled) || (shown.kind === 'mic' && shown.enabled);
+  if (shown.kind === 'none') return null;
+  const fill = shown.kind === 'send' && shown.enabled ? colors.accent.primary : shown.kind === 'stop' ? colors.action.reject.bg : 'transparent';
+  const tint = shown.kind === 'send' && shown.enabled ? colors.text.onFill : shown.kind === 'stop' ? colors.action.reject.text : colors.text.disabled;
+  const name = shown.kind === 'send' ? 'arrow-up' : shown.kind === 'stop' ? 'square' : 'loader';
+  const label = shown.kind === 'send' ? t.actionSend : shown.kind === 'stop' ? t.composerInterrupt : t.composerSending;
+  const enabled = shown.kind === 'stop' || (shown.kind === 'send' && shown.enabled);
   return (
     <Animated.View style={[styles.actionSlot, { opacity }]}>
       <Pressable
@@ -96,11 +81,7 @@ function ActionButton({ action, onSend, onStop, onMicIn, onMicMove, onMicOut }: 
         accessibilityLabel={label}
         accessibilityState={{ disabled: !enabled, busy: shown.kind === 'busy' }}
         disabled={!enabled}
-        pressRetentionOffset={{ left: 400, right: 400, top: 120, bottom: 120 }}
         onPress={shown.kind === 'send' ? onSend : shown.kind === 'stop' ? onStop : undefined}
-        onPressIn={shown.kind === 'mic' ? (e) => onMicIn(e.nativeEvent.pageX) : undefined}
-        onTouchMove={shown.kind === 'mic' ? (e) => onMicMove(e.nativeEvent.pageX) : undefined}
-        onPressOut={shown.kind === 'mic' ? onMicOut : undefined}
         style={({ pressed }) => [styles.action, { backgroundColor: fill }, pressed && enabled && styles.actionPressed]}
       >
         <Icon name={name} size={shown.kind === 'stop' ? 14 : 20} color={tint} />
@@ -153,6 +134,7 @@ export function MessageBar({
     [locked, disabled, working, value, attachments.length, sending, transcribing, recording],
   );
   const action = barAction(input);
+  const mic = micState(input);
   const editable = canEdit(input);
 
   const placeholder = locked
@@ -259,7 +241,8 @@ export function MessageBar({
         return;
       }
       notify(NotifyType.Success);
-      setValue(res.text);
+      // Dicter la suite d'un texte : le transcrit s'ajoute à ce qui est déjà là.
+      setValue(value.trim().length > 0 ? `${value.trimEnd()} ${res.text}` : res.text);
     } catch (e) {
       notify(NotifyType.Error);
       onNotice(e instanceof VoiceError ? e.message : t.voiceFailed(e instanceof Error ? e.message : String(e)));
@@ -329,6 +312,21 @@ export function MessageBar({
           >
             <Icon name="plus" size={20} color={canAttach ? colors.text.secondary : colors.text.disabled} />
           </Pressable>
+          {/* Micro fantôme permanent : maintenir pour dicter, glisser à gauche pour annuler. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t.voiceButton}
+            accessibilityState={{ disabled: !mic.enabled }}
+            disabled={!mic.enabled}
+            hitSlop={6}
+            pressRetentionOffset={{ left: 400, right: 400, top: 120, bottom: 120 }}
+            onPressIn={(e) => void micIn(e.nativeEvent.pageX)}
+            onTouchMove={(e) => micMove(e.nativeEvent.pageX)}
+            onPressOut={() => void micOut()}
+            style={styles.ghost}
+          >
+            <Icon name="mic" size={20} color={!mic.enabled ? colors.text.disabled : mic.dimmed ? colors.text.tertiary : colors.text.secondary} />
+          </Pressable>
 
           <TextInput
             style={[styles.field, locked && styles.fieldLocked]}
@@ -344,14 +342,7 @@ export function MessageBar({
             accessibilityLabel={t.composerFieldA11y}
           />
 
-          <ActionButton
-            action={action}
-            onSend={() => void send()}
-            onStop={onInterrupt}
-            onMicIn={(x) => void micIn(x)}
-            onMicMove={micMove}
-            onMicOut={() => void micOut()}
-          />
+          <ActionButton action={action} onSend={() => void send()} onStop={onInterrupt} />
         </View>
       </Pressable>
     </View>

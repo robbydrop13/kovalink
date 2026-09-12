@@ -705,6 +705,10 @@ export default function SessionScreen() {
           working={working}
           workingSince={workingSince}
           finishedAt={finishedAt}
+          onStop={() => {
+            markActed();
+            void interrupt(paneId);
+          }}
         />
       </View>
 

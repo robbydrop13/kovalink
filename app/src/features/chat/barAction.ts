@@ -19,25 +19,30 @@ export interface BarInput {
 }
 
 export type BarAction =
-  | { kind: 'mic'; enabled: boolean }
   | { kind: 'send'; enabled: boolean }
   | { kind: 'stop' }
   | { kind: 'busy' }
   | { kind: 'none' };
 
 /**
- * L'action du bouton rond de droite :
- * - enregistrement ou transcription en cours : `busy` (le geste est ailleurs) ;
- * - agent au travail : `stop`, même avec du texte (on prépare la suite en tapant) ;
- * - du contenu (texte ou pièces) : `send`, actif hors verrou et hors envoi ;
- * - sinon `mic`, actif hors verrou et hors indisponibilité.
+ * L'action du bouton rond de droite, trois états et un vide (règle du 12 septembre, soir) :
+ * - envoi de pièces ou transcription en cours : `busy` ;
+ * - du contenu (texte ou pièces) : `send`, agent au repos OU en travail (envoyer met en
+ *   file, comme Claude) ; Stop reste alors à portée dans le bandeau d'état en haut ;
+ * - agent en travail et champ vide : `stop` ;
+ * - champ vide, agent au repos : rien, la pilule se termine par le champ.
+ * Le micro n'est PAS ici : c'est un bouton fantôme permanent à gauche, à côté du `plus`.
  */
 export function barAction(s: BarInput): BarAction {
   if (s.recording || s.transcribing || s.sending) return { kind: 'busy' };
-  if (s.working && !s.locked) return { kind: 'stop' };
   if (s.hasText || s.hasAttachments) return { kind: 'send', enabled: !s.locked && !s.disabled };
-  if (s.disabled) return { kind: 'none' };
-  return { kind: 'mic', enabled: !s.locked };
+  if (s.working && !s.locked && !s.disabled) return { kind: 'stop' };
+  return { kind: 'none' };
+}
+
+/** Le micro : toujours visible, actif hors verrou, hors indisponibilité et hors occupation ; atténué avec du texte. */
+export function micState(s: BarInput): { enabled: boolean; dimmed: boolean } {
+  return { enabled: !s.locked && !s.disabled && !s.sending && !s.transcribing, dimmed: s.hasText || s.hasAttachments };
 }
 
 /** Le texte peut-il être édité ? Verrouillé, indisponible, en envoi ou en enregistrement : non. */
