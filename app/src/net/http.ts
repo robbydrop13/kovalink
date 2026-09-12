@@ -12,6 +12,9 @@ import {
   type KovaNewTabRequest,
   type KovaNewTabResponse,
   type KovaRecentProjectsResponse,
+  type KovaResumeRequest,
+  type KovaResumeResponse,
+  type KovaSessionsResponse,
   type Pane,
   type PairClaimRequest,
   type PairClaimResponse,
@@ -239,6 +242,17 @@ export function fetchRecentProjects(): Promise<KovaRecentProjectsResponse> {
  * `new-tab` sur un projet récent, désigné par son index ET son chemin : le daemon relit sa
  * liste et refuse si elle a bougé. La commande lancée est toujours `claude`, côté daemon.
  */
+/** Sessions ouvertes et fermees, comme les palettes de Kova (PRD 3.4). */
+export function fetchSessions(): Promise<KovaSessionsResponse> {
+  return request(ROUTES.kovaSessions);
+}
+
+/** Reprise d'une session fermée : `new-tab` + `claude --resume`, construit côté daemon. */
+export function postResume(sessionId: string, timeoutMs = 12_000): Promise<KovaResumeResponse> {
+  const body: KovaResumeRequest = { sessionId };
+  return request(ROUTES.kovaResume, { method: 'POST', body, timeoutMs });
+}
+
 export function postNewTab(project: RecentProject, timeoutMs = 10_000): Promise<KovaNewTabResponse> {
   const body: KovaNewTabRequest = { recentProjectIndex: project.index, path: project.path };
   return request(ROUTES.kovaNewTab, { method: 'POST', body, timeoutMs });

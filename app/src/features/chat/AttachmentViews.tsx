@@ -161,10 +161,24 @@ function FileTile({ name, size }: { name: string; size: number | null }) {
  * `paths`). Un tap ouvre l'aperçu du bloc Fichiers, sur le Mac, dans les deux cas dès
  * que le chemin est connu.
  */
-export function AttachmentChips({ local, paths }: { local?: Attachment[]; paths?: string[] }) {
+/**
+ * Vignettes d'une bulle. `images` : photos collées dont le transcript ne garde qu'un bloc
+ * `image` sans chemin (Claude Code a remplacé la ligne de chemin) : une tuile « photo »,
+ * non ouvrable, pour que le tour réel garde la silhouette de la bulle locale.
+ */
+export function AttachmentChips({
+  local,
+  paths,
+  images = 0,
+}: {
+  local?: Attachment[];
+  paths?: string[];
+  images?: number;
+}) {
   const items: { key: string; path: string | null; local: Attachment | null }[] = [
     ...(local ?? []).map((a) => ({ key: a.id, path: a.path, local: a })),
     ...(paths ?? []).map((p) => ({ key: p, path: p, local: null })),
+    ...Array.from({ length: images }, (_, i) => ({ key: `image-${i}`, path: null, local: null })),
   ];
   if (items.length === 0) return null;
   return (
@@ -173,7 +187,7 @@ export function AttachmentChips({ local, paths }: { local?: Attachment[]; paths?
         <Pressable
           key={it.key}
           accessibilityRole={it.path ? 'button' : undefined}
-          accessibilityLabel={it.local?.name ?? (it.path ? displayNameOf(it.path) : '')}
+          accessibilityLabel={it.local?.name ?? (it.path ? displayNameOf(it.path) : 'photo')}
           disabled={!it.path}
           onPress={() => {
             if (!it.path) return;
@@ -182,7 +196,13 @@ export function AttachmentChips({ local, paths }: { local?: Attachment[]; paths?
           }}
           style={styles.thumbWrap}
         >
-          {it.local ? <LocalThumb item={it.local} /> : <RemoteThumb path={it.path as string} />}
+          {it.local ? (
+            <LocalThumb item={it.local} />
+          ) : it.path ? (
+            <RemoteThumb path={it.path} />
+          ) : (
+            <FileTile name="photo" size={null} />
+          )}
         </Pressable>
       ))}
     </View>

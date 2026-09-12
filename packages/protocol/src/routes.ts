@@ -34,6 +34,13 @@ export const ROUTES = {
    */
   kovaRecentProjects: '/v1/kova/recent-projects',
   kovaNewTab: '/v1/kova/new-tab',
+  /**
+   * Sessions ouvertes ET fermees, comme les palettes de Kova (PRD 3.4, design 4.11), et
+   * la reprise d'une session fermee : `new-tab` avec `claude --resume <id>`, identifiant
+   * valide contre l'index, commande construite par le daemon.
+   */
+  kovaSessions: '/v1/kova/sessions',
+  kovaResume: '/v1/kova/resume',
   ws: '/ws',
 
   // --- Bloc C, les fichiers ---------------------------------------------
@@ -66,6 +73,8 @@ export const ROUTE_PATTERNS = {
   kovaLaunch: '/v1/kova/launch',
   kovaRecentProjects: '/v1/kova/recent-projects',
   kovaNewTab: '/v1/kova/new-tab',
+  kovaSessions: '/v1/kova/sessions',
+  kovaResume: '/v1/kova/resume',
   ws: '/ws',
   fsList: '/v1/fs/list',
   fsRead: '/v1/fs/read',
@@ -163,4 +172,41 @@ export interface KovaNewTabResponse {
   paneId: number;
   cwd: string;
   launched: boolean;
+}
+
+/** Une session Claude Code, ouverte dans un pane ou fermee (transcript sur disque). */
+export interface KovaSessionEntry {
+  sessionId: string;
+  cwd: string;
+  /** Nom du dossier. */
+  projectName: string;
+  /** Libelle de Kova, sinon `ai-title`, sinon le premier prompt tronque. */
+  title: string;
+  /** Derniere activite, ms epoch (`mtime` du transcript). */
+  lastActiveMs: number;
+  promptCount: number;
+  state: 'open' | 'closed';
+  /** Pane qui la porte quand elle est ouverte. */
+  paneId: number | null;
+}
+
+export interface KovaSessionsResponse {
+  sessions: KovaSessionEntry[];
+}
+
+/** Corps de `POST /v1/kova/resume` : l'identifiant seulement, valide contre l'index. */
+export interface KovaResumeRequest {
+  sessionId: string;
+}
+
+/**
+ * Reponse de `POST /v1/kova/resume`. `alreadyOpen` : la session vivait deja dans un pane,
+ * rien n'a ete lance, `paneId` est ce pane.
+ */
+export interface KovaResumeResponse {
+  tabId: number | null;
+  paneId: number;
+  cwd: string;
+  launched: boolean;
+  alreadyOpen: boolean;
 }

@@ -4,6 +4,7 @@
 // nom de l'onglet. Les états restent visibles en badge, à leur place. Module pur, testé
 // sous Node.
 import type { Pane, Tab } from '@/protocol';
+import { fold } from '@/utils/search';
 
 export interface TabGroup {
   /** `w<window>-i<tab_index>` : la clé de jointure, stable d'un instantané à l'autre. */
@@ -92,14 +93,6 @@ export function groupByTab(panes: Pane[], tabs: Tab[]): TabGroup[] {
  */
 export function isStaleSession(pane: Pane): boolean {
   return pane.agent === null && pane.child_processes.some((c) => c.name === 'claude');
-}
-
-/** Comparaison sans accents ni casse : « trail » trouve « TrailCoach », « lien » ne trouve rien. */
-function fold(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
 }
 
 /** Ce sur quoi la recherche porte pour un pane : titre, projet, dossier, agent, session. */

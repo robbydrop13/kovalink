@@ -43,6 +43,13 @@ export type Block =
   | { type: 'text'; text: string }
   /** Contenu toujours vide et signature opaque : badge replie, aucun texte. */
   | { type: 'thinking' }
+  /**
+   * Image collee dans un tour utilisateur. Claude Code remplace la ligne de chemin
+   * envoyee par l'app par un bloc `image` en base64 et prefixe le texte de `[Image #n]`.
+   * Les octets ne sont JAMAIS relayes : seule la presence compte, pour la vignette et
+   * pour reconnaitre l'echo d'un message avec piece jointe.
+   */
+  | { type: 'image'; mediaType: string | null }
   | ToolUseBlock
   | ToolResultBlock;
 

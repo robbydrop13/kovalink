@@ -95,6 +95,64 @@ describe('withoutEchoed', () => {
     });
   });
 
+  describe('capture du 12 septembre à 19:09 : doublon avec pièce jointe', () => {
+    // Ligne `user` réelle (uuid et image anonymisés) : Claude Code a REMPLACÉ la ligne de
+    // chemin envoyée par l'app par un bloc `image`, et préfixé le texte de `[Image #4]`
+    // sans espace. L'app avait envoyé (audit, len=97) le texte, un saut de ligne, et
+    // `/tmp/kovalink/attachments/18567852/20260912-190911-IMG_5369.png`.
+    const realTurn = turn({
+      id: '7d1f1c1e',
+      seq: 9_990_000,
+      ts: '2026-09-12T17:09:13.256Z',
+      blocks: [
+        { type: 'text', text: '[Image #4]Affiche les tableaux dans le chat' },
+        { type: 'image', mediaType: 'image/jpeg' },
+      ],
+    });
+    const piece = {
+      id: 'a1',
+      uri: 'file:///var/mobile/IMG_5369.png',
+      name: 'IMG_5369.png',
+      size: 335_541,
+      mime: 'image/png',
+      path: '/tmp/kovalink/attachments/18567852/20260912-190911-IMG_5369.png',
+    };
+    const bubble = pendingMsg({
+      nonce: 'p1',
+      text: 'Affiche les tableaux dans le chat',
+      ts: '2026-09-12T17:09:13.295Z',
+      afterSeq: 9_980_000,
+      attachments: [piece],
+    });
+
+    it('la bulle locale est retirée quand le tour réel porte le texte préfixé et un bloc image', () => {
+      assert.deepEqual(withoutEchoed([bubble], [realTurn], 's1'), []);
+    });
+
+    it('un tour au même texte SANS image ne vaut pas écho d’un message avec pièce', () => {
+      const noImage = turn({ id: 'x', seq: 9_990_001, ts: '2026-09-12T17:09:13.256Z', blocks: [{ type: 'text', text: 'Affiche les tableaux dans le chat' }] });
+      assert.equal(withoutEchoed([bubble], [noImage], 's1').length, 1);
+    });
+
+    it('une photo seule, sans légende, se reconnaît par le compte de pièces et la borne temporelle', () => {
+      const photoOnly = pendingMsg({ nonce: 'p2', text: '', ts: '2026-09-12T17:20:00.000Z', afterSeq: 9_990_000, attachments: [piece] });
+      const echo = turn({ id: 'y', seq: 9_995_000, ts: '2026-09-12T17:20:01.000Z', blocks: [{ type: 'text', text: '[Image #5]' }, { type: 'image', mediaType: 'image/png' }] });
+      assert.deepEqual(withoutEchoed([photoOnly], [echo], 's1'), []);
+      // Mais pas un tour antérieur à l'envoi, même avec une image.
+      const before = turn({ id: 'z', seq: 9_985_000, ts: '2026-09-12T17:00:00.000Z', blocks: [{ type: 'text', text: '[Image #3]' }, { type: 'image', mediaType: 'image/png' }] });
+      assert.equal(withoutEchoed([photoOnly], [before], 's1').length, 1);
+    });
+
+    it('un fichier non image garde sa ligne de chemin : elle doit être celle de la pièce', () => {
+      const doc = { ...piece, id: 'd1', name: 'notes.pdf', mime: 'application/pdf', path: '/tmp/kovalink/attachments/18567852/20260912-190911-notes.pdf' };
+      const msg = pendingMsg({ nonce: 'p3', text: 'lis ça', ts: '2026-09-12T17:30:00.000Z', afterSeq: 1, attachments: [doc] });
+      const good = turn({ id: 'g', seq: 2, ts: '2026-09-12T17:30:01.000Z', blocks: [{ type: 'text', text: `lis ça\n${doc.path}` }] });
+      const other = turn({ id: 'o', seq: 2, ts: '2026-09-12T17:30:01.000Z', blocks: [{ type: 'text', text: 'lis ça\n/tmp/kovalink/attachments/18567852/autre.pdf' }] });
+      assert.deepEqual(withoutEchoed([msg], [good], 's1'), []);
+      assert.equal(withoutEchoed([msg], [other], 's1').length, 1);
+    });
+  });
+
   it('compare une forme canonique : NFC, retours à la ligne, espaces multiples, marqueur d’image', () => {
     const local = [pendingMsg({ nonce: 'n1', text: 'Recre\u0301e  un unique\r\ncommit ' })];
     const echo = [turn({ id: 'u1', seq: 9, blocks: [{ type: 'text', text: '[Image #1]Recrée un unique\ncommit' }] })];

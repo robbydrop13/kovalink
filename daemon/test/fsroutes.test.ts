@@ -225,8 +225,12 @@ describe('projets recents de Kova (Cmd+O depuis l app)', () => {
   it('les routes Kova existent et aucune ne prend un cwd ou une commande libre', () => {
     assert.equal(ROUTES.kovaRecentProjects, '/v1/kova/recent-projects');
     assert.equal(ROUTES.kovaNewTab, '/v1/kova/new-tab');
+    assert.equal(ROUTES.kovaSessions, '/v1/kova/sessions');
+    assert.equal(ROUTES.kovaResume, '/v1/kova/resume');
     const src = readFileSync(join(SRC_DIR, 'server', 'index.ts'), 'utf8');
-    assert.match(src, /const NEW_TAB_COMMAND = 'claude';/);
     assert.match(src, /cmd: 'new-tab', cwd, command: NEW_TAB_COMMAND/);
+    const resume = readFileSync(join(SRC_DIR, 'kova', 'resume.ts'), 'utf8');
+    assert.match(resume, /const NEW_TAB_COMMAND = 'claude';/);
+    assert.match(resume, /`\$\{NEW_TAB_COMMAND\} --resume \$\{session\.sessionId\}`/);
   });
 });

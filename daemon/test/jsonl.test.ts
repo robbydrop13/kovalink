@@ -207,7 +207,7 @@ describe('parseur JSONL', () => {
     assert.deepEqual(turns[1]?.blocks, [{ type: 'text', text: 'Tu peux envoyer le message' }]);
   });
 
-  it('un message absorbe avec image ne garde que son texte', () => {
+  it('un message absorbe avec image garde son texte et la presence de l image', () => {
     const turns = buildTurns([
       {
         type: 'attachment',
@@ -222,7 +222,7 @@ describe('parseur JSONL', () => {
         },
       } as RawLine,
     ]);
-    assert.deepEqual(turns[0]?.blocks, [{ type: 'text', text: '[Image #1]' }]);
+    assert.deepEqual(turns[0]?.blocks, [{ type: 'text', text: '[Image #1]' }, { type: 'image', mediaType: null }]);
   });
 
   it('le seq est l offset de la ligne quand le lecteur l a pose, un compteur sinon', () => {
@@ -233,6 +233,24 @@ describe('parseur JSONL', () => {
     assert.deepEqual(withOffsets.map((t) => t.seq), [1200, 1800]);
     const counted = buildTurns([user('a', 'u1'), user('b', 'u2')], 7);
     assert.deepEqual(counted.map((t) => t.seq), [7, 8]);
+  });
+
+  it('une image collee devient un bloc image sans octets, le tour reste user (19:09, IMG_5369)', () => {
+    const turns = buildTurns([
+      user(
+        [
+          { type: 'text', text: '[Image #4]Affiche les tableaux dans le chat' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'x'.repeat(1000) } },
+        ],
+        'u-img',
+      ),
+    ]);
+    assert.equal(turns[0]?.kind, 'user');
+    assert.deepEqual(turns[0]?.blocks, [
+      { type: 'text', text: '[Image #4]Affiche les tableaux dans le chat' },
+      { type: 'image', mediaType: 'image/jpeg' },
+    ]);
+    assert.equal(JSON.stringify(turns).includes('xxxx'), false, 'jamais les octets');
   });
 
   it('les blocs thinking ne transportent aucun texte', () => {

@@ -251,7 +251,7 @@ describe('KeyGate', () => {
     assert.equal(screen.composerText, '');
   });
 
-  it('emitLaunch n envoie l Entree que sur un pane sans agent ni processus', async () => {
+  it('emitLaunch n envoie l Entree que sur un pane sans agent (processus claude compris)', async () => {
     const { gate, sent } = makeFixture({ agent: null, agent_session_id: null });
     const res = await gate.emitLaunch(66);
     assert.equal(res.applied, true);
@@ -260,6 +260,9 @@ describe('KeyGate', () => {
     await assert.rejects(() => live.gate.emitLaunch(66), ForbiddenError);
     const shell = makeFixture({ agent: null, agent_session_id: null, child_processes: [{ name: 'claude', pid: 1 }] });
     await assert.rejects(() => shell.gate.emitLaunch(66), ForbiddenError);
+    // Un shell frais avec un processus d'initialisation du prompt : accepte.
+    const fresh = makeFixture({ agent: null, agent_session_id: null, child_processes: [{ name: 'starship', pid: 2 }] });
+    assert.equal((await fresh.gate.emitLaunch(66)).applied, true);
   });
 
   it('emitText ne laisse partir aucun retour chariot si un prompt parse est en attente', async () => {
@@ -441,7 +444,8 @@ describe('point d entree unique des ecritures (K1, analyse syntaxique)', () => {
     const callers = where(
       (f) => f.calls.has('emitInterrupt') || f.calls.has('emitText') || f.calls.has('emitKeys') || f.calls.has('emitLaunch'),
     );
-    assert.deepEqual(callers, ['server/index.ts']);
+    // `kova/resume.ts` porte `emitLaunch` pour les deux routes qui creent un onglet.
+    assert.deepEqual(callers, ['kova/resume.ts', 'server/index.ts']);
   });
 });
 

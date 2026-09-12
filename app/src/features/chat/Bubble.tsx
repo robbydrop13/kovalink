@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react';
 import { Animated, StyleSheet, useWindowDimensions, View } from 'react-native';
 import type { ToolResultBlock, Turn } from '@/protocol';
 import { colors, layout, motion, radius, space } from '@/theme';
-import { textOf } from '@/store/session';
+import { imageCount, textOf } from '@/store/session';
 import { Txt } from '@/ui/Txt';
 import { AttachmentChips } from './AttachmentViews';
 import { splitAttachmentLines, type Attachment } from './attachments';
@@ -51,19 +51,22 @@ export function UserBubble({
     state === 'failed' ? colors.status.error : state === 'queued' ? colors.text.tertiary : colors.status.success;
   const raw = textOf(turn.blocks);
   const { text, paths } = attachments && attachments.length > 0 ? { text: raw, paths: [] } : splitAttachmentLines(raw);
-  const hasPieces = (attachments?.length ?? 0) > 0 || paths.length > 0;
+  const images = attachments && attachments.length > 0 ? 0 : imageCount(turn.blocks);
+  const hasPieces = (attachments?.length ?? 0) > 0 || paths.length > 0 || images > 0;
+  // Texte PUIS vignettes, pour la bulle locale comme pour le tour réel : le remplacement
+  // de l'une par l'autre ne fait aucun saut visuel.
   return (
     <View style={styles.userWrap}>
-      {hasPieces ? (
-        <View style={{ maxWidth: width * layout.bubbleMaxWidthRatio }}>
-          <AttachmentChips local={attachments} paths={paths} />
-        </View>
-      ) : null}
       {text.length > 0 ? (
         <View style={[styles.userBubble, { maxWidth: width * layout.bubbleMaxWidthRatio }]}>
           <Txt variant="body" color={colors.text.primary}>
             {text}
           </Txt>
+        </View>
+      ) : null}
+      {hasPieces ? (
+        <View style={{ maxWidth: width * layout.bubbleMaxWidthRatio }}>
+          <AttachmentChips local={attachments} paths={paths} images={images} />
         </View>
       ) : null}
       {state === 'failed' && error ? (

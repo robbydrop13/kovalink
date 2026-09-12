@@ -226,12 +226,17 @@ export function toolCallIds(turns: Turn[]): Set<string> {
 }
 
 /** Texte visible d'un ensemble de blocs. Même règle pour une bulle et pour une comparaison. */
-export function textOf(blocks: Block[]): string {
+export function textOf(blocks: readonly Block[]): string {
   return blocks
     .filter((b): b is Extract<Block, { type: 'text' }> => b.type === 'text')
     .map((b) => b.text)
     .join('\n\n')
     .trim();
+}
+
+/** Images collées dans un tour (bloc `image`, octets jamais relayés). */
+export function imageCount(blocks: readonly Block[]): number {
+  return blocks.reduce((n, b) => n + (b.type === 'image' ? 1 : 0), 0);
 }
 
 /** Message envoyé depuis l'app, affiché en local tant que son tour serveur n'est pas arrivé. */
@@ -267,7 +272,8 @@ export interface PendingMessage {
 export function canonicalText(text: string): string {
   return text
     .normalize('NFC')
-    .replace(/\[Image #\d+\]/g, ' ')
+    .replace(/\[Image #\d+\]\s*/g, ' ')
+    .replace(/^\[Image: source: .+\]$/gm, ' ')
     .replace(/\r\n?/g, '\n')
     .replace(/[ \t\f\v\u00a0]+/g, ' ')
     .replace(/ ?\n ?/g, '\n')
@@ -292,27 +298,39 @@ function isAfterSend(m: PendingMessage, t: Turn): boolean {
 }
 
 /**
- * Vrai quand le tour utilisateur `echoText` est le rendu de la bulle locale `m`.
+ * Vrai quand le tour utilisateur `turn` est le rendu de la bulle locale `m`.
  * `loose` accepte que le transcript ait AJOUTÉ quelque chose autour du texte de Robin
  * (préfixe, ligne de contexte) : le texte de la bulle doit alors être contenu dans
  * celui du tour.
+ *
+ * Avec des pièces jointes, la forme canonique est la MÊME des deux côtés : marqueurs
+ * `[Image #n]` retirés (avec ou sans espace), lignes `[Image: source: ...]` et lignes de
+ * chemin détachées, blocs non texte ignorés, espaces et NFC normalisés. Claude Code
+ * remplace la ligne de chemin d'une image par un bloc `image` (mesuré le 12 septembre,
+ * 19:09 : `[{text:'[Image #4]Affiche…'},{image}]`, plus aucun chemin) : les pièces se
+ * comptent donc en chemins ET en images. Une photo seule, sans légende, se reconnaît par
+ * ce compte et par la borne temporelle.
  */
-function echoes(m: PendingMessage, echoText: string, loose = false): boolean {
+function echoes(m: PendingMessage, turn: Turn, loose = false): boolean {
   const pieces = m.attachments ?? [];
   const mine = canonicalText(m.text);
+  const echoText = textOf(turn.blocks);
   if (pieces.length === 0) {
     const theirs = canonicalText(echoText);
     return loose ? mine.length > 0 && theirs.includes(mine) : theirs === mine;
   }
-  // Avec des pièces, seule la comparaison du TEXTE s'élargit : les chemins, eux, doivent
+  // Avec des pièces, seule la comparaison du TEXTE s'élargit : les pièces, elles, doivent
   // toujours concorder, sinon un tour au même texte sans pièce passerait pour l'écho.
   const { text, paths } = splitAttachmentLines(echoText);
   const theirs = canonicalText(text);
   const textOk = loose ? theirs.includes(mine) : theirs === mine;
-  if (!textOk || paths.length !== pieces.length) return false;
-  // Une pièce partie de la file hors ligne n'a pas de chemin connu ici : on ne compare
-  // que ce que l'on sait.
-  return pieces.every((a, i) => a.path === null || a.path === paths[i]);
+  if (!textOk) return false;
+  const images = imageCount(turn.blocks);
+  if (paths.length + images !== pieces.length) return false;
+  // Un chemin encore présent dans le tour doit être celui d'une pièce connue ; une pièce
+  // partie de la file hors ligne n'a pas de chemin ici : on ne compare que ce que l'on sait.
+  const known = new Set(pieces.map((a) => a.path).filter((p): p is string => p !== null));
+  return paths.every((p) => known.size === 0 || known.has(p));
 }
 
 /**
@@ -344,7 +362,7 @@ export function withoutEchoed(
   for (const loose of [false, true]) {
     for (const m of list) {
       if (matched.has(m.nonce) || m.sessionId !== sessionId) continue;
-      const match = candidates(m).find((t) => echoes(m, textOf(t.blocks), loose));
+      const match = candidates(m).find((t) => echoes(m, t, loose));
       if (!match) continue;
       consumed.add(match.id);
       matched.add(m.nonce);

@@ -143,6 +143,13 @@ function blocksOf(content: unknown): Block[] {
         // Contenu toujours vide et signature opaque : badge replie, aucun texte.
         out.push({ type: 'thinking' });
         break;
+      case 'image': {
+        // Presence seulement, jamais les octets (plusieurs centaines de Ko par image).
+        const source = b['source'] as Record<string, unknown> | undefined;
+        const mediaType = typeof source?.['media_type'] === 'string' ? (source['media_type'] as string) : null;
+        out.push({ type: 'image', mediaType });
+        break;
+      }
       case 'tool_use': {
         const { preview } = previewOf(b['input']);
         out.push({

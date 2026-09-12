@@ -15,6 +15,8 @@ import {
   type KovaNewTabRequest,
   type KovaNewTabResponse,
   type KovaRecentProjectsResponse,
+  type KovaResumeRequest,
+  type KovaSessionsResponse,
   type Prompt,
   type Turn,
 } from '@kovalink/protocol';
@@ -37,14 +39,11 @@ import {
 import type { TlsMaterial } from '../security/tls.js';
 import type { UploadStore } from '../fs/uploads.js';
 import { listRecentProjects, resolveRecentProject } from '../fs/quickdests.js';
+import { findSession, listSessions } from '../kova/sessions.js';
+import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession } from '../kova/resume.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { Hub, type Socket } from './hub.js';
 import type { Services } from './services.js';
-
-/** La SEULE commande que `new-tab` lance. Constante, jamais une chaine du client. */
-const NEW_TAB_COMMAND = 'claude';
-/** Delai d'apparition du nouveau pane dans le store, par l'evenement `pane-open`. */
-const NEW_TAB_PANE_WAIT_MS = 3_000;
 
 /** Fenetre de lecture d'une page d'historique, doublee jusqu'au plafond si elle est vide. */
 const TURNS_PAGE_BYTES = 256 * 1024;
@@ -404,8 +403,12 @@ export async function createHttpServer(
       if (!services.rate.allow(req.deviceId ?? '', 'turns')) {
         return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures');
       }
+      // Une session fermee se lit aussi (design 4.11, lecture seule) : son `cwd` vient
+      // de l'index des transcripts, pas d'un pane.
       const pane = services.panes.findBySession(req.params.sessionId);
-      if (!pane) return fail(reply, 404, 'SESSION_NOT_FOUND', 'session inconnue');
+      const closed = pane ? null : findSession(req.params.sessionId, services.panes.all(), services.panes.allTabs());
+      const cwd = pane?.cwd ?? closed?.cwd;
+      if (!cwd) return fail(reply, 404, 'SESSION_NOT_FOUND', 'session inconnue');
 
       const num = (raw: string | undefined): number | null => {
         if (raw === undefined || raw === '') return null;
@@ -420,7 +423,7 @@ export async function createHttpServer(
       // `seq` est l'offset d'octet du tour dans le JSONL : `beforeSeq` borne donc la
       // LECTURE elle meme, pas seulement le filtre. Sans cela, la page « plus ancien »
       // relisait toujours la meme fin de fichier et l'historique s'arretait la.
-      const path = transcriptPath(pane.cwd, req.params.sessionId);
+      const path = transcriptPath(cwd, req.params.sessionId);
       const end = beforeSeq === null ? undefined : beforeSeq;
       // Fenetre doublee tant qu'elle ne contient aucun tour : une seule ligne de
       // `tool_result` mesure parfois plus de 256 Ko, et une page vide arreterait
@@ -514,20 +517,36 @@ export async function createHttpServer(
     const paneId = typeof data.pane_id === 'number' ? data.pane_id : -1;
     audit({ deviceId, action: 'kova.newTab', paneId, path: cwd, result: 'ok', detail: `tab=${tabId}` });
     logger.info('nouvel onglet kova depuis l app', { deviceId, cwd, tabId, paneId });
-    // Mesure : `command` est tape dans le shell, pas execute. On attend que le pane
-    // apparaisse dans le store (evenement `pane-open`), puis KeyGate envoie l'Entree.
-    const deadline = Date.now() + NEW_TAB_PANE_WAIT_MS;
-    while (!services.panes.get(paneId) && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    let launched = false;
-    try {
-      launched = (await services.keygate.emitLaunch(paneId, deviceId)).applied;
-    } catch (e) {
-      logger.warn('lancement de claude dans le nouvel onglet refuse', { paneId, err: (e as Error).message });
-    }
+    const launched = await launchInFreshPane(services, paneId, deviceId);
     const res: KovaNewTabResponse = { tabId, paneId, cwd, launched };
     return res;
+  });
+
+  /**
+   * Sessions ouvertes et fermees (PRD 3.4, design 4.11) : ce que les palettes de Kova
+   * listent. Lecture seule, cache par fichier sur `mtime`.
+   */
+  app.get(ROUTE_PATTERNS.kovaSessions, async (req, reply) => {
+    if (!services.rate.allow(req.deviceId ?? '', 'panes')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures');
+    }
+    const res: KovaSessionsResponse = { sessions: listSessions(services.panes.all(), services.panes.allTabs()) };
+    return res;
+  });
+
+  /**
+   * Reprise d'une session fermee : `new-tab` dans son `cwd` avec `claude --resume <id>`.
+   * L'identifiant est valide par forme (UUID) ET contre l'index ; la commande est
+   * construite ici, jamais recue du client ; l'Entree part par `KeyGate.emitLaunch`.
+   */
+  app.post<{ Body: Partial<KovaResumeRequest> }>(ROUTE_PATTERNS.kovaResume, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'launch')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'trop de lancements');
+    }
+    const out = await resumeSession(services, req.body?.sessionId, deviceId);
+    if (!out.ok) return fail(reply, out.status, out.code, out.message);
+    return out.response;
   });
 
   // --- Bloc C, les fichiers ----------------------------------------------

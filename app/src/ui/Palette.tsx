@@ -3,14 +3,20 @@
 // d'emblée, lignes compactes dessous, fermeture par balayage vers le bas (présentation
 // modale) ou par le lien `Fermer`. Le même composant sert aux deux : seules les lignes
 // et l'action au tap changent.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, layout, radius, space } from '@/theme';
-import { LinkAction } from '@/ui/Button';
-import { EmptyState, SkeletonList } from '@/ui/States';
-import { Txt } from '@/ui/Txt';
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native";
+import { router } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { colors, layout, radius, space } from "@/theme";
+import { LinkAction } from "@/ui/Button";
+import { EmptyState, SkeletonList } from "@/ui/States";
+import { Txt } from "@/ui/Txt";
 
 /** Une ligne de palette. Tout est du texte déjà formaté : la palette ne calcule rien. */
 export interface PaletteRow {
@@ -27,6 +33,10 @@ export interface PaletteRow {
   /** Ligne mise en avant (projet d'une session à relancer). */
   highlighted?: boolean;
   disabled?: boolean;
+  /** Ligne en retrait sous la précédente (session fermée d'un projet). */
+  indent?: boolean;
+  /** Intertitre de section, rendu en légende et non en ligne. */
+  section?: boolean;
 }
 
 interface Props {
@@ -38,27 +48,13 @@ interface Props {
   query: string;
   onQuery: (q: string) => void;
   onPick: (row: PaletteRow) => void;
+  /** Appui long : action secondaire (lire une session fermée sans la reprendre). */
+  onLongPress?: (row: PaletteRow) => void;
   emptyTitle: string;
   emptyBody: string;
   /** Bandeaux au dessus de la recherche (liaison, erreur). */
   banners?: ReactNode;
   accessibilityLabel: string;
-}
-
-/** Comparaison sans accents ni casse : « trail » trouve « TrailCoach ». */
-export function fold(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase();
-}
-
-/** Tous les mots de la requête doivent apparaître dans la meule. */
-export function matchesQuery(hay: string, query: string): boolean {
-  const words = fold(query).split(/\s+/).filter((w) => w.length > 0);
-  if (words.length === 0) return true;
-  const folded = fold(hay);
-  return words.every((w) => folded.includes(w));
 }
 
 export function Palette({
@@ -69,6 +65,7 @@ export function Palette({
   query,
   onQuery,
   onPick,
+  onLongPress,
   emptyTitle,
   emptyBody,
   banners,
@@ -129,49 +126,90 @@ export function Palette({
       <ScrollView
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[8] }]}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: insets.bottom + space[8] },
+        ]}
       >
         {rows === null ? <SkeletonList count={6} height={52} /> : null}
-        {rows !== null && rows.length === 0 && ready ? <EmptyState title={emptyTitle} body={emptyBody} /> : null}
+        {rows !== null && rows.length === 0 && ready ? (
+          <EmptyState title={emptyTitle} body={emptyBody} />
+        ) : null}
         <View style={styles.stack}>
-          {(rows ?? []).map((row) => (
-            <Pressable
-              key={row.key}
-              accessibilityRole="button"
-              accessibilityLabel={`${row.prefix ? `${row.prefix}, ` : ''}${row.title}, ${row.subtitle}${row.badge ? `, ${row.badge}` : ''}`}
-              accessibilityState={{ disabled: row.disabled === true }}
-              disabled={row.disabled === true}
-              onPress={() => onPick(row)}
-              style={({ pressed }) => [
-                styles.row,
-                row.highlighted && styles.highlighted,
-                pressed && styles.pressed,
-                row.disabled && styles.dim,
-              ]}
-            >
-              <View style={[styles.dot, { backgroundColor: row.tint ?? colors.tabNone }]} />
-              <View style={styles.body}>
-                <View style={styles.line}>
-                  {row.prefix ? (
-                    <Txt variant="callout" color={colors.text.secondary} numberOfLines={1} style={styles.prefix}>
-                      {row.prefix}
+          {(rows ?? []).map((row) =>
+            row.section ? (
+              <Txt
+                key={row.key}
+                variant="caption"
+                color={colors.text.tertiary}
+                style={styles.section}
+              >
+                {row.title}
+              </Txt>
+            ) : (
+              <Pressable
+                key={row.key}
+                accessibilityRole="button"
+                accessibilityLabel={`${row.prefix ? `${row.prefix}, ` : ""}${row.title}, ${row.subtitle}${row.badge ? `, ${row.badge}` : ""}`}
+                accessibilityState={{ disabled: row.disabled === true }}
+                disabled={row.disabled === true}
+                onPress={() => onPick(row)}
+                onLongPress={onLongPress ? () => onLongPress(row) : undefined}
+                style={({ pressed }) => [
+                  styles.row,
+                  row.indent && styles.indent,
+                  row.highlighted && styles.highlighted,
+                  pressed && styles.pressed,
+                  row.disabled && styles.dim,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.dot,
+                    { backgroundColor: row.tint ?? colors.tabNone },
+                  ]}
+                />
+                <View style={styles.body}>
+                  <View style={styles.line}>
+                    {row.prefix ? (
+                      <Txt
+                        variant="callout"
+                        color={colors.text.secondary}
+                        numberOfLines={1}
+                        style={styles.prefix}
+                      >
+                        {row.prefix}
+                      </Txt>
+                    ) : null}
+                    <Txt
+                      variant="calloutStrong"
+                      color={colors.text.primary}
+                      numberOfLines={1}
+                      style={styles.title}
+                    >
+                      {row.title}
                     </Txt>
-                  ) : null}
-                  <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.title}>
-                    {row.title}
+                  </View>
+                  <Txt
+                    variant="footnote"
+                    color={colors.text.tertiary}
+                    numberOfLines={1}
+                  >
+                    {row.subtitle}
                   </Txt>
                 </View>
-                <Txt variant="footnote" color={colors.text.tertiary} numberOfLines={1}>
-                  {row.subtitle}
-                </Txt>
-              </View>
-              {row.badge ? (
-                <Txt variant="caption" color={row.badgeColor ?? colors.text.tertiary} numberOfLines={1}>
-                  {row.badge}
-                </Txt>
-              ) : null}
-            </Pressable>
-          ))}
+                {row.badge ? (
+                  <Txt
+                    variant="caption"
+                    color={row.badgeColor ?? colors.text.tertiary}
+                    numberOfLines={1}
+                  >
+                    {row.badge}
+                  </Txt>
+                ) : null}
+              </Pressable>
+            ),
+          )}
         </View>
       </ScrollView>
     </View>
@@ -180,16 +218,24 @@ export function Palette({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg.base },
-  nav: { alignItems: 'center', height: 10 },
-  grabber: { width: 36, height: 5, borderRadius: 3, backgroundColor: colors.border.strong },
+  nav: { alignItems: "center", height: 10 },
+  grabber: {
+    width: 36,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.border.strong,
+  },
   header: {
     height: layout.navBarHeight,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: layout.screenPaddingH,
   },
   grow: { flex: 1 },
-  searchRow: { paddingHorizontal: layout.screenPaddingH, paddingVertical: space[3] },
+  searchRow: {
+    paddingHorizontal: layout.screenPaddingH,
+    paddingVertical: space[3],
+  },
   search: {
     height: 40,
     borderRadius: radius.md,
@@ -205,8 +251,8 @@ const styles = StyleSheet.create({
   stack: { gap: space[2] },
   row: {
     minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: space[4],
     paddingHorizontal: space[4],
     paddingVertical: space[3],
@@ -214,11 +260,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.raised,
   },
   highlighted: { borderWidth: 1, borderColor: colors.accent.primary },
+  indent: { marginLeft: space[6], minHeight: 44 },
+  section: { marginTop: space[4], marginBottom: space[1], letterSpacing: 0.6 },
   pressed: { backgroundColor: colors.bg.pressed },
   dim: { opacity: 0.5 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   body: { flex: 1, gap: 1 },
-  line: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  prefix: { flexShrink: 0, maxWidth: '45%' },
+  line: { flexDirection: "row", alignItems: "center", gap: space[2] },
+  prefix: { flexShrink: 0, maxWidth: "45%" },
   title: { flexShrink: 1 },
 });

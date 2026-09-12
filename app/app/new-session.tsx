@@ -8,14 +8,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 
-import type { RecentProject } from '@/protocol';
+import type { KovaSessionEntry, RecentProject } from '@/protocol';
 import { colors } from '@/theme';
 import { Banner } from '@/ui/States';
-import { Palette, matchesQuery, type PaletteRow } from '@/ui/Palette';
-import { fetchRecentProjects, postNewTab } from '@/net/http';
+import { Palette, type PaletteRow } from '@/ui/Palette';
+import { matchesQuery } from '@/utils/search';
+import { fetchRecentProjects, fetchSessions, postNewTab } from '@/net/http';
+import { closedOfProject } from '@/features/sessions/closedSessions';
+import { askResume, readSession, sessionAge } from '@/features/sessions/resume';
 import { isDegraded, useConnection } from '@/store/connection';
 import { shortAge } from '@/utils/time';
 import { ImpactStyle, impact } from '@/utils/haptics';
+
+const CLOSED_PREFIX = 'closed:';
 
 export default function NewSessionScreen() {
   /** `cwd` : relance d'une session périmée, le projet du pane est mis en avant. */
@@ -25,6 +30,8 @@ export default function NewSessionScreen() {
   const kova = useConnection((s) => s.kova);
   const degraded = isDegraded(link);
   const [projects, setProjects] = useState<RecentProject[] | null>(null);
+  /** Sessions fermées, pour la sous-liste de chaque projet, comme Kova. */
+  const [sessions, setSessions] = useState<KovaSessionEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   /** Index du projet en cours de lancement : une seule création à la fois. */
@@ -46,6 +53,10 @@ export default function NewSessionScreen() {
 
   useEffect(() => {
     load();
+    void fetchSessions().then(
+      (res) => setSessions(res.sessions),
+      () => setSessions([]),
+    );
   }, [load]);
 
   const blocked = degraded || kova === 'down';
@@ -60,28 +71,49 @@ export default function NewSessionScreen() {
   }, [projects, query, wantedCwd]);
   const wantedMissing = wantedCwd !== null && projects !== null && !projects.some((p) => p.path === wantedCwd);
 
-  const rows = useMemo<PaletteRow[] | null>(
-    () =>
-      shown === null
-        ? null
-        : shown.map((p) => {
-            const busy = launching === p.index;
-            return {
-              key: String(p.index),
-              tint: p.path === wantedCwd ? colors.accent.primary : null,
-              title: p.label,
-              subtitle: p.path,
-              badge: busy ? 'création…' : p.lastOpenedMs > 0 ? shortAge(new Date(p.lastOpenedMs).toISOString()) : undefined,
-              badgeColor: busy ? colors.status.working : colors.text.tertiary,
-              highlighted: p.path === wantedCwd,
-              disabled: blocked || (launching !== null && !busy),
-            };
-          }),
-    [shown, launching, wantedCwd, blocked],
+  const rows = useMemo<PaletteRow[] | null>(() => {
+    if (shown === null) return null;
+    const out: PaletteRow[] = [];
+    for (const p of shown) {
+      const busy = launching === p.index;
+      out.push({
+        key: String(p.index),
+        tint: p.path === wantedCwd ? colors.accent.primary : null,
+        title: p.label,
+        subtitle: p.path,
+        badge: busy ? 'création…' : p.lastOpenedMs > 0 ? shortAge(new Date(p.lastOpenedMs).toISOString()) : undefined,
+        badgeColor: busy ? colors.status.working : colors.text.tertiary,
+        highlighted: p.path === wantedCwd,
+        disabled: blocked || (launching !== null && !busy),
+      });
+      // Ses sessions fermées, en retrait, comme le menu Cmd+O de Kova : un tap les reprend.
+      for (const s of closedOfProject(sessions, p.path)) {
+        out.push({
+          key: `${CLOSED_PREFIX}${s.sessionId}`,
+          tint: colors.status.closed,
+          title: s.title,
+          subtitle: `session fermée · il y a ${sessionAge(s)}`,
+          indent: true,
+          disabled: blocked || launching !== null,
+        });
+      }
+    }
+    return out;
+  }, [shown, sessions, launching, wantedCwd, blocked]);
+
+  const closedOf = useCallback(
+    (row: PaletteRow): KovaSessionEntry | undefined =>
+      row.key.startsWith(CLOSED_PREFIX) ? sessions.find((s) => s.sessionId === row.key.slice(CLOSED_PREFIX.length)) : undefined,
+    [sessions],
   );
 
   const open = useCallback(
     async (row: PaletteRow) => {
+      const session = closedOf(row);
+      if (session) {
+        askResume(session, (text) => setError(text));
+        return;
+      }
       const project = shown?.find((p) => String(p.index) === row.key);
       if (!project || launching !== null) return;
       setLaunching(project.index);
@@ -97,7 +129,7 @@ export default function NewSessionScreen() {
         setLaunching(null);
       }
     },
-    [shown, launching],
+    [shown, launching, closedOf],
   );
 
   return (
@@ -113,6 +145,10 @@ export default function NewSessionScreen() {
       query={query}
       onQuery={setQuery}
       onPick={(row) => void open(row)}
+      onLongPress={(row) => {
+        const session = closedOf(row);
+        if (session) readSession(session);
+      }}
       emptyTitle={query ? 'Aucun projet ne correspond' : 'Aucun projet récent'}
       emptyBody={query ? 'Essaie un autre mot.' : 'Ouvre un projet dans Kova, il apparaîtra ici.'}
       accessibilityLabel="Rechercher un projet récent"

@@ -301,8 +301,10 @@ export class KeyGate {
   async emitLaunch(paneId: number, deviceId?: string): Promise<EmitResult> {
     const pane = this.panes.get(paneId);
     if (!pane) return { applied: false, reason: 'pane_gone' };
-    if (pane.agent !== null || pane.child_processes.length > 0) {
-      throw new ForbiddenError('FORBIDDEN_ACTION', 'lancement refuse : ce pane a deja un processus');
+    // Mesure : un shell frais porte un instant des processus enfants (initialisation du
+    // prompt). Seul un agent, reconnu par Kova ou present en processus `claude`, interdit.
+    if (pane.agent !== null || pane.child_processes.some((c) => c.name === 'claude')) {
+      throw new ForbiddenError('FORBIDDEN_ACTION', 'lancement refuse : ce pane a deja un agent');
     }
     await sendKeys(this.ipc, paneId, KEY_TABLE.enter);
     audit({ deviceId, action: 'pane.launch', paneId, result: 'ok' });

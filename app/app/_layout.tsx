@@ -77,6 +77,8 @@ export default function RootLayout() {
               `claude`, PRD A9) et Cmd+P (tous les panes). Modales : balayage pour fermer. */}
           <Stack.Screen name="new-session" options={{ presentation: 'modal' }} />
           <Stack.Screen name="panes" options={{ presentation: 'modal' }} />
+          {/* Session fermée en lecture seule (design 4.11), reprise sur action explicite. */}
+          <Stack.Screen name="history/[sessionId]" />
           {/* Bloc C. L'onglet Fichiers ne dépend pas de Kova : il reste utilisable quand
               Kova est quitté (CA-123). */}
           <Stack.Screen name="files/index" />
