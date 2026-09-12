@@ -105,7 +105,7 @@ export default function SessionsScreen() {
   const next = useNextTarget(null);
   const marks = useReads((s) => s.byPane);
   const unreadOf = (pane: Pane) => isUnread(pane, prompts[pane.id], marks);
-  const summary = kovaDown ? null : summaryLine(panes, next.unreadCount);
+  const summary = kovaDown ? null : summaryLine(panes);
   const jumpNext = () => {
     if (!next.target) return;
     impact(ImpactStyle.Light);

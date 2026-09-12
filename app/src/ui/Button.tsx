@@ -125,7 +125,7 @@ export function RoundButton({
     >
       <Icon name={icon} size={20} color={labelColor(kind, disabled)} />
       {badge !== undefined && badge > 0 ? (
-        <Txt variant="caption" color={colors.text.onFill} style={styles.badge}>
+        <Txt variant="caption" color={colors.bg.base} style={styles.badge}>
           {badge > 99 ? '99+' : String(badge)}
         </Txt>
       ) : null}
@@ -173,16 +173,21 @@ const styles = StyleSheet.create({
   round: { alignItems: 'center', justifyContent: 'center' },
   badge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    minWidth: 18,
-    height: 18,
-    lineHeight: 18,
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    lineHeight: 16,
     paddingHorizontal: 4,
     textAlign: 'center',
-    borderRadius: 9,
+    borderRadius: 10,
     overflow: 'hidden',
-    backgroundColor: colors.accent.primary,
+    // Ambre sur texte sombre, avec un liseré couleur écran : lisible sur le bouton bleu
+    // comme sur le gris, là où un bleu sur bleu se fondait dans le fond.
+    backgroundColor: colors.status.awaiting,
+    borderWidth: 2,
+    borderColor: colors.bg.base,
+    fontWeight: '700',
   },
   base: {
     borderRadius: radius.md,
