@@ -68,7 +68,7 @@ class LineBuffer {
     this.buf += chunk;
     if (Buffer.byteLength(this.buf, 'utf8') > MAX_LINE_BYTES) {
       this.buf = '';
-      throw new IpcError('INTERNAL', 'ligne IPC au dela de 8 Mo, connexion abandonnee');
+      throw new IpcError('INTERNAL', 'IPC line over 8 MB, connection dropped');
     }
     const parts = this.buf.split('\n');
     this.buf = parts.pop() ?? '';
@@ -227,7 +227,7 @@ export class KovaIpc extends EventEmitter {
     this.subSocket?.destroy();
     this.subSocket = null;
     this.subLines.reset();
-    const err = new IpcError('KOVA_DOWN', `connexion IPC perdue (${reason})`);
+    const err = new IpcError('KOVA_DOWN', `IPC connection lost (${reason})`);
     for (const p of this.queue) p.reject(err);
     this.queue = [];
     this.markLost();
@@ -357,7 +357,7 @@ export class KovaIpc extends EventEmitter {
    */
   request(payload: Record<string, unknown>): Promise<KovaResponse> {
     if (payload['cmd'] === 'send-keys') {
-      throw new IpcError('FORBIDDEN_ACTION', 'send-keys doit passer par KeyGate');
+      throw new IpcError('FORBIDDEN_ACTION', 'send-keys must go through KeyGate');
     }
     return this.#enqueue(payload);
   }
@@ -375,7 +375,7 @@ export class KovaIpc extends EventEmitter {
   #enqueue(payload: Record<string, unknown>): Promise<KovaResponse> {
     return new Promise((resolve, reject) => {
       if (this.status !== 'up' || !this.socketPath) {
-        reject(new IpcError('KOVA_DOWN', 'Kova est injoignable'));
+        reject(new IpcError('KOVA_DOWN', 'Kova is unreachable'));
         return;
       }
       this.queue.push({ payload, resolve, reject });
@@ -389,7 +389,7 @@ export class KovaIpc extends EventEmitter {
     if (!next) return;
     const path = this.socketPath;
     if (!path || this.status !== 'up') {
-      next.reject(new IpcError('KOVA_DOWN', 'Kova est injoignable'));
+      next.reject(new IpcError('KOVA_DOWN', 'Kova is unreachable'));
       return this.pump();
     }
     this.busy = true;
@@ -423,7 +423,7 @@ export class KovaIpc extends EventEmitter {
       };
 
       const timer = setTimeout(() => {
-        finish(() => pending.reject(new IpcError('IPC_TIMEOUT', 'Kova n a pas repondu en 5 s')));
+        finish(() => pending.reject(new IpcError('IPC_TIMEOUT', 'Kova did not answer within 5 s')));
       }, REQUEST_TIMEOUT_MS);
       timer.unref?.();
 
@@ -445,7 +445,7 @@ export class KovaIpc extends EventEmitter {
             pending.resolve(JSON.parse(first) as KovaResponse);
           } catch (e) {
             pending.reject(
-              new IpcError('INTERNAL', `reponse IPC illisible: ${(e as Error).message}`),
+              new IpcError('INTERNAL', `unreadable IPC answer: ${(e as Error).message}`),
             );
           }
         });
@@ -457,7 +457,7 @@ export class KovaIpc extends EventEmitter {
         // Fermeture avant reponse : la requete echoue, mais l'abonnement, lui, n'est
         // pas concerne et rien n'est replanifie.
         finish(() =>
-          pending.reject(new IpcError('KOVA_DOWN', 'connexion fermee avant la reponse')),
+          pending.reject(new IpcError('KOVA_DOWN', 'connection closed before the answer')),
         );
       });
     });

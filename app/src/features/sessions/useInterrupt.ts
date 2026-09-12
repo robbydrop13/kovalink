@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { interruptPane } from '@/actions/interrupt';
 import { HttpError } from '@/net/http';
 import { bootWarn } from '@/env';
+import { t } from '@/i18n/en';
 
 export function useInterrupt() {
   const [done, setDone] = useState<Record<number, boolean>>({});
@@ -32,7 +33,7 @@ export function useInterrupt() {
       // rien faire : Robin ne pouvait pas distinguer un refus d'un Mac éteint.
       const cause =
         e instanceof HttpError ? `${e.code} : ${e.message}` : e instanceof Error ? e.message : String(e);
-      bootWarn(`interruption du pane ${paneId}`, cause);
+      bootWarn(`pane ${paneId} interrupt`, cause);
       setFailure((s) => ({ ...s, [paneId]: cause }));
       timers.current[paneId] = setTimeout(() => {
         setFailure((s) => ({ ...s, [paneId]: null }));
@@ -42,7 +43,7 @@ export function useInterrupt() {
 
   const labelFor = useCallback(
     (paneId: number, degraded: boolean): string =>
-      failure[paneId] ? 'Échec' : done[paneId] ? 'Interrompu' : degraded ? 'Indisponible' : 'Interrompre',
+      failure[paneId] ? t.interruptFailed : done[paneId] ? t.interruptDone : degraded ? t.interruptUnavailable : t.interruptLabel,
     [done, failure],
   );
 

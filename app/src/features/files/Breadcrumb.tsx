@@ -2,6 +2,7 @@
 // courant doit être visible sans geste, c'est lui qui dit où on est.
 import { useEffect, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { t } from '@/i18n/en';
 import { colors, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 import { breadcrumb } from './format';
@@ -44,7 +45,7 @@ export function Breadcrumb({
               ) : null}
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Aller dans ${segment.label}`}
+                accessibilityLabel={t.filesGoToA11y(segment.label)}
                 disabled={current}
                 hitSlop={{ top: 8, bottom: 8 }}
                 onPress={() => onNavigate(segment.path)}

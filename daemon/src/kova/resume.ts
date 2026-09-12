@@ -57,8 +57,8 @@ export async function resumeSession(
 ): Promise<ResumeOutcome> {
   const session = isSessionId(sessionId) ? findSession(sessionId, services.panes.all(), services.panes.allTabs()) : null;
   if (!session) {
-    audit({ deviceId, action: 'kova.resume', result: 'denied', detail: 'session inconnue' });
-    return { ok: false, status: 404, code: 'SESSION_NOT_FOUND', message: 'session inconnue de l index' };
+    audit({ deviceId, action: 'kova.resume', result: 'denied', detail: 'unknown session' });
+    return { ok: false, status: 404, code: 'SESSION_NOT_FOUND', message: 'session not in the index' };
   }
   if (session.state === 'open' && session.paneId !== null) {
     return {
@@ -74,7 +74,7 @@ export async function resumeSession(
   }
   if (!isDir) {
     audit({ deviceId, action: 'kova.resume', path: session.cwd, result: 'denied', detail: 'dossier disparu' });
-    return { ok: false, status: 400, code: 'BAD_REQUEST', message: `le dossier de la session n existe plus : ${session.cwd}` };
+    return { ok: false, status: 400, code: 'BAD_REQUEST', message: `the session folder no longer exists: ${session.cwd}` };
   }
   // `sessionId` a la forme d'un UUID (verifiee) : la commande ne contient rien d'autre.
   const command = `${NEW_TAB_COMMAND} --resume ${session.sessionId}`;
@@ -86,7 +86,7 @@ export async function resumeSession(
   } catch (e) {
     audit({ deviceId, action: 'kova.resume', path: session.cwd, result: 'error', detail: (e as Error).message });
     const code: ErrorCode = e instanceof IpcError ? e.code : 'KOVA_DOWN';
-    return { ok: false, status: 502, code, message: `new-tab a echoue : ${(e as Error).message}` };
+    return { ok: false, status: 502, code, message: `new-tab failed: ${(e as Error).message}` };
   }
   const tabId = typeof data.tab_id === 'number' ? data.tab_id : -1;
   const paneId = typeof data.pane_id === 'number' ? data.pane_id : -1;

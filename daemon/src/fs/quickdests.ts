@@ -75,7 +75,7 @@ function isDirectory(path: string): boolean {
 
 /** `~/dev/link/docs` devient `link / docs` : deux segments suffisent a identifier. */
 export function shortLabel(path: string, home: string): string {
-  if (path === home) return 'Dossier personnel';
+  if (path === home) return 'Home';
   if (path === '/') return '/';
   const parent = dirname(path);
   const name = basename(path);
@@ -84,8 +84,8 @@ export function shortLabel(path: string, home: string): string {
 }
 
 const SYSTEM_DIRS = [
-  { name: 'Desktop', label: 'Bureau' },
-  { name: 'Downloads', label: 'Telechargements' },
+  { name: 'Desktop', label: 'Desktop' },
+  { name: 'Downloads', label: 'Downloads' },
   { name: 'Documents', label: 'Documents' },
 ];
 
@@ -123,7 +123,7 @@ export function buildQuickDests(panes: Pane[], cfg: KovalinkConfig): FsQuickDest
   };
 
   const focused = panes.find((p) => p.focused) ?? null;
-  if (focused?.cwd) push(focused.cwd, 'pane', 'pane actif', null);
+  if (focused?.cwd) push(focused.cwd, 'pane', 'active pane', null);
 
   for (const pane of panes) {
     if (pane.cwd) push(pane.cwd, 'pane', pane.projectName || 'pane', null);
@@ -133,8 +133,8 @@ export function buildQuickDests(panes: Pane[], cfg: KovalinkConfig): FsQuickDest
     push(project.path, 'project', 'recent', project.lastOpenedMs);
   }
 
-  for (const d of SYSTEM_DIRS) push(join(home, d.name), 'system', 'systeme', null);
-  push(home, 'system', 'systeme', null);
+  for (const d of SYSTEM_DIRS) push(join(home, d.name), 'system', 'system', null);
+  push(home, 'system', 'system', null);
 
   return { dests, focusedCwd: focused?.cwd ?? null, home };
 }
@@ -152,7 +152,7 @@ export function listRecentProjects(): RecentProject[] {
   return readRecentProjects(RECENT_PROJECTS_MAX).map((p, index) => ({
     index,
     path: p.path,
-    label: p.path === home ? 'Dossier personnel' : basename(p.path) || p.path,
+    label: p.path === home ? 'Home' : basename(p.path) || p.path,
     lastOpenedMs: p.lastOpenedMs,
   }));
 }

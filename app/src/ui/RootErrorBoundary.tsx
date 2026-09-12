@@ -8,6 +8,7 @@
 // dise quelque chose au lieu de rester muet.
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { ErrorScreen } from './ErrorScreen';
+import { t } from '@/i18n/en';
 
 interface Props {
   children: ReactNode;
@@ -25,9 +26,9 @@ export class RootErrorBoundary extends Component<Props, State> {
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error('[KovaLink boot] exception au rendu', error?.message ?? error);
+    console.error('[KovaLink boot] render exception', error?.message ?? error);
     if (info?.componentStack) {
-      console.error('[KovaLink boot] pile de composants', info.componentStack.split('\n').slice(0, 12).join('\n'));
+      console.error('[KovaLink boot] component stack', info.componentStack.split('\n').slice(0, 12).join('\n'));
     }
   }
 
@@ -39,9 +40,9 @@ export class RootErrorBoundary extends Component<Props, State> {
     if (this.state.error !== null) {
       return (
         <ErrorScreen
-          title="L’app a planté"
+          title={t.crashTitle}
           error={this.state.error}
-          hint="Le rendu a levé une exception. Réessaie, et si l’erreur revient, la pile ci dessous dit où."
+          hint={t.crashHint}
           onRetry={this.retry}
         />
       );

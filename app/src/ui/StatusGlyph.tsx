@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Animated, View } from 'react-native';
 import { colors, motion } from '@/theme';
+import { t } from '@/i18n/en';
 
 export type AgentState = 'awaiting' | 'working' | 'idle' | 'closed';
 
@@ -29,7 +30,7 @@ export function StatusGlyph({ state, size = 12 }: { state: AgentState; size?: nu
   if (state === 'awaiting') {
     return (
       <View
-        accessibilityLabel="en attente"
+        accessibilityLabel={t.glyphWaiting}
         style={{
           width: size,
           height: size,
@@ -43,7 +44,7 @@ export function StatusGlyph({ state, size = 12 }: { state: AgentState; size?: nu
   if (state === 'working') {
     return (
       <Animated.View
-        accessibilityLabel="travaille"
+        accessibilityLabel={t.glyphWorking}
         style={{
           width: size * 0.35,
           height: size,
@@ -58,7 +59,7 @@ export function StatusGlyph({ state, size = 12 }: { state: AgentState; size?: nu
   if (state === 'closed') {
     return (
       <View
-        accessibilityLabel="fermé"
+        accessibilityLabel={t.glyphClosed}
         style={{
           width: size * 0.5,
           height: size,
@@ -73,7 +74,7 @@ export function StatusGlyph({ state, size = 12 }: { state: AgentState; size?: nu
 
   return (
     <View
-      accessibilityLabel="inactif"
+      accessibilityLabel={t.glyphIdle}
       style={{
         width: size,
         height: size,

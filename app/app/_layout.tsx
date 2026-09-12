@@ -22,6 +22,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { colors } from '@/theme';
 import { useBootRunner } from '@/boot';
 import { bootLog } from '@/env';
+import { t } from '@/i18n/en';
 import { ErrorScreen } from '@/ui/ErrorScreen';
 import { RootErrorBoundary } from '@/ui/RootErrorBoundary';
 import { usePanes, awaitingCount } from '@/store/panes';
@@ -35,9 +36,9 @@ import { setBadge } from '@/notifications/register';
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   return (
     <ErrorScreen
-      title="Écran en erreur"
+      title={t.layoutRouteErrorTitle}
       error={error}
-      hint="Cette route a levé une exception au rendu."
+      hint={t.layoutRouteErrorHint}
       onRetry={() => {
         void retry();
       }}
@@ -50,7 +51,7 @@ export default function RootLayout() {
   const panes = usePanes((s) => s.panes);
 
   useEffect(() => {
-    bootLog('layout racine monté');
+    bootLog('root layout mounted');
   }, []);
 
   // Badge d'icône : le nombre de panes en attente, jamais autre chose. Sans effet quand le

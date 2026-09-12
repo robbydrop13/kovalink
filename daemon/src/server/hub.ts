@@ -250,16 +250,16 @@ export class Hub {
   private async onMessage(client: Client, raw: unknown): Promise<void> {
     const text = typeof raw === 'string' ? raw : String(raw);
     if (Buffer.byteLength(text, 'utf8') > MAX_FRAME_BYTES) {
-      return this.error(client, undefined, 'BAD_REQUEST', 'trame trop grande');
+      return this.error(client, undefined, 'BAD_REQUEST', 'frame too large');
     }
     let msg: C2S;
     try {
       msg = JSON.parse(text) as C2S;
     } catch {
-      return this.error(client, undefined, 'BAD_REQUEST', 'JSON illisible');
+      return this.error(client, undefined, 'BAD_REQUEST', 'unreadable JSON');
     }
     if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') {
-      return this.error(client, undefined, 'BAD_REQUEST', 'message sans type');
+      return this.error(client, undefined, 'BAD_REQUEST', 'message without type');
     }
 
     try {
@@ -278,7 +278,7 @@ export class Hub {
         if (msg.protocol !== PROTOCOL_VERSION) {
           // Le code de fermeture est declare dans le protocole et REELLEMENT emis : l'app
           // le lisait deja, personne ne l'envoyait.
-          this.error(client, msg.id, 'PROTOCOL_VERSION', 'version de protocole inconnue');
+          this.error(client, msg.id, 'PROTOCOL_VERSION', 'unknown protocol version');
           this.remove(client);
           client.socket.close(WS_CLOSE_CODE.PROTOCOL_VERSION, 'protocol version');
           return;
@@ -322,10 +322,10 @@ export class Hub {
 
       case 'pane.peek': {
         if (!rate.allow(client.deviceId, 'prompt')) {
-          return this.error(client, msg.id, 'RATE_LIMITED', 'trop de lectures de prompt');
+          return this.error(client, msg.id, 'RATE_LIMITED', 'too many prompt reads');
         }
         const pane = panes.get(msg.paneId);
-        if (!pane) return this.error(client, msg.id, 'PANE_NOT_FOUND', 'pane inconnu');
+        if (!pane) return this.error(client, msg.id, 'PANE_NOT_FOUND', 'unknown pane');
         const prompt = await prompts.current(msg.paneId, pane.awaiting_since);
         this.send(client, { t: 'ack', reqId: msg.id });
         return this.send(client, { t: 'prompt', prompt });
@@ -333,16 +333,16 @@ export class Hub {
 
       case 'pane.screen': {
         if (!rate.allow(client.deviceId, 'screen')) {
-          return this.error(client, msg.id, 'RATE_LIMITED', 'trop de lectures d ecran');
+          return this.error(client, msg.id, 'RATE_LIMITED', 'too many screen reads');
         }
         const screen = await prompts.screen(msg.paneId);
-        if (!screen) return this.error(client, msg.id, 'PANE_NOT_FOUND', 'pane inconnu');
+        if (!screen) return this.error(client, msg.id, 'PANE_NOT_FOUND', 'unknown pane');
         return this.send(client, { t: 'pane.screen.ok', reqId: msg.id, screen });
       }
 
       case 'pane.cmd': {
         const pane = panes.get(msg.paneId);
-        if (!pane) return this.error(client, msg.id, 'PANE_NOT_FOUND', 'pane inconnu');
+        if (!pane) return this.error(client, msg.id, 'PANE_NOT_FOUND', 'unknown pane');
         // Union litterale fermee : aucune commande arbitraire ne peut etre passee.
         const payload =
           msg.cmd.cmd === 'focus-pane'
@@ -372,10 +372,10 @@ export class Hub {
       // Lot 2 : declares dans le protocole partage, refuses ici explicitement.
       case 'pane.sendKeys':
       case 'term.input':
-        return this.error(client, msg.id, 'FORBIDDEN_ACTION', 'disponible au lot 2');
+        return this.error(client, msg.id, 'FORBIDDEN_ACTION', 'not available yet');
 
       default:
-        return this.error(client, (msg as { id?: string }).id, 'BAD_REQUEST', 'type inconnu');
+        return this.error(client, (msg as { id?: string }).id, 'BAD_REQUEST', 'unknown type');
     }
   }
 
@@ -432,7 +432,7 @@ export class Hub {
 
   private async attachSession(client: Client, reqId: string, sessionId: string): Promise<void> {
     const pane = this.services.panes.findBySession(sessionId);
-    if (!pane) return this.error(client, reqId, 'SESSION_NOT_FOUND', 'aucun pane pour cette session');
+    if (!pane) return this.error(client, reqId, 'SESSION_NOT_FOUND', 'no pane for this session');
     const path = transcriptPath(pane.cwd, sessionId);
 
     client.sessions.add(sessionId);

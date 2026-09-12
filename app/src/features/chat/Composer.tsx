@@ -15,6 +15,7 @@
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import type { Prompt } from '@/protocol';
+import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 import { isComposerLocked, requiresFaceIdForText } from '@/store/prompts';
@@ -66,14 +67,14 @@ export function Composer({
   const faceId = requiresFaceIdForText(prompt);
 
   const placeholder = locked
-    ? 'Réponds d’abord à la question ci dessus'
+    ? t.composerLockedPlaceholder
     : disabled
-      ? (disabledPlaceholder ?? 'Indisponible')
+      ? (disabledPlaceholder ?? t.composerUnavailable)
       : faceId
-        ? 'Réponse libre, Face ID demandé'
+        ? t.composerFaceIdPlaceholder
         : degraded
-          ? 'Sera envoyé à la reconnexion'
-          : 'Message…';
+          ? t.composerOfflinePlaceholder
+          : t.composerPlaceholder;
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
   const canSend = !locked && !disabled && !sending && hasContent;
@@ -95,7 +96,7 @@ export function Composer({
         },
         (e: unknown) => {
           setValue(text);
-          onNotice(`Envoi impossible. ${e instanceof Error ? e.message : String(e)}`);
+          onNotice(t.composerSendFailed(e instanceof Error ? e.message : String(e)));
         },
       );
       return;
@@ -109,7 +110,7 @@ export function Composer({
         setAttachments([]);
       }
     } catch (e) {
-      onNotice(`Envoi impossible. ${e instanceof Error ? e.message : String(e)}`);
+      onNotice(t.composerSendFailed(e instanceof Error ? e.message : String(e)));
     } finally {
       setSending(false);
     }
@@ -120,7 +121,7 @@ export function Composer({
       {queuedCount > 0 ? (
         <View style={styles.queue}>
           <Txt variant="caption" color={colors.text.secondary}>
-            {queuedCount === 1 ? '1 message en attente' : `${queuedCount} messages en attente`}
+            {t.composerQueued(queuedCount)}
           </Txt>
         </View>
       ) : null}
@@ -139,7 +140,7 @@ export function Composer({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Ajouter une pièce jointe"
+          accessibilityLabel={t.attachmentAdd}
           accessibilityState={{ disabled: !canAttach }}
           disabled={!canAttach}
           onPress={() =>
@@ -167,25 +168,25 @@ export function Composer({
             multiline
             keyboardType="default"
             keyboardAppearance="dark"
-            accessibilityLabel="Message à envoyer"
+            accessibilityLabel={t.composerFieldA11y}
           />
         </Pressable>
 
         {showInterrupt ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Interrompre"
+            accessibilityLabel={t.composerInterrupt}
             onPress={onInterrupt}
             style={styles.interrupt}
           >
             <Txt variant="calloutStrong" color={colors.action.interrupt.text}>
-              Interrompre
+              {t.composerInterrupt}
             </Txt>
           </Pressable>
         ) : (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={sending ? 'Envoi en cours' : 'Envoyer'}
+            accessibilityLabel={sending ? t.composerSending : t.actionSend}
             accessibilityState={{ disabled: !canSend, busy: sending }}
             disabled={!canSend}
             onPress={() => void send()}

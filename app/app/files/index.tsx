@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { FsEntry } from '@/protocol';
 import { TRANSFER_SELECTION_MAX } from '@/protocol';
+import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Button, LinkAction } from '@/ui/Button';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
@@ -162,7 +163,7 @@ export default function FilesScreen() {
     }
   };
 
-  /** iPhone vers Mac, dans le dossier COURANT : c'est le « Envoyer ici » du design. */
+  /** iPhone vers Mac, dans le dossier COURANT : c'est le « Send here » du design. */
   const sendHere = (source: 'files' | 'photos'): void => {
     const destDir = store.path;
     if (!destDir) return;
@@ -192,24 +193,24 @@ export default function FilesScreen() {
   /**
    * Menu contextuel d'une ligne (design 4.7).
    *
-   * `Aperçu` et `Partager`, RIEN d'autre. Ni `Renommer`, ni `Dupliquer`, ni `Supprimer` :
+   * `Preview` et `Share`, RIEN d'autre. Ni `Renommer`, ni `Dupliquer`, ni `Supprimer` :
    * ces actions n'existent nulle part dans le produit, et aucune route du daemon ne
    * permettrait de les servir.
    */
   const openMenu = (entry: FsEntry): void => {
     if (entry.kind !== 'file') return;
     Alert.alert(entry.name, store.path ?? '', [
-      { text: 'Aperçu', onPress: () => router.push({ pathname: '/files/preview', params: { path: entry.path, ...(entry.mime ? { mime: entry.mime } : {}) } }) },
-      { text: 'Partager', onPress: () => void share(entry) },
-      { text: 'Annuler', style: 'cancel' },
+      { text: t.filesPreview, onPress: () => router.push({ pathname: '/files/preview', params: { path: entry.path, ...(entry.mime ? { mime: entry.mime } : {}) } }) },
+      { text: t.filesShare, onPress: () => void share(entry) },
+      { text: t.actionCancel, style: 'cancel' },
     ]);
   };
 
   const askSource = (): void => {
-    Alert.alert('Envoyer un fichier ici', store.path ?? '', [
-      { text: 'Depuis Photos', onPress: () => sendHere('photos') },
-      { text: 'Depuis Fichiers', onPress: () => sendHere('files') },
-      { text: 'Annuler', style: 'cancel' },
+    Alert.alert(t.filesSendHere, store.path ?? '', [
+      { text: t.filesFromPhotos, onPress: () => sendHere('photos') },
+      { text: t.filesFromFiles, onPress: () => sendHere('files') },
+      { text: t.actionCancel, style: 'cancel' },
     ]);
   };
 
@@ -218,7 +219,7 @@ export default function FilesScreen() {
   if (!store.path && store.loading) {
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
-        <Nav title="Fichiers" onBack={() => router.back()} />
+        <Nav title={t.filesTitle} onBack={() => router.back()} />
         <SkeletonList count={6} height={60} />
       </View>
     );
@@ -227,12 +228,12 @@ export default function FilesScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <Nav
-        title={selecting ? `${selection.length} sélectionné${selection.length > 1 ? 's' : ''}` : 'Fichiers'}
+        title={selecting ? t.filesSelectedCount(selection.length) : t.filesTitle}
         onBack={() => (selecting ? (setSelecting(false), setSelection([])) : router.back())}
         right={
           picking ? null : (
             <LinkAction
-              label={selecting ? 'Annuler' : 'Sélectionner'}
+              label={selecting ? t.actionCancel : t.filesSelect}
               onPress={() => {
                 setSelecting((v) => !v);
                 setSelection([]);
@@ -254,36 +255,36 @@ export default function FilesScreen() {
           tone="offline"
           // L'HEURE du dernier rafraîchissement, pas un âge relatif : `Date.now()` pendant
           // le rendu est une fonction impure, et l'heure se lit aussi bien.
-          text={`En cache, dernier état à ${clockTime(store.servedFromCacheAt)}. Les envois sont désactivés tant que le Mac est injoignable.`}
-          actionLabel="Réessayer"
+          text={t.filesCachedBanner(clockTime(store.servedFromCacheAt))}
+          actionLabel={t.actionRetry}
           onAction={() => void store.reload()}
         />
       ) : null}
 
       {actionError ? (
-        <Banner tone="error" text={actionError} actionLabel="Masquer" onAction={() => setActionError(null)} />
+        <Banner tone="error" text={actionError} actionLabel={t.actionDismiss} onAction={() => setActionError(null)} />
       ) : null}
 
       <View style={styles.searchRow}>
         <TextInput
           style={styles.search}
-          placeholder="Filtrer ce dossier"
+          placeholder={t.filesFilterPlaceholder}
           placeholderTextColor={colors.text.tertiary}
           value={store.filter}
           onChangeText={store.setFilter}
           autoCorrect={false}
           autoCapitalize="none"
-          accessibilityLabel="Filtrer le dossier courant"
+          accessibilityLabel={t.filesFilterA11y}
         />
         <Pressable
           accessibilityRole="switch"
           accessibilityState={{ checked: store.showHidden }}
-          accessibilityLabel="Afficher les fichiers cachés"
+          accessibilityLabel={t.filesShowHiddenA11y}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           onPress={store.toggleHidden}
         >
           <Txt variant="caption" color={store.showHidden ? colors.accent.primary : colors.text.tertiary}>
-            cachés
+            {t.filesHiddenToggle}
           </Txt>
         </Pressable>
       </View>
@@ -314,9 +315,9 @@ export default function FilesScreen() {
             title={titleForError(store.errorCode)}
             body={store.error}
           >
-            <Button label="Réessayer" onPress={() => void store.reload()} />
+            <Button label={t.actionRetry} onPress={() => void store.reload()} />
             {store.parent ? (
-              <Button label="Remonter d’un dossier" kind="secondary" onPress={() => void store.open(store.parent as string)} />
+              <Button label={t.filesGoUp} kind="secondary" onPress={() => void store.open(store.parent as string)} />
             ) : null}
           </EmptyState>
         ) : null}
@@ -324,11 +325,11 @@ export default function FilesScreen() {
         {!store.loading && !store.error && entries.length === 0 ? (
           <EmptyState
             glyph="▢"
-            title={store.filter ? 'Aucun résultat dans ce dossier' : 'Dossier vide'}
-            body={store.filter ? 'Le filtre ne porte que sur le dossier courant, jamais sur tout le disque.' : undefined}
+            title={store.filter ? t.filesNoResults : t.filesEmptyFolder}
+            body={store.filter ? t.filesFilterHint : undefined}
           >
             {!store.filter && !picking && !degraded ? (
-              <Button label="Envoyer un fichier ici" onPress={askSource} />
+              <Button label={t.filesSendHere} onPress={askSource} />
             ) : null}
           </EmptyState>
         ) : null}
@@ -352,7 +353,7 @@ export default function FilesScreen() {
         {store.hasMore && !store.loadingMore ? (
           <Pressable onPress={() => void store.loadMore()} style={styles.more}>
             <Txt variant="footnote" color={colors.accent.primary}>
-              Charger la suite ({store.entries.length} sur {store.total})
+              {t.filesLoadMore(store.entries.length, store.total)}
             </Txt>
           </Pressable>
         ) : null}
@@ -364,7 +365,7 @@ export default function FilesScreen() {
       <View style={[styles.bottom, { paddingBottom: insets.bottom + space[3] }]}>
         {picking ? (
           <Button
-            label="Choisir ce dossier"
+            label={t.filesChooseFolder}
             onPress={() => {
               if (!store.path) return;
               // Le chemin choisi repasse par un petit état partagé plutôt que par les
@@ -376,13 +377,13 @@ export default function FilesScreen() {
           />
         ) : selecting ? (
           <Button
-            label={busy === 'selection' ? 'Téléchargement…' : `Partager (${selection.length})`}
+            label={busy === 'selection' ? t.filesDownloading : t.filesShareCount(selection.length)}
             disabled={selection.length === 0 || busy !== null}
             onPress={() => void shareSelection()}
           />
         ) : (
           <Button
-            label={degraded ? 'Mac injoignable, envoi désactivé' : 'Envoyer un fichier ici'}
+            label={degraded ? t.filesMacUnreachableSend : t.filesSendHere}
             disabled={degraded || !store.path}
             onPress={askSource}
           />
@@ -395,15 +396,15 @@ export default function FilesScreen() {
 function titleForError(code: string | null): string {
   switch (code) {
     case 'READ_DENIED':
-      return 'Accès refusé par macOS';
+      return t.filesErrReadDenied;
     case 'PATH_NOT_FOUND':
-      return 'Ce dossier n’existe plus';
+      return t.filesErrNotFound;
     case 'NOT_A_DIRECTORY':
-      return 'Ce chemin n’est pas un dossier';
+      return t.filesErrNotDir;
     case 'NETWORK':
-      return 'Mac injoignable';
+      return t.filesErrNetwork;
     default:
-      return 'Lecture impossible';
+      return t.filesErrRead;
   }
 }
 
@@ -418,7 +419,7 @@ function Nav({
 }) {
   return (
     <View style={styles.nav}>
-      <LinkAction label="‹ Retour" onPress={onBack} />
+      <LinkAction label={t.filesBack} onPress={onBack} />
       <Txt variant="title2" color={colors.text.primary} numberOfLines={1}>
         {title}
       </Txt>

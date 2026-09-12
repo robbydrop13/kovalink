@@ -12,6 +12,7 @@ import { ImpactStyle, impact } from '@/utils/haptics';
 import type { PromptOption } from '@/protocol';
 import { colors, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
+import { t } from '@/i18n/en';
 
 interface Props {
   option: PromptOption;
@@ -56,14 +57,14 @@ export function OptionButton({
   style,
 }: Props) {
   const outlined = option.kind === 'approve_always' && !forceNeutral && !confirming;
-  const label = confirming ? 'Confirmer : ne plus redemander' : option.label;
+  const label = confirming ? t.optionConfirmAlways : option.label;
 
   return (
     <Pressable
       accessibilityRole="button"
       // VoiceOver énonce le chiffre puis le libellé : l'information n'est jamais portée par
       // la seule couleur (design 7.4).
-      accessibilityLabel={`Option ${option.index}, ${label}`}
+      accessibilityLabel={t.optionAccessibilityLabel(option.index, label)}
       accessibilityState={{ disabled: disabled || sending }}
       disabled={disabled || sending}
       onPress={() => {

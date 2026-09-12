@@ -8,6 +8,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { colors, layout, radius, space } from '@/theme';
 import { Button } from './Button';
 import { Txt } from './Txt';
+import { t } from '@/i18n/en';
 
 const STACK_LINES = 12;
 
@@ -15,7 +16,7 @@ export function ErrorScreen({
   title,
   error,
   onRetry,
-  retryLabel = 'Réessayer',
+  retryLabel = t.actionRetry,
   hint,
 }: {
   title: string;
@@ -38,7 +39,7 @@ export function ErrorScreen({
           {title}
         </Txt>
         <Txt variant="body" color={colors.text.primary}>
-          {message || 'Erreur sans message.'}
+          {message || t.errorNoMessage}
         </Txt>
         {hint ? (
           <Txt variant="callout" color={colors.text.secondary}>

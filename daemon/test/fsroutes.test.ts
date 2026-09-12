@@ -111,7 +111,7 @@ describe('destinations rapides', () => {
     const res = buildQuickDests(panes, DEFAULT_CONFIG);
     assert.equal(res.focusedCwd, '/etc');
     assert.equal(res.dests[0]?.path, '/etc');
-    assert.equal(res.dests[0]?.badge, 'pane actif');
+    assert.equal(res.dests[0]?.badge, 'active pane');
   });
 
   it('ne propose jamais deux fois le meme dossier', () => {
@@ -137,7 +137,7 @@ describe('destinations rapides', () => {
   it('abrege un chemin en deux segments lisibles', () => {
     assert.equal(shortLabel('/Users/robin/dev/link/docs', '/Users/robin'), 'link / docs');
     assert.equal(shortLabel('/Users/robin/dev', '/Users/robin'), 'dev');
-    assert.equal(shortLabel('/Users/robin', '/Users/robin'), 'Dossier personnel');
+    assert.equal(shortLabel('/Users/robin', '/Users/robin'), 'Home');
     assert.equal(shortLabel('/', '/Users/robin'), '/');
   });
 });

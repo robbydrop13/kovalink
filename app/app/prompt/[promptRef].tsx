@@ -15,6 +15,7 @@ import { EmptyState, SkeletonList } from '@/ui/States';
 import { HttpError, fetchPrompt } from '@/net/http';
 import { usePrompts } from '@/store/prompts';
 import { bootWarn } from '@/env';
+import { t } from '@/i18n/en';
 
 export default function PromptRefScreen() {
   const { promptRef } = useLocalSearchParams<{ promptRef: string }>();
@@ -37,7 +38,7 @@ export default function PromptRefScreen() {
             : e instanceof Error
               ? e.message
               : String(e);
-        bootWarn('résolution de la référence de prompt', cause);
+        bootWarn('prompt reference resolution', cause);
         if (!cancelled) setFailed(cause);
       }
     })();
@@ -50,10 +51,10 @@ export default function PromptRefScreen() {
     return (
       <View style={styles.screen}>
         <EmptyState
-          title="Question introuvable"
-          body={`Elle a peut-être déjà été résolue sur le Mac, ou la référence a expiré.\n\n${failed}`}
+          title={t.promptNotFoundTitle}
+          body={t.promptNotFoundBody(failed)}
         >
-          <Button label="Voir les sessions" onPress={() => router.replace('/')} />
+          <Button label={t.actionSeeSessions} onPress={() => router.replace('/')} />
         </EmptyState>
       </View>
     );

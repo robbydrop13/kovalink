@@ -22,6 +22,7 @@ import { fetchSessions } from '@/net/http';
 import { useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { usePrompts } from '@/store/prompts';
+import { t } from '@/i18n/en';
 
 const CLOSED_PREFIX = 'closed:';
 
@@ -39,7 +40,7 @@ export default function PanesPaletteScreen() {
       (res) => setSessions(res.sessions),
       (e: unknown) => {
         setSessions([]);
-        setNotice(`Closed sessions unavailable. ${e instanceof Error ? e.message : String(e)}`);
+        setNotice(t.panesClosedUnavailable(e instanceof Error ? e.message : String(e)));
       },
     );
   }, []);
@@ -73,7 +74,7 @@ export default function PanesPaletteScreen() {
         key: String(pane.id),
         tint: tabTint(group.color),
         prefix: group.title,
-        title: pane.title ?? pane.agent ?? 'pane',
+        title: pane.title ?? pane.agent ?? t.paneFallbackTitle,
         subtitle: pane.agent && pane.agent !== pane.title ? `${pane.projectName} · ${pane.agent}` : pane.projectName,
         badge: paneBadge(pane, prompts[pane.id]),
         badgeColor: pane.awaiting
@@ -93,7 +94,7 @@ export default function PanesPaletteScreen() {
       prefix: s.projectName,
       title: s.title,
       subtitle: s.cwd,
-      badge: `closed · ${sessionAge(s)}`,
+      badge: t.panesClosedBadge(sessionAge(s)),
       badgeColor: colors.status.closed,
       starred: s.bookmarked,
     }));
@@ -101,11 +102,11 @@ export default function PanesPaletteScreen() {
     const starred = [...open, ...closedRows].filter((r) => r.starred);
     const rest = (list: PaletteRow[]) => list.filter((r) => !r.starred);
     const out: PaletteRow[] = [];
-    if (starred.length > 0) out.push({ key: 'section:bookmarks', tint: null, title: 'BOOKMARKS', subtitle: '', section: true }, ...starred);
-    if (starred.length > 0 && rest(open).length > 0) out.push({ key: 'section:open', tint: null, title: 'OPEN', subtitle: '', section: true });
+    if (starred.length > 0) out.push({ key: 'section:bookmarks', tint: null, title: t.panesSectionBookmarks, subtitle: '', section: true }, ...starred);
+    if (starred.length > 0 && rest(open).length > 0) out.push({ key: 'section:open', tint: null, title: t.panesSectionOpen, subtitle: '', section: true });
     out.push(...rest(open));
     if (rest(closedRows).length > 0) {
-      out.push({ key: 'section:closed', tint: null, title: `CLOSED · ${rest(closedRows).length}`, subtitle: '', section: true }, ...rest(closedRows));
+      out.push({ key: 'section:closed', tint: null, title: t.panesSectionClosed(rest(closedRows).length), subtitle: '', section: true }, ...rest(closedRows));
     }
     return out;
   }, [entries, closed, prompts, bookmarked, swipeFor]);
@@ -130,19 +131,19 @@ export default function PanesPaletteScreen() {
 
   return (
     <Palette
-      title="Panes"
-      placeholder="Tab, project, title or closed session"
+      title={t.panesTitle}
+      placeholder={t.panesPlaceholder}
       rows={sessions === null && entries.length === 0 ? null : rows}
       query={query}
       onQuery={setQuery}
       onPick={pick}
       onLongPress={longPress}
-      emptyTitle={query ? 'No matching pane' : 'No panes'}
-      emptyBody={query ? 'Try another word.' : 'Open a pane in Kova and it will show up here.'}
-      accessibilityLabel="Search panes and sessions"
+      emptyTitle={query ? t.panesNoMatchTitle : t.panesEmptyTitle}
+      emptyBody={query ? t.panesNoMatchBody : t.panesEmptyBody}
+      accessibilityLabel={t.panesSearchAccessibilityLabel}
       banners={
         <>
-          {kova === 'down' ? <Banner tone="warn" text="Kova is not running on the Mac" /> : null}
+          {kova === 'down' ? <Banner tone="warn" text={t.kovaNotRunningOnMac} /> : null}
           {notice ? <Banner tone="error" text={notice} /> : null}
         </>
       }

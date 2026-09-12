@@ -62,8 +62,8 @@ final class NotificationService: UNNotificationServiceExtension {
             guard let self, let content = self.content, let handler = self.handler else { return }
             guard let prompt else {
                 // Échec de récupération : état 3. Corps de repli, aucune action d'option.
-                content.title = "Validation requise"
-                content.body = "La question n'a pas pu être récupérée. Ouvre l'app pour la lire."
+                content.title = "Validation required"
+                content.body = "The question could not be fetched. Open the app to read it."
                 content.categoryIdentifier = Category.blind
                 handler(content)
                 return
@@ -91,9 +91,9 @@ final class NotificationService: UNNotificationServiceExtension {
         case .turnEnd:
             // Le cas dominant. Aucune décision à prendre, donc aucune action d'approbation :
             // Robin ouvre, lit le dernier échange, et dicte la suite.
-            content.title = "\(tab) a terminé"
+            content.title = "\(tab) is done"
             content.subtitle = prompt.subtitle ?? project
-            content.body = prompt.summary ?? "La tâche est terminée."
+            content.body = prompt.summary ?? "The task is done."
             content.categoryIdentifier = Category.turnEnd
 
         case .parsed:
@@ -135,11 +135,11 @@ final class NotificationService: UNNotificationServiceExtension {
             // affiché : on vient de dire qu'on ne sait pas le lire.
             content.title = "\(tab)"
             content.subtitle = project
-            content.body = "Une question attend sur le Mac. Les options n'ont pas pu être lues."
+            content.body = "A question is waiting on the Mac. The options could not be read."
             content.categoryIdentifier = Category.blind
 
         case .none:
-            content.body = "La question a été résolue sur le Mac."
+            content.body = "The question was resolved on the Mac."
             content.categoryIdentifier = Category.blind
         }
     }

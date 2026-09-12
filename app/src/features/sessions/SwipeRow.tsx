@@ -7,6 +7,7 @@ import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { colors, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 import { ImpactStyle, impact } from '@/utils/haptics';
+import { t } from '@/i18n/en';
 
 export interface SwipeActions {
   onClose: () => void;
@@ -60,17 +61,17 @@ export function SwipeRow({ actions, children }: { actions: SwipeActions; childre
       renderRightActions={() => (
         <View style={styles.group}>
           <ActionButton
-            label={actions.bookmarked ? 'Unbookmark' : 'Bookmark'}
+            label={actions.bookmarked ? t.swipeUnbookmark : t.swipeBookmark}
             color={colors.status.awaiting}
             textColor={colors.text.inverse}
             onPress={() => run(actions.onBookmark)}
           />
-          <ActionButton label="Close" color={colors.action.reject.bg} textColor={colors.action.reject.text} onPress={() => run(actions.onClose)} />
+          <ActionButton label={t.swipeClose} color={colors.action.reject.bg} textColor={colors.action.reject.text} onPress={() => run(actions.onClose)} />
         </View>
       )}
       renderLeftActions={() => (
         <View style={styles.group}>
-          <ActionButton label="Rename" color={colors.accent.primary} textColor={colors.text.onFill} onPress={() => run(actions.onRename)} />
+          <ActionButton label={t.swipeRename} color={colors.accent.primary} textColor={colors.text.onFill} onPress={() => run(actions.onRename)} />
         </View>
       )}
     >

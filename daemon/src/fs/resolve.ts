@@ -40,7 +40,7 @@ function fromErrno(e: unknown, path: string): FsError {
   const err = e as { code?: string; message?: string };
   switch (err.code) {
     case 'ENOENT':
-      return new FsError('PATH_NOT_FOUND', 404, `${path} n existe pas`, path);
+      return new FsError('PATH_NOT_FOUND', 404, `${path} does not exist`, path);
     case 'EACCES':
     case 'EPERM':
       return new FsError(
@@ -50,9 +50,9 @@ function fromErrno(e: unknown, path: string): FsError {
         path,
       );
     case 'ENOTDIR':
-      return new FsError('NOT_A_DIRECTORY', 400, `${path} n est pas un dossier`, path);
+      return new FsError('NOT_A_DIRECTORY', 400, `${path} is not a folder`, path);
     case 'EISDIR':
-      return new FsError('NOT_A_FILE', 400, `${path} est un dossier`, path);
+      return new FsError('NOT_A_FILE', 400, `${path} is a folder`, path);
     case 'ELOOP':
       return new FsError(
         'PATH_DENIED',
@@ -61,9 +61,9 @@ function fromErrno(e: unknown, path: string): FsError {
         path,
       );
     case 'ENOSPC':
-      return new FsError('NO_SPACE', 507, `plus d espace disque pour ecrire ${path}`, path);
+      return new FsError('NO_SPACE', 507, `no disk space left to write ${path}`, path);
     case 'ENAMETOOLONG':
-      return new FsError('BAD_REQUEST', 400, `nom de fichier trop long : ${path}`, path);
+      return new FsError('BAD_REQUEST', 400, `file name too long: ${path}`, path);
     default:
       return new FsError(
         'IO_ERROR',
@@ -83,10 +83,10 @@ function fromErrno(e: unknown, path: string): FsError {
  */
 export function normalizeRequestPath(raw: unknown): string {
   if (typeof raw !== 'string' || raw.length === 0) {
-    throw new FsError('BAD_REQUEST', 400, 'chemin requis', '');
+    throw new FsError('BAD_REQUEST', 400, 'path required', '');
   }
   if (raw.includes('\0')) {
-    throw new FsError('BAD_REQUEST', 400, 'chemin contenant un octet nul', '');
+    throw new FsError('BAD_REQUEST', 400, 'path contains a null byte', '');
   }
   if (!isAbsolute(raw)) {
     throw new FsError(
@@ -120,7 +120,7 @@ export function resolveForRead(raw: unknown, cfg: KovalinkConfig): ReadTarget {
 
   const before = checkRead(path, cfg);
   if (!before.allowed) {
-    throw new FsError('PATH_DENIED', 403, `lecture refusee sur ${path}`, path, before.rule);
+    throw new FsError('PATH_DENIED', 403, `read refused on ${path}`, path, before.rule);
   }
 
   let realPath: string;
@@ -152,7 +152,7 @@ export function resolveForRead(raw: unknown, cfg: KovalinkConfig): ReadTarget {
 export function resolveDirForRead(raw: unknown, cfg: KovalinkConfig): ReadTarget {
   const target = resolveForRead(raw, cfg);
   if (!target.stat.isDirectory()) {
-    throw new FsError('NOT_A_DIRECTORY', 400, `${target.path} n est pas un dossier`, target.path);
+    throw new FsError('NOT_A_DIRECTORY', 400, `${target.path} is not a folder`, target.path);
   }
   return target;
 }
@@ -180,14 +180,14 @@ export function resolveFileForRead(raw: unknown, cfg: KovalinkConfig): ReadTarge
  */
 export function sanitizeFilename(raw: unknown): string {
   if (typeof raw !== 'string') {
-    throw new FsError('BAD_REQUEST', 400, 'nom de fichier requis', '');
+    throw new FsError('BAD_REQUEST', 400, 'file name required', '');
   }
   const name = raw.trim();
   if (name.length === 0) {
-    throw new FsError('BAD_REQUEST', 400, 'nom de fichier vide', '');
+    throw new FsError('BAD_REQUEST', 400, 'empty file name', '');
   }
   if (name === '.' || name === '..') {
-    throw new FsError('BAD_REQUEST', 400, `nom de fichier refuse : ${name}`, name);
+    throw new FsError('BAD_REQUEST', 400, `file name refused: ${name}`, name);
   }
   if (name.includes(sep) || name.includes('/') || name.includes('\0')) {
     throw new FsError(
@@ -198,7 +198,7 @@ export function sanitizeFilename(raw: unknown): string {
     );
   }
   if (Buffer.byteLength(name, 'utf8') > 255) {
-    throw new FsError('BAD_REQUEST', 400, `nom de fichier trop long : ${name.slice(0, 40)}…`, name);
+    throw new FsError('BAD_REQUEST', 400, `file name too long: ${name.slice(0, 40)}…`, name);
   }
   return name;
 }
@@ -256,7 +256,7 @@ export function resolveForWrite(rawDir: unknown, rawName: unknown, cfg: Kovalink
     throw fromErrno(e, dir);
   }
   if (!st.isDirectory()) {
-    throw new FsError('NOT_A_DIRECTORY', 400, `${dir} n est pas un dossier`, dir);
+    throw new FsError('NOT_A_DIRECTORY', 400, `${dir} is not a folder`, dir);
   }
 
   const dirVerdict = checkWrite(dir, cfg);
@@ -338,7 +338,7 @@ export function openForWrite(path: string, mode: 'create' | 'resume'): OpenedWri
       );
     }
     if (!viaFd.isFile()) {
-      throw new FsError('NOT_A_FILE', 400, `${path} n est pas un fichier ordinaire`, path);
+      throw new FsError('NOT_A_FILE', 400, `${path} is not a regular file`, path);
     }
     return { fd, path, ino: viaFd.ino, dev: viaFd.dev };
   } catch (e) {

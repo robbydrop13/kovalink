@@ -157,10 +157,10 @@ describe('filterGroups', () => {
 });
 
 describe('summaryLine', () => {
-  it('compte ce qui attend et ce qui travaille, en français, ou rien', () => {
-    assert.equal(summaryLine(PANES), '1 en attente · 2 travaillent');
-    assert.equal(summaryLine([pane({ id: 1, tab: 1, working: true })]), '1 travaille');
-    assert.equal(summaryLine([pane({ id: 1, tab: 1, working: true, awaiting: true })]), '1 en attente');
+  it('compte ce qui attend et ce qui travaille, en anglais, ou rien', () => {
+    assert.equal(summaryLine(PANES), '1 waiting · 2 working');
+    assert.equal(summaryLine([pane({ id: 1, tab: 1, working: true })]), '1 working');
+    assert.equal(summaryLine([pane({ id: 1, tab: 1, working: true, awaiting: true })]), '1 waiting');
     assert.equal(summaryLine([pane({ id: 1, tab: 1 })]), null);
   });
 });

@@ -95,7 +95,7 @@ export async function saveCredentials(c: Credentials): Promise<void> {
   const readBack = await loadCredentials();
   if (!readBack) {
     throw new Error(
-      'le trousseau n a pas conserve les identifiants (expo-secure-store a ecrit sans erreur mais la relecture est vide)',
+      'keychain did not keep the credentials (expo-secure-store wrote without error but the read-back is empty)',
     );
   }
 }

@@ -11,6 +11,8 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Platform } from 'react-native';
 
+import { t } from '@/i18n/en';
+
 /**
  * Vrai dans Expo Go. `executionEnvironment` vaut `storeClient` aussi bien dans Expo Go que
  * dans un build de développement : seul `appOwnership` distingue les deux, d'où son usage
@@ -26,8 +28,7 @@ const isExpoGo: boolean =
 export const pushAvailable: boolean = Platform.OS === 'ios' && !isExpoGo;
 
 /** Libellé unique, affiché à l'identique dans Sessions et dans Réglages. */
-export const PUSH_UNAVAILABLE_LABEL =
-  'Notifications indisponibles dans Expo Go, un build est nécessaire.';
+export const PUSH_UNAVAILABLE_LABEL: string = t.pushUnavailable;
 
 /**
  * Les extensions iOS (Share Extension comme Notification Service Extension) n'existent que
@@ -36,8 +37,7 @@ export const PUSH_UNAVAILABLE_LABEL =
  */
 export const shareExtensionAvailable: boolean = Platform.OS === 'ios' && !isExpoGo;
 
-export const SHARE_EXTENSION_UNAVAILABLE_LABEL =
-  'Le partage depuis les autres apps exige un build : les extensions iOS ne fonctionnent pas dans Expo Go. Le reste de cet écran fonctionne, y compris l’envoi vers le Mac.';
+export const SHARE_EXTENSION_UNAVAILABLE_LABEL: string = t.shareExtensionUnavailable;
 
 const PREFIX = '[KovaLink boot]';
 
@@ -48,5 +48,5 @@ export function bootLog(step: string, detail?: unknown): void {
 }
 
 export function bootWarn(step: string, error: unknown): void {
-  console.warn(`${PREFIX} ${step} a échoué`, error instanceof Error ? error.message : error);
+  console.warn(`${PREFIX} ${step} failed`, error instanceof Error ? error.message : error);
 }

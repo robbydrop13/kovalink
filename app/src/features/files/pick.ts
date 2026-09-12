@@ -7,6 +7,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { TRANSFER_SELECTION_MAX } from '@/protocol';
+import { t } from '@/i18n/en';
 import { downloadToDevice, type DownloadPhase } from '@/net/files';
 
 export interface Candidate {
@@ -42,9 +43,7 @@ export async function pickFromFiles(): Promise<Candidate[]> {
 export async function pickFromPhotos(): Promise<Candidate[]> {
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) {
-    throw new Error(
-      'Accès à la photothèque refusé. Autorise KovaLink dans Réglages, Confidentialité, Photos.',
-    );
+    throw new Error(t.filesPhotosDenied);
   }
   const res = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images', 'videos'],
@@ -70,9 +69,7 @@ export async function pickFromPhotos(): Promise<Candidate[]> {
 export async function pickFromCamera(): Promise<Candidate[]> {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
   if (!perm.granted) {
-    throw new Error(
-      'Accès à l’appareil photo refusé. Autorise KovaLink dans Réglages, Confidentialité, Appareil photo.',
-    );
+    throw new Error(t.filesCameraDenied);
   }
   const res = await ImagePicker.launchCameraAsync({
     mediaTypes: ['images'],
@@ -118,7 +115,7 @@ export async function saveToDevice(
 
 export async function shareFile(file: File, mime: string | null): Promise<void> {
   if (!(await Sharing.isAvailableAsync())) {
-    throw new Error("La feuille de partage iOS n'est pas disponible sur cet appareil.");
+    throw new Error(t.filesShareUnavailable);
   }
   await Sharing.shareAsync(file.uri, {
     ...(mime ? { mimeType: mime } : {}),

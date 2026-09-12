@@ -91,7 +91,7 @@ export function sanitizeFreeText(raw: string): string {
     // C1, les memes controles en 8 bits.
     .replace(/[\u0080-\u009F]/g, '');
   if (s.length > MAX_TEXT) {
-    throw new ForbiddenError('TEXT_TOO_LONG', `texte au dela de ${MAX_TEXT} caracteres`);
+    throw new ForbiddenError('TEXT_TOO_LONG', `text over ${MAX_TEXT} characters`);
   }
   // Bracketed paste : le TUI recoit un collage, pas une suite de commandes.
   return `\u001b[200~${s}\u001b[201~`;
@@ -150,7 +150,7 @@ export class KeyGate {
    */
   async emitAnswer(paneId: number, optionIndex: number): Promise<void> {
     if (!Number.isInteger(optionIndex) || optionIndex < 1 || optionIndex > 99) {
-      throw new ForbiddenError('FORBIDDEN_ACTION', `optionIndex invalide: ${optionIndex}`);
+      throw new ForbiddenError('FORBIDDEN_ACTION', `invalid optionIndex: ${optionIndex}`);
     }
     await sendKeys(this.ipc, paneId, `${optionIndex}\r`);
   }
@@ -250,7 +250,7 @@ export class KeyGate {
         result: 'denied',
         detail: pane ? 'no_agent' : 'pane_gone',
       });
-      throw new ForbiddenError('FORBIDDEN_ACTION', 'texte libre refuse vers un pane sans agent');
+      throw new ForbiddenError('FORBIDDEN_ACTION', 'free text refused for a pane without agent');
     }
 
     const payload = sanitizeFreeText(text);
@@ -304,7 +304,7 @@ export class KeyGate {
     // Mesure : un shell frais porte un instant des processus enfants (initialisation du
     // prompt). Seul un agent, reconnu par Kova ou present en processus `claude`, interdit.
     if (pane.agent !== null || pane.child_processes.some((c) => c.name === 'claude')) {
-      throw new ForbiddenError('FORBIDDEN_ACTION', 'lancement refuse : ce pane a deja un agent');
+      throw new ForbiddenError('FORBIDDEN_ACTION', 'launch refused: this pane already has an agent');
     }
     await sendKeys(this.ipc, paneId, KEY_TABLE.enter);
     audit({ deviceId, action: 'pane.launch', paneId, result: 'ok' });
@@ -324,13 +324,13 @@ export class KeyGate {
     if (deciding && (await this.hasParsedPromptPending(paneId))) {
       throw new ForbiddenError(
         'FORBIDDEN_KEY',
-        'Une question est en attente. Reponds par les boutons, ou ouvre le mode brut.',
+        'A question is pending. Answer with the buttons, or open the raw mode.',
       );
     }
     const payload = keys
       .map((k) => {
         const v = KEY_TABLE[k];
-        if (v === undefined) throw new ForbiddenError('FORBIDDEN_KEY', `touche inconnue: ${k}`);
+        if (v === undefined) throw new ForbiddenError('FORBIDDEN_KEY', `unknown key: ${k}`);
         return v;
       })
       .join('');

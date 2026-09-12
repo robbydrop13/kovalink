@@ -14,6 +14,7 @@ import { Txt } from '@/ui/Txt';
 import { shortAge } from '@/utils/time';
 import { PermissionNote, bypassAccessibilitySuffix } from './PaneIdentity';
 import { isStaleSession } from './tabGroups';
+import { t } from '@/i18n/en';
 
 interface Props {
   pane: Pane;
@@ -31,11 +32,11 @@ interface Props {
  * (agent perdu par Kova mais `claude` encore en processus enfant), ou shell sans agent.
  */
 export function paneBadge(pane: Pane, prompt: Prompt | undefined, now = Date.now()): string {
-  if (pane.awaiting) return 'attend';
-  if (pane.working) return 'travaille';
-  if (isStaleSession(pane)) return 'session périmée';
-  if (prompt?.state === 'turn_end') return `terminé il y a ${shortAge(prompt.endedAt, now)}`;
-  return pane.agent ? 'inactif' : 'shell';
+  if (pane.awaiting) return t.paneBadgeWaiting;
+  if (pane.working) return t.paneBadgeWorking;
+  if (isStaleSession(pane)) return t.paneBadgeStale;
+  if (prompt?.state === 'turn_end') return t.paneBadgeDone(shortAge(prompt.endedAt, now));
+  return pane.agent ? t.paneBadgeIdle : t.paneBadgeShell;
 }
 
 /** Un pane sans agent s'ouvre sur la vue Term : il n'y a pas de transcript à montrer. */
@@ -45,7 +46,7 @@ export function paneHref(pane: Pane): string {
 
 /** Titre d'un pane tel que Kova le montre, le projet venant en sous-titre. */
 export function paneLabel(pane: Pane): string {
-  return pane.title ?? pane.agent ?? 'pane';
+  return pane.title ?? pane.agent ?? t.paneFallbackTitle;
 }
 
 export function SessionRow({
@@ -55,7 +56,7 @@ export function SessionRow({
   onRelaunch,
   onInterrupt,
   interruptDisabled = false,
-  interruptLabel = 'Interrompre',
+  interruptLabel = t.interruptLabel,
 }: Props) {
   const working = pane.working;
   const stale = isStaleSession(pane);
@@ -64,7 +65,7 @@ export function SessionRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${paneLabel(pane)}, ${pane.projectName}, ${badge}${bypassAccessibilitySuffix(pane.permissionMode)}`}
+      accessibilityLabel={t.paneRowAccessibilityLabel(paneLabel(pane), pane.projectName, badge, bypassAccessibilitySuffix(pane.permissionMode))}
       onPress={onOpen}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
@@ -90,7 +91,7 @@ export function SessionRow({
         </Txt>
         <PermissionNote mode={pane.permissionMode} />
         <View style={styles.actions}>
-          {stale && onRelaunch ? <LinkAction label="Relancer Claude" onPress={onRelaunch} /> : null}
+          {stale && onRelaunch ? <LinkAction label={t.paneRelaunchClaude} onPress={onRelaunch} /> : null}
           {working && onInterrupt ? (
             <LinkAction
               label={interruptLabel}

@@ -10,6 +10,7 @@ import { AwaitingCard } from './AwaitingCard';
 import { SessionRow } from './SessionRow';
 import { SwipeRow, type SwipeActions } from './SwipeRow';
 import type { TabGroup } from './tabGroups';
+import { t } from '@/i18n/en';
 
 interface Props {
   group: TabGroup;
@@ -47,11 +48,11 @@ export function TabGroupView({
   return (
     <View
       style={[styles.group, { borderLeftColor: tint }]}
-      accessibilityLabel={`Onglet ${group.tabIndex + 1}, ${group.title}${group.active ? ', actif sur le Mac' : ''}, ${group.panes.length} pane${group.panes.length > 1 ? 's' : ''}`}
+      accessibilityLabel={t.tabGroupAccessibilityLabel(group.tabIndex + 1, group.title, group.active, group.panes.length)}
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Onglet ${group.title}, ouvrir la palette des panes`}
+        accessibilityLabel={t.tabHeaderAccessibilityLabel(group.title)}
         onPress={onHeaderPress}
         style={({ pressed }) => [styles.header, pressed && styles.headerPressed]}
       >
@@ -62,7 +63,7 @@ export function TabGroupView({
         {group.active ? (
           <View style={styles.activeChip}>
             <Txt variant="caption" color={colors.text.secondary}>
-              actif
+              {t.tabActiveChip}
             </Txt>
           </View>
         ) : null}

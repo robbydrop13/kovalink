@@ -15,7 +15,7 @@ export const NOTIF_RESPONSE_TASK = 'kl-notification-response';
 
 export function registerBackgroundNotificationTask(): void {
   if (!pushAvailable) {
-    bootLog('tâche de fond ignorée, environnement sans push distant');
+    bootLog('background task skipped, no remote push in this environment');
     return;
   }
   try {
@@ -27,11 +27,11 @@ export function registerBackgroundNotificationTask(): void {
     });
     Notifications.registerTaskAsync(NOTIF_RESPONSE_TASK).catch((error: unknown) => {
       // Sans la tâche, les actions rapides passent par le gestionnaire au premier plan.
-      bootWarn('tâche de fond', error);
+      bootWarn('background task', error);
     });
-    bootLog('tâche de fond enregistrée');
+    bootLog('background task registered');
   } catch (error) {
-    bootWarn('tâche de fond', error);
+    bootWarn('background task', error);
   }
 }
 

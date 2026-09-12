@@ -12,6 +12,7 @@ import { StatusGlyph } from '@/ui/StatusGlyph';
 import { Txt } from '@/ui/Txt';
 import { shortAge } from '@/utils/time';
 import { PaneTitle, PermissionNote, bypassAccessibilitySuffix } from './PaneIdentity';
+import { t } from '@/i18n/en';
 
 interface Props {
   pane: Pane;
@@ -32,17 +33,17 @@ interface Props {
  */
 function summaryFor(prompt: Prompt | undefined): { title: string; detail: string | null } {
   if (!prompt || prompt.state === 'none') {
-    return { title: 'En attente de ta réponse', detail: null };
+    return { title: t.awaitingWaitingForYou, detail: null };
   }
   if (prompt.state === 'turn_end') {
-    return { title: prompt.summary || 'La tâche est terminée.', detail: null };
+    return { title: prompt.summary || t.awaitingTaskDone, detail: null };
   }
   if (prompt.state === 'parsed') {
     return { title: prompt.question, detail: prompt.detail[0] ?? null };
   }
   return {
-    title: 'Une question attend sur le Mac.',
-    detail: "Les options n'ont pas pu être lues.",
+    title: t.awaitingUnparsableTitle,
+    detail: t.awaitingUnparsableDetail,
   };
 }
 
@@ -60,7 +61,7 @@ export function AwaitingCard({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${pane.projectName}, en attente depuis ${age}${bypassAccessibilitySuffix(pane.permissionMode)}. ${title}`}
+      accessibilityLabel={t.awaitingCardAccessibilityLabel(pane.projectName, age, bypassAccessibilitySuffix(pane.permissionMode), title)}
       onPress={onOpen}
       style={styles.card}
     >
@@ -81,7 +82,7 @@ export function AwaitingCard({
           {detail}
         </Txt>
       ) : null}
-      <Button label="Ouvrir" onPress={onOpen} height={layout.touchPrimary} />
+      <Button label={t.actionOpen} onPress={onOpen} height={layout.touchPrimary} />
       <View style={styles.footer}>
         <LinkAction
           label={interruptLabel}

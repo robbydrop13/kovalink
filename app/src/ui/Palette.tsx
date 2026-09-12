@@ -1,7 +1,7 @@
 // Palette de commande, le gabarit des deux raccourcis de Kova sur l'iPhone : Cmd+P (les
 // panes) et Cmd+O (les projets récents). Recherche en haut avec le clavier ouvert
 // d'emblée, lignes compactes dessous, fermeture par balayage vers le bas (présentation
-// modale) ou par le lien `Fermer`. Le même composant sert aux deux : seules les lignes
+// modale) ou par le lien `Close`. Le même composant sert aux deux : seules les lignes
 // et l'action au tap changent.
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
@@ -18,6 +18,7 @@ import { LinkAction } from '@/ui/Button';
 import { EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
 import { SwipeRow, type SwipeActions } from '@/features/sessions/SwipeRow';
+import { t } from '@/i18n/en';
 
 /** Une ligne de palette. Tout est du texte déjà formaté : la palette ne calcule rien. */
 export interface PaletteRow {
@@ -100,7 +101,7 @@ export function Palette({
           {title}
         </Txt>
         <View style={styles.grow} />
-        <LinkAction label='Fermer' onPress={() => router.back()} />
+        <LinkAction label={t.actionClose} onPress={() => router.back()} />
       </View>
 
       {banners}
@@ -169,7 +170,7 @@ export function Palette({
                 <View style={styles.body}>
                   <View style={styles.line}>
                     {row.starred ? (
-                      <Txt variant='callout' color={colors.status.awaiting} accessibilityLabel='bookmarked'>
+                      <Txt variant='callout' color={colors.status.awaiting} accessibilityLabel={t.paletteBookmarked}>
                         ★
                       </Txt>
                     ) : null}

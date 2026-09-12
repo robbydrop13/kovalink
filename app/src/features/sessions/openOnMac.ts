@@ -8,8 +8,9 @@ import { focusPaneOnMac } from '@/net/connection';
 import { usePrefs } from '@/store/prefs';
 import { ImpactStyle, impact } from '@/utils/haptics';
 import { followNotice, followPane } from './follow';
+import { t } from '@/i18n/en';
 
-const OPEN_ON_MAC_LABEL = 'Ouvrir sur le Mac';
+const OPEN_ON_MAC_LABEL = t.openOnMacLabel;
 
 /**
  * « Suivre sur le Mac » : appelé à l'ouverture d'une session, quel que soit le chemin
@@ -24,7 +25,7 @@ export function followSessionOnMac(paneId: number): string | null {
 /** Envoie la commande. Rend un libellé de compte rendu à afficher, jamais une exception. */
 export function openOnMac(paneId: number): string {
   impact(ImpactStyle.Medium);
-  return focusPaneOnMac(paneId) ? 'Ouvert sur le Mac' : 'Mac injoignable, réessaie plus tard';
+  return focusPaneOnMac(paneId) ? t.openOnMacDone : t.openOnMacUnreachable;
 }
 
 /**
@@ -43,7 +44,7 @@ export function showPaneMenu(
   }
   ActionSheetIOS.showActionSheetWithOptions(
     {
-      options: [...entries.map((e) => e.label), 'Annuler'],
+      options: [...entries.map((e) => e.label), t.actionCancel],
       cancelButtonIndex: entries.length,
       userInterfaceStyle: 'dark',
     },

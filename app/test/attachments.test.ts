@@ -61,11 +61,11 @@ describe('composeMessage', () => {
   it("REFUSE si une pièce n'a pas de chemin : rien ne part, la cause nomme la pièce", () => {
     assert.throws(
       () => composeMessage('texte', [piece({ id: 'a' }), piece({ id: 'b', path: null })]),
-      (e: unknown) => e instanceof Error && e.message.includes('b.jpg') && e.message.includes('pas arrivée'),
+      (e: unknown) => e instanceof Error && e.message.includes('b.jpg') && e.message.includes('not arrived'),
     );
     assert.throws(
       () => composeMessage('texte', [piece({ id: 'a', path: null }), piece({ id: 'b', path: '' })]),
-      (e: unknown) => e instanceof Error && e.message.includes('2 pièces'),
+      (e: unknown) => e instanceof Error && e.message.includes('2 attachments'),
     );
   });
 });

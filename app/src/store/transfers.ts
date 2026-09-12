@@ -24,13 +24,14 @@ import {
   uploadInit,
 } from '@/net/files';
 import { HttpError } from '@/net/http';
+import { t } from '@/i18n/en';
 import { ImpactStyle, NotifyType, impact, notify } from '@/utils/haptics';
 
 export type TransferState =
   | 'queued'
-  /** Au delà de 100 Mo en cellulaire : attend `Envoyer maintenant` ou `Attendre le Wi-Fi`. */
+  /** Au delà de 100 Mo en cellulaire : attend `Send now` ou `Wait for Wi-Fi`. */
   | 'awaiting-choice'
-  /** Choix « Attendre le Wi-Fi » : repart tout seul au prochain passage en Wi-Fi. */
+  /** Choix « Wait for Wi-Fi » : repart tout seul au prochain passage en Wi-Fi. */
   | 'waiting-wifi'
   | 'running'
   /** Coupure réseau. Ce n'est PAS un échec : la reprise est automatique. */
@@ -220,7 +221,7 @@ export function watchWifi(): { remove: () => void } {
     });
   } catch {
     // `expo-network` indisponible : les transferts différés repartiront au prochain
-    // `Envoyer maintenant`. On ne fait pas tomber l'app pour un écouteur de confort.
+    // `Send now`. On ne fait pas tomber l'app pour un écouteur de confort.
     return { remove: () => undefined };
   }
 }
@@ -292,7 +293,7 @@ async function runOne(id: string): Promise<void> {
       throw new HttpError(
         422,
         'CHECKSUM_MISMATCH',
-        `empreinte différente : ${done.sha256} écrit sur le Mac, ${sha256} attendu.`,
+        t.transferChecksumMismatch(done.sha256, sha256),
       );
     }
     store.patch(id, {
@@ -378,14 +379,14 @@ export function isFinalCode(code: string | null): boolean {
  */
 export function waitForTransfer(id: string): Promise<Transfer> {
   return new Promise((resolvePromise, reject) => {
-    const settle = (t: Transfer): boolean => {
-      if (t.state === 'done') {
-        resolvePromise(t);
+    const settle = (tr: Transfer): boolean => {
+      if (tr.state === 'done') {
+        resolvePromise(tr);
         return true;
       }
-      if (t.state === 'failed' || t.state === 'canceled') {
-        const err = new Error(t.error ?? (t.state === 'canceled' ? 'transfert annulé' : 'transfert en échec'));
-        (err as Error & { code?: string | null }).code = t.state === 'canceled' ? 'ABORTED' : t.errorCode;
+      if (tr.state === 'failed' || tr.state === 'canceled') {
+        const err = new Error(tr.error ?? (tr.state === 'canceled' ? t.transferCanceled : t.transferFailed));
+        (err as Error & { code?: string | null }).code = tr.state === 'canceled' ? 'ABORTED' : tr.errorCode;
         reject(err);
         return true;
       }
@@ -393,7 +394,7 @@ export function waitForTransfer(id: string): Promise<Transfer> {
     };
     const current = useTransfers.getState().items.find((i) => i.id === id);
     if (!current) {
-      reject(new Error(`transfert ${id} absent de la file`));
+      reject(new Error(t.transferMissing(id)));
       return;
     }
     if (settle(current)) return;
@@ -401,7 +402,7 @@ export function waitForTransfer(id: string): Promise<Transfer> {
       const item = s.items.find((i) => i.id === id);
       if (!item) {
         unsubscribe();
-        reject(new Error(`transfert ${id} retiré de la file avant sa fin`));
+        reject(new Error(t.transferRemoved(id)));
         return;
       }
       if (settle(item)) unsubscribe();

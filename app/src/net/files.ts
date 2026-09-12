@@ -28,13 +28,14 @@ import {
   type UploadInitResponse,
   type UploadOffsetMismatch,
 } from '@/protocol';
+import { t } from '@/i18n/en';
 import { loadCredentials, type Credentials } from '@/store/credentials';
 import { Sha256, digestVerdict } from '@/utils/sha256';
 import { HttpError, baseUrl } from './http';
 
 async function creds(): Promise<Credentials> {
   const c = await loadCredentials();
-  if (!c) throw new HttpError(401, 'UNAUTHORIZED', 'Appareil non appairé');
+  if (!c) throw new HttpError(401, 'UNAUTHORIZED', t.filesNotPaired);
   return c;
 }
 
@@ -50,13 +51,13 @@ async function readError(res: Response, path: string): Promise<HttpError> {
   const text = await res.text().catch(() => '');
   try {
     const body = JSON.parse(text) as { code?: string; message?: string } & Partial<UploadOffsetMismatch>;
-    const err = new HttpError(res.status, body.code ?? 'INTERNAL', body.message ?? `HTTP ${res.status} sur ${path}`);
+    const err = new HttpError(res.status, body.code ?? 'INTERNAL', body.message ?? t.filesHttpError(res.status, path));
     if (typeof body.receivedBytes === 'number') {
       (err as HttpError & { receivedBytes?: number }).receivedBytes = body.receivedBytes;
     }
     return err;
   } catch {
-    return new HttpError(res.status, 'INTERNAL', `HTTP ${res.status} sur ${path} : ${text.slice(0, 200)}`);
+    return new HttpError(res.status, 'INTERNAL', t.filesHttpErrorBody(res.status, path, text.slice(0, 200)));
   }
 }
 
@@ -217,7 +218,7 @@ export async function downloadToDevice(
   }
   if (o.signal?.aborted) {
     file.delete();
-    throw new HttpError(499, 'ABORTED', 'Téléchargement annulé.');
+    throw new HttpError(499, 'ABORTED', t.filesDownloadCanceled);
   }
   const verdict = digestVerdict(expected.sha256, actual);
   if (verdict === 'mismatch') {
@@ -225,8 +226,7 @@ export async function downloadToDevice(
     throw new HttpError(
       422,
       'CHECKSUM_MISMATCH',
-      `Empreinte différente après téléchargement : ${actual.slice(0, 12)}… sur l’iPhone, ` +
-        `${(expected.sha256 ?? '').slice(0, 12)}… sur le Mac. Le fichier a été supprimé, réessaie.`,
+      t.filesChecksumMismatch(actual.slice(0, 12), (expected.sha256 ?? '').slice(0, 12)),
     );
   }
   return { file, verified: verdict === 'ok' };

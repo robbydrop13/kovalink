@@ -12,6 +12,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 
 import { bootLog, bootWarn, pushAvailable } from '@/env';
+import { t } from '@/i18n/en';
 import { loadCredentials } from '@/store/credentials';
 import { usePanes } from '@/store/panes';
 import { useDrafts } from '@/store/drafts';
@@ -68,62 +69,60 @@ export async function runBoot(): Promise<void> {
   started = true;
 
   const finish = useBootStore.getState().set;
-  bootLog('démarrage', { pushAvailable });
+  bootLog('boot start', { pushAvailable });
 
   // Filet contre un blocage : si rien n'a abouti dans le délai, on sort de `loading`.
   const timeout = setTimeout(() => {
     if (useBootStore.getState().state === 'loading') {
-      bootWarn('délai de démarrage dépassé', `${LOADING_TIMEOUT_MS} ms`);
+      bootWarn('boot timeout exceeded', `${LOADING_TIMEOUT_MS} ms`);
       finish(
         'failed',
-        new Error(
-          `Le démarrage n'a rien renvoyé en ${Math.round(LOADING_TIMEOUT_MS / 1000)} s. Le stockage local ne répond pas.`,
-        ),
+        new Error(t.bootStorageFailed(Math.round(LOADING_TIMEOUT_MS / 1000))),
       );
     }
   }, LOADING_TIMEOUT_MS);
 
   try {
     // 1. Préférences et compteurs. Échec sans conséquence : les valeurs par défaut suffisent.
-    await attempt('préférences', () => usePrefs.getState().hydrate());
+    await attempt('prefs', () => usePrefs.getState().hydrate());
 
     // 2. Trousseau. C'est la seule lecture qui décide de la route de départ.
-    const creds = await attempt('trousseau', loadCredentials);
+    const creds = await attempt('keychain', loadCredentials);
 
     if (!creds) {
-      bootLog('appareil non appairé, route /pair');
+      bootLog('device not paired, route /pair');
       finish('unpaired');
       return;
     }
 
     // 3. Cache local des panes. La liste doit être visible avant le réseau.
-    await attempt('cache des panes', () => usePanes.getState().hydrate());
-    await attempt('brouillons', () => useDrafts.getState().hydrate());
+    await attempt('panes cache', () => usePanes.getState().hydrate());
+    await attempt('drafts', () => useDrafts.getState().hydrate());
 
     // L'app est affichable ici. Tout ce qui suit est asynchrone et facultatif.
-    bootLog('appareil appairé, route /');
+    bootLog('device paired, route /');
     finish('ready');
 
     // 4. Purge des envois expirés, AVANT toute tentative de vidange.
-    await attempt('file d’attente', flushOutbox);
+    await attempt('outbox', flushOutbox);
 
     // 5. Connexion. Un échec mène à l'écran Sessions en mode dégradé, jamais à un blocage :
     //    la pastille de liaison affiche `Mac injoignable` et le cache reste lisible.
-    await attempt('connexion', startConnection);
+    await attempt('connection', startConnection);
 
     // 6. Notifications. Indisponibles dans Expo Go, et jamais bloquantes ailleurs.
     await attempt('notifications', setupNotifications);
 
     // 7. Transferts. Un envoi mis en attente de Wi-Fi doit repartir tout seul quand le
     //    Wi-Fi revient, sans que Robin ait à rouvrir l'écran Fichiers (A4).
-    await attempt('transferts', async () => {
+    await attempt('transfers', async () => {
       wifiWatcher?.remove();
       wifiWatcher = watchWifi();
       void pump();
     });
   } catch (error) {
     // Ne devrait pas arriver, chaque étape est déjà protégée. Filet de dernier recours.
-    bootWarn('séquence de démarrage', error);
+    bootWarn('boot sequence', error);
     if (useBootStore.getState().state === 'loading') finish('failed', error);
   } finally {
     clearTimeout(timeout);
@@ -143,13 +142,13 @@ export function retryBoot(): void {
  * vers `/pair`, et les deux écrans se renverraient la balle indéfiniment.
  */
 export function markPaired(): void {
-  bootLog('appairage enregistré, état ready');
+  bootLog('pairing saved, state ready');
   useBootStore.getState().set('ready');
 }
 
 /** Appelé par la révocation d'appairage : on repart sur le flux d'appairage. */
 export function markUnpaired(): void {
-  bootLog('appairage révoqué, état unpaired');
+  bootLog('pairing revoked, state unpaired');
   useBootStore.getState().set('unpaired');
 }
 

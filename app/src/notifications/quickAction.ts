@@ -15,6 +15,7 @@ import {
   type PushPayload,
 } from '@/protocol';
 import { HttpError, fetchPrompt } from '@/net/http';
+import { t } from '@/i18n/en';
 import { answerPrompt } from '@/actions/answer';
 import { interruptPane } from '@/actions/interrupt';
 
@@ -30,7 +31,7 @@ async function notice(body: string, active = false): Promise<void> {
 async function scheduleNotice(body: string, active: boolean): Promise<void> {
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'KovaLink',
+      title: t.notifTitle,
       body,
       sound: false,
       interruptionLevel: active ? 'active' : 'passive',
@@ -68,8 +69,8 @@ async function openDeepLink(data: PushPayload): Promise<void> {
   } catch (e) {
     // Un `openURL` qui rejette remontait jusqu'au `void handleNotificationResponse(...)`
     // de l'appelant, c'est à dire nulle part : l'action semblait ne rien faire du tout.
-    console.warn('[KovaLink] ouverture du lien profond en échec', url, describe(e));
-    await notice(`Ouverture impossible : ${describe(e)}`, true);
+    console.warn('[KovaLink] deep link open failed', url, describe(e));
+    await notice(t.notifOpenFailed(describe(e)), true);
   }
 }
 
@@ -87,14 +88,14 @@ async function resolvePaneId(data: PushPayload): Promise<number | null> {
   } catch (e) {
     // La cause part au journal : un compte rendu « Mac injoignable » sur une référence
     // expirée envoyait chercher un problème réseau qui n'existait pas.
-    console.warn('[KovaLink] résolution de promptRef en échec', describe(e));
+    console.warn('[KovaLink] promptRef resolution failed', describe(e));
     return null;
   }
 }
 
 /** Message court et EXACT, destiné à une bannière. */
 function describe(e: unknown): string {
-  if (e instanceof HttpError) return `${e.code} : ${e.message}`;
+  if (e instanceof HttpError) return `${e.code}: ${e.message}`;
   return e instanceof Error ? e.message : String(e);
 }
 
@@ -115,15 +116,15 @@ export async function handleNotificationResponse(
   if (actionId === NOTIFICATION_ACTION.interrupt) {
     const paneId = await resolvePaneId(data);
     if (paneId === null) {
-      await notice('Mac injoignable, ouvre l’app.', true);
+      await notice(t.notifMacUnreachableOpenApp, true);
       return;
     }
     try {
       await interruptPane(paneId, { haptics: false });
       await Notifications.dismissNotificationAsync(response.notification.request.identifier);
-      await notice('Agent interrompu.');
+      await notice(t.notifInterrupted);
     } catch (e) {
-      await notice(`Interruption impossible : ${describe(e)}`, true);
+      await notice(t.notifInterruptFailed(describe(e)), true);
     }
     return;
   }
@@ -150,33 +151,31 @@ export async function handleNotificationResponse(
     paneId,
     optionIndex,
     optionKind: optionKind === 'reject' ? 'reject' : optionKind,
-    optionLabel: `option ${optionIndex}`,
+    optionLabel: t.notifOptionLabel(optionIndex),
     promptHash: data.promptHash,
     awaitingSince: data.awaitingSince,
   });
 
   if (!outcome.ok) {
     if (outcome.kind === 'cancelled') {
-      await notice('Réponse annulée.', true);
+      await notice(t.notifAnswerCancelled, true);
     } else if (outcome.kind === 'refused') {
       // Le Mac a répondu et a refusé : rien n'est en file, rien ne repartira.
-      await notice(`Réponse refusée par le Mac : ${outcome.cause}`, true);
+      await notice(t.notifAnswerRefused(outcome.cause), true);
     } else {
-      await notice(`Mac injoignable (${outcome.cause}). Ta réponse sera abandonnée dans 60 s.`, true);
+      await notice(t.notifAnswerUnreachable(outcome.cause), true);
     }
     return;
   }
 
   if (outcome.result.applied) {
     await Notifications.dismissNotificationAsync(response.notification.request.identifier);
-    await notice(`Réponse envoyée : option ${optionIndex}`);
+    await notice(t.notifAnswerSent(optionIndex));
     return;
   }
 
   await notice(
-    outcome.result.reason === 'prompt_changed'
-      ? "La question a changé, ta réponse n'a pas été envoyée. Ouvre l'app."
-      : 'Déjà répondu.',
+    outcome.result.reason === 'prompt_changed' ? t.notifPromptChanged : t.notifAlreadyAnswered,
     true,
   );
 }

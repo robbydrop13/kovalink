@@ -25,6 +25,7 @@ import { markUnpaired } from '@/boot';
 import { clockTime } from '@/utils/time';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
 import { Banner } from '@/ui/States';
+import { t } from '@/i18n/en';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -38,12 +39,12 @@ export default function SettingsScreen() {
 
   const revoke = () => {
     Alert.alert(
-      'Révoquer l’appairage',
-      'Le jeton est effacé de l’iPhone et invalidé sur le Mac, immédiatement. Le cache et la file d’attente sont effacés.',
+      t.settingsRevokeConfirmTitle,
+      t.settingsRevokeConfirmBody,
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t.settingsRevokeConfirmCancel, style: 'cancel' },
         {
-          text: 'Révoquer',
+          text: t.settingsRevokeConfirmAction,
           style: 'destructive',
           onPress: () => {
             void (async () => {
@@ -73,22 +74,22 @@ export default function SettingsScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
-        <LinkAction label="< Sessions" onPress={() => router.back()} />
+        <LinkAction label={t.settingsBack} onPress={() => router.back()} />
         <View style={styles.grow} />
         <Txt variant="title2" color={colors.text.primary}>
-          Réglages
+          {t.settingsTitle}
         </Txt>
         <View style={styles.grow} />
       </View>
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[8] }]}>
-        <Section title="NOTIFICATIONS" />
+        <Section title={t.settingsSectionNotifications} />
         {/* Les deux réglages ci dessous restent modifiables : ils sont transmis au daemon et
             reprendront effet dès qu'un build remplacera Expo Go. */}
         {!pushAvailable ? <Banner text={PUSH_UNAVAILABLE_LABEL} /> : null}
         <Row
-          title="Validations seulement"
-          subtitle="Seules les demandes de validation sonnent. Les fins de tâche restent silencieuses. Désactivé par défaut."
+          title={t.settingsOnlyValidations}
+          subtitle={t.settingsOnlyValidationsHint}
           value={prefs.onlyValidations}
           onChange={(v) => {
             setPref('onlyValidations', v);
@@ -96,8 +97,8 @@ export default function SettingsScreen() {
           }}
         />
         <Row
-          title="Heures calmes"
-          subtitle="23h00 à 07h00. Dans la plage, seules les validations sonnent."
+          title={t.settingsQuietHours}
+          subtitle={t.settingsQuietHoursHint}
           value={prefs.quietHours}
           onChange={(v) => {
             setPref('quietHours', v);
@@ -105,10 +106,10 @@ export default function SettingsScreen() {
           }}
         />
 
-        <Section title="MAC" />
+        <Section title={t.settingsSectionMac} />
         <Row
-          title="Garder le Mac éveillé"
-          subtitle="Tant qu’un agent travaille, 4 h max. Capot fermé sur batterie, la session est suspendue."
+          title={t.settingsKeepMacAwake}
+          subtitle={t.settingsKeepMacAwakeHint}
           value={prefs.keepMacAwake}
           onChange={(v) => {
             // Transmis au daemon comme les deux autres : c'est lui qui tient l'assertion
@@ -118,17 +119,17 @@ export default function SettingsScreen() {
           }}
         />
         <Row
-          title="Suivre sur le Mac"
-          subtitle="Ouvrir une session ici bascule l’onglet sur le Mac, comme Cmd+P. À couper si quelqu’un travaille sur le Mac pendant que tu lis."
+          title={t.settingsFollowOnMac}
+          subtitle={t.settingsFollowOnMacHint}
           value={prefs.followOnMac}
           // Réglage local à l'iPhone : l'app décide d'émettre ou non `focus-pane`.
           onChange={(v) => setPref('followOnMac', v)}
         />
 
-        <Section title="SÉCURITÉ" />
+        <Section title={t.settingsSectionSecurity} />
         <View style={styles.card}>
           <Button
-            label={revoking ? 'Révocation…' : 'Révoquer l’appairage'}
+            label={revoking ? t.settingsRevoking : t.settingsRevoke}
             kind="destructive"
             height={48}
             disabled={revoking}
@@ -136,30 +137,30 @@ export default function SettingsScreen() {
           />
         </View>
 
-        <Section title="ACTIVITÉ" />
+        <Section title={t.settingsSectionActivity} />
         <View style={styles.card}>
           <ReadRow
-            label="Liaison"
+            label={t.settingsLink}
             value={
               (link === 'direct' || link === 'relayed') && latency !== null
-                ? `${LINK_LABEL[link]} · ${latency} ms`
+                ? t.settingsLinkLatency(LINK_LABEL[link], latency)
                 : LINK_LABEL[link]
             }
           />
           <ReadRow
-            label="Dernière notification livrée"
+            label={t.settingsLastNotification}
             value={clockTime(counters.lastNotificationAt)}
           />
-          <ReadRow label="Notifications aujourd’hui" value={String(counters.notificationsToday)} />
-          <ReadRow label="Questions illisibles (7 j)" value={String(counters.parseFailed)} />
-          <ReadRow label="Bannières non récupérées (7 j)" value={String(counters.nseFailed)} />
+          <ReadRow label={t.settingsNotificationsToday} value={String(counters.notificationsToday)} />
+          <ReadRow label={t.settingsParseFailed} value={String(counters.parseFailed)} />
+          <ReadRow label={t.settingsNseFailed} value={String(counters.nseFailed)} />
         </View>
 
         {/* Les cinq lignes ci dessus sont locales à l'iPhone. Le journal complet, lui, vit
             sur le Mac : une ligne par lecture et par écriture, 30 jours (PRD C7). */}
         <View style={styles.card}>
           <Button
-            label="Journal des accès fichiers"
+            label={t.settingsFileAccessLog}
             kind="secondary"
             height={48}
             onPress={() => router.push('/activity')}
@@ -170,7 +171,7 @@ export default function SettingsScreen() {
           {/* La version de Kova n'est PAS affichée : Kova n'expose aucune commande de
               version (V3), donc le protocole ne la transporte pas. Une ligne qui affiche
               « inconnu » pour toujours se lit comme une panne, alors que rien n'est cassé. */}
-          App {Constants.expoConfig?.version ?? '1.0.0'} · daemon {daemonVersion ?? 'inconnu'}
+          {t.settingsVersion(Constants.expoConfig?.version ?? '1.0.0', daemonVersion ?? t.settingsVersionUnknown)}
         </Txt>
       </ScrollView>
     </View>

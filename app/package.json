@@ -12,7 +12,7 @@
     "ota": "eas update --channel preview",
     "protocol:sync": "npm --prefix .. run build",
     "start": "npm run protocol:sync && expo start --go --clear",
-    "test": "node --import ./test/register.mjs --test test/*.test.ts",
+    "test": "node --import ./test/register.mjs --test test/*.test.ts && bash scripts/check-i18n.sh",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

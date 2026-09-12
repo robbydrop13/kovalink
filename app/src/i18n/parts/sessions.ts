@@ -1,0 +1,264 @@
+// Chaînes visibles : sessions (liste, palettes, écran de session, historique, prompt,
+// barre de validation, composants UI partagés). Voir `../en.ts`.
+//
+// Clés préfixées par écran ou domaine. Les chaînes paramétrées sont des fonctions.
+// Le préfixe `action` sert aux libellés d'action réutilisés par plusieurs écrans.
+export const sessions = {
+  // Actions partagées
+  actionClose: 'Close',
+  actionOpen: 'Open',
+  actionBack: 'Back',
+  actionRefresh: 'Refresh',
+  actionOpenTerminal: 'Open terminal',
+  actionLoadOlder: 'Load older',
+  actionLoading: 'Loading…',
+  actionSee: 'See',
+  actionSeeSessions: 'See sessions',
+
+  // Pane : identité et badges d'état
+  paneFallbackTitle: 'pane',
+  paneBypassBadge: 'bypass',
+  paneBypassExplanation: 'no validation will be asked of you',
+  paneBypassAccessibilityLabel: (explanation: string) => `bypass, ${explanation}`,
+  paneBypassAccessibilitySuffix: (explanation: string) => `, bypass, ${explanation}`,
+  paneBadgeWaiting: 'waiting',
+  paneBadgeWorking: 'working',
+  paneBadgeStale: 'stale session',
+  paneBadgeDone: (age: string) => `done ${age} ago`,
+  paneBadgeIdle: 'idle',
+  paneBadgeShell: 'shell',
+  paneRelaunchClaude: 'Relaunch Claude',
+  paneRowAccessibilityLabel: (title: string, project: string, badge: string, bypass: string) =>
+    `${title}, ${project}, ${badge}${bypass}`,
+  paneGoneOnMac: 'This pane no longer exists on the Mac',
+
+  // Interrompre (liste, session, barre de validation)
+  interruptLabel: 'Interrupt',
+  interruptDone: 'Interrupted',
+  interruptFailed: 'Failed',
+  interruptUnavailable: 'Unavailable',
+
+  // Carte EN ATTENTE
+  awaitingWaitingForYou: 'Waiting for your answer',
+  awaitingTaskDone: 'The task is done.',
+  awaitingUnparsableTitle: 'A question is waiting on the Mac.',
+  awaitingUnparsableDetail: 'The options could not be read.',
+  awaitingCardAccessibilityLabel: (project: string, age: string, bypass: string, title: string) =>
+    `${project}, waiting for ${age}${bypass}. ${title}`,
+
+  // Groupe d'onglet
+  tabFallbackTitle: (index: number) => `Tab ${index}`,
+  tabActiveChip: 'active',
+  tabGroupAccessibilityLabel: (index: number, title: string, active: boolean, count: number) =>
+    `Tab ${index}, ${title}${active ? ', active on the Mac' : ''}, ${count} pane${count > 1 ? 's' : ''}`,
+  tabHeaderAccessibilityLabel: (title: string) => `Tab ${title}, open the panes palette`,
+  summaryWaiting: (count: number) => `${count} waiting`,
+  summaryWorking: (count: number) => `${count} working`,
+
+  // Balayage d'une ligne
+  swipeBookmark: 'Bookmark',
+  swipeUnbookmark: 'Unbookmark',
+  swipeClose: 'Close',
+  swipeRename: 'Rename',
+
+  // Fermer un pane
+  closeConfirmTitle: (project: string) => `Close ${project}?`,
+  closeRefused: (reason: string) => `Close refused (${reason})`,
+  closeReasonUnknown: 'unknown',
+  closeDone: (project: string) => `Closed ${project}`,
+  closeFailed: (cause: string) => `Close failed. ${cause}`,
+  closeAnyway: 'Close anyway',
+  closeInterruptTitle: 'Interrupt the task?',
+  closeInterruptBody: 'The agent is in the middle of a task. This closes the pane and stops it.',
+  closeKeepWorking: 'Keep working',
+  closeAndInterrupt: 'Close and interrupt',
+  closeStateWorking: 'The agent is working right now: closing interrupts the task.',
+  closeStateAwaiting: 'The agent is waiting for your answer.',
+  closeStateIdle: 'The agent is idle.',
+  closeStateShell: 'Plain shell, no agent.',
+
+  // Favori
+  bookmarkNoSession: 'This pane has no agent session to bookmark',
+  bookmarkAdded: 'Bookmarked',
+  bookmarkRemoved: 'Bookmark removed',
+  bookmarkFailed: (cause: string) => `Bookmark failed. ${cause}`,
+
+  // Renommer
+  renameTitle: 'Rename tab',
+  renameBody: 'Leave empty to go back to the automatic title.',
+  renameButton: 'Rename',
+  renameReset: 'Tab title reset',
+  renameDone: (title: string) => `Tab renamed to ${title}`,
+  renameFailed: (cause: string) => `Rename failed. ${cause}`,
+
+  // Ouvrir et suivre sur le Mac
+  openOnMacLabel: 'Open on the Mac',
+  openOnMacDone: 'Opened on the Mac',
+  openOnMacUnreachable: 'Mac unreachable, try again later',
+  followUnreachable: 'Mac unreachable, the tab did not switch on the Mac',
+
+  // Reprendre une session fermée
+  resumeAlreadyOpen: 'This session is already open on the Mac',
+  resumeFailed: (cause: string) => `Resume failed. ${cause}`,
+  resumeConfirmTitle: 'Resume this session?',
+  resumeConfirmBody: (project: string, title: string, age: string) =>
+    `${project} · ${title}\nLast activity ${age} ago.\n\nResume launches Claude on the Mac in a new tab, with this session's history.`,
+  resumeRead: 'Read',
+  resumeButton: 'Resume',
+
+  // Écran Sessions
+  sessionsTitle: 'Sessions',
+  sessionsNavFiles: 'Files',
+  sessionsNavSettings: 'Settings',
+  sessionsBootFailedTitle: 'Could not start',
+  sessionsBootFailedHint: 'Local storage did not respond. Retry, then relaunch the app if the error persists.',
+  sessionsOfflineBanner: (time: string) => `iPhone offline, last state at ${time}`,
+  sessionsMacAsleepBanner: (time: string) => `Mac asleep or off, last state at ${time}`,
+  sessionsSearchPlaceholder: 'Tab, project or pane title',
+  sessionsSearchAccessibilityLabel: 'Search sessions',
+  sessionsKovaDownTitle: 'Kova is not running',
+  sessionsKovaDownBody: 'Files on the Mac remain accessible.',
+  sessionsLaunchKova: 'Launch Kova',
+  sessionsLaunchingKova: 'Launching…',
+  sessionsLaunchKovaHint: 'Opens the Kova app on the Mac',
+  sessionsKovaAlreadyUp: 'Kova was already running, brought to the front',
+  sessionsKovaLaunching: 'Kova is launching on the Mac',
+  sessionsKovaLaunchFailed: (cause: string) => `Launch failed. ${cause}`,
+  sessionsBrowseMac: 'Browse the Mac',
+  sessionsEmptyTitle: 'No sessions',
+  sessionsEmptyBody: 'Open a pane in Kova and it will show up here.',
+  sessionsNoMatchTitle: 'No matching session',
+  sessionsNoMatchBody: 'Try another word: tab name, project, pane title.',
+  sessionsWindowLabel: (index: number) => `WINDOW ${index}`,
+  sessionsPanesButton: 'Panes',
+  sessionsPanesHint: 'Palette of all panes, like Cmd+P in Kova',
+  sessionsProjectsButton: 'Projects',
+  sessionsProjectsHint: 'Palette of recent projects, like Cmd+O in Kova',
+
+  // Palette Panes (Cmd+P)
+  panesTitle: 'Panes',
+  panesPlaceholder: 'Tab, project, title or closed session',
+  panesSearchAccessibilityLabel: 'Search panes and sessions',
+  panesNoMatchTitle: 'No matching pane',
+  panesNoMatchBody: 'Try another word.',
+  panesEmptyTitle: 'No panes',
+  panesEmptyBody: 'Open a pane in Kova and it will show up here.',
+  panesClosedUnavailable: (cause: string) => `Closed sessions unavailable. ${cause}`,
+  panesClosedBadge: (age: string) => `closed · ${age}`,
+  panesSectionBookmarks: 'BOOKMARKS',
+  panesSectionOpen: 'OPEN',
+  panesSectionClosed: (count: number) => `CLOSED · ${count}`,
+  kovaNotRunningOnMac: 'Kova is not running on the Mac',
+  macUnreachableNow: 'Mac unreachable for now',
+
+  // Palette Projets (Cmd+O)
+  projectsTitle: 'Projects',
+  projectsPlaceholder: 'Folder name or path',
+  projectsSearchAccessibilityLabel: 'Search recent projects',
+  projectsHint: 'A tap opens a Kova tab on the Mac, with Claude launched in that folder.',
+  projectsHintRelaunch: 'Relaunch Claude: the folder of the stale session is listed first.',
+  projectsNoMatchTitle: 'No matching project',
+  projectsNoMatchBody: 'Try another word.',
+  projectsEmptyTitle: 'No recent projects',
+  projectsEmptyBody: 'Open a project in Kova and it will show up here.',
+  projectsUnavailable: (cause: string) => `Recent projects unavailable. ${cause}`,
+  projectsCreating: 'creating…',
+  projectsClosedSubtitle: (age: string) => `closed session · ${age} ago`,
+  projectsCreateFailed: (cause: string) => `Could not create the tab. ${cause}`,
+  projectsWantedMissing: (cwd: string) => `${cwd} is not in Kova's recent projects: open the folder once on the Mac.`,
+
+  // Historique d'une session fermée (lecture seule)
+  historyBack: '< Back',
+  historyReadOnly: 'read only',
+  historyClosedSession: 'Closed session',
+  historyUnavailable: (cause: string) => `Transcript unavailable. ${cause}`,
+  historyEmptyTitle: 'Empty transcript',
+  historyEmptyBody: 'This session has no readable exchange.',
+  historyResume: 'Resume this session',
+  historyResuming: 'Resuming…',
+  historyResumeHint: "Launches Claude on the Mac in a new tab, with this session's history",
+
+  // Écran de session
+  sessionFallbackTitle: 'Session',
+  sessionViewChat: 'Chat',
+  sessionViewTerm: 'Term',
+  sessionMoreActions: 'More actions',
+  sessionRefusalBecameAwaiting: 'The agent asked a question, your message was not sent',
+  sessionRefusalNotSubmitted: 'The pane did not submit the message, the Mac input field was cleared',
+  sessionRefusalUnknown: (reason: string) => `Message not delivered to the pane (${reason})`,
+  sessionReasonUnknown: 'unknown reason',
+  sessionNotDelivered: 'Message not delivered to the pane',
+  sessionRefusedByMac: (cause: string) => `Refused by the Mac. ${cause}`,
+  sessionHistoryUnavailable: (cause: string) => `History unavailable. ${cause}`,
+  sessionNoAgentForAttachments: 'This pane has no agent session: no attachment can be sent to it',
+  sessionSendFailed: (cause: string) => `Could not send. ${cause}`,
+  sessionSendFailedRetry: (cause: string) => `Could not send, retry. ${cause}`,
+  sessionAnswerFirst: 'Answer the question above first',
+  sessionFaceIdCancelled: 'Face ID cancelled, the message is kept in the field',
+  sessionQueueFull: (max: number) => `Queue full, ${max} messages waiting`,
+  sessionMacUnreachableQueued: 'Mac unreachable, the message stays queued',
+  sessionPromptChanged: 'The question changed on the Mac. Your answer was not sent.',
+  sessionGoneNothingSent: 'This session no longer exists. Nothing was sent.',
+  sessionAnsweredOnMac: 'Answered on the Mac.',
+  sessionAlreadyAnswered: 'Already answered.',
+  sessionRejectSent: 'Rejection sent, explain to Claude',
+  sessionPaneNotFoundTitle: 'Pane not found',
+  sessionPaneNotFoundBody: (paneId: number, link: string) =>
+    `Pane ${paneId} is not in the Mac snapshot. It may have been closed, or the link has not returned the list yet (${link}).`,
+  sessionGone: 'This session no longer exists.',
+  sessionGoneShort: 'This session no longer exists',
+  sessionNoAgentSession: 'This pane has no agent session',
+  sessionDegradedBanner: (offline: boolean, cacheAge: string | null) =>
+    `${offline ? 'iPhone offline' : 'Mac asleep or off'}${
+      cacheAge !== null ? `, last exchange from cache (${cacheAge})` : ', frozen state'
+    }`,
+  sessionCacheUpdating: 'Last exchange from cache, updating from the Mac…',
+  sessionChatUnavailable: 'Chat view unavailable for this agent',
+  sessionTranscriptUnreadable: 'Unreadable transcript',
+  sessionUnconfirmedOne: 'Unconfirmed: the message was sent, the pane has not received it yet',
+  sessionUnconfirmedMany: (count: number) => `Unconfirmed: ${count} messages sent, the pane has not received them yet`,
+  sessionOtherAwaitingOne: (project: string, tab: string) => `Another pane is waiting: ${project} · ${tab}`,
+  sessionOtherAwaitingMany: (count: number) => `${count} other panes are waiting`,
+  sessionHistoryCount: (count: number) => `History · ${count} messages`,
+  sessionHistoryHint: 'Pull down to reveal it',
+  sessionOlder: 'Older',
+  sessionTranscriptOfflineTitle: 'Transcript unavailable offline',
+  sessionTranscriptOfflineBody:
+    'This session has not been opened on this iPhone yet: nothing is cached. The last exchange will arrive on reconnection.',
+  sessionTranscriptWaitingTitle: 'Transcript waiting for the Mac',
+  sessionTranscriptWaitingBody: "The Mac has not sent this session's transcript yet.",
+  sessionNothingTitle: 'Nothing to show',
+  sessionNothingBodyAgent: 'The last exchange will arrive as soon as the agent speaks.',
+  sessionNothingBodyNoAgent: 'This pane has no agent session.',
+  sessionFrozenSnapshot: 'Frozen snapshot',
+  sessionScreenUnavailableTitle: 'Screen unavailable',
+  sessionScreenUnavailableBody: 'The Mac is unreachable, the pane screen will arrive on reconnection.',
+  sessionScreenCapturingTitle: 'Capturing the screen…',
+  sessionScreenCapturingBody: 'The visible content of the pane shows here, refreshed every 2 seconds.',
+
+  // Lien profond vers un prompt
+  promptNotFoundTitle: 'Question not found',
+  promptNotFoundBody: (cause: string) =>
+    `It may already have been resolved on the Mac, or the reference has expired.\n\n${cause}`,
+
+  // Barre de validation et boutons d'option
+  validationUnavailable: 'Cannot answer, Mac unreachable',
+  validationRequired: 'Validation required',
+  validationAuthRequired: 'Authorization required',
+  validationAnswerInText: 'Answer in text',
+  validationRespondOtherwise: 'Respond differently',
+  validationAgo: (age: string) => `${age} ago`,
+  optionConfirmAlways: 'Confirm: do not ask again',
+  optionAccessibilityLabel: (index: number, label: string) => `Option ${index}, ${label}`,
+
+  // Composants UI partagés
+  errorNoMessage: 'Error without a message.',
+  crashTitle: 'The app crashed',
+  crashHint: 'Rendering threw an exception. Retry, and if the error comes back, the stack below says where.',
+  paletteBookmarked: 'bookmarked',
+  glyphWaiting: 'waiting',
+  glyphWorking: 'working',
+  glyphClosed: 'closed',
+  glyphIdle: 'idle',
+  linkPillAccessibilityLabel: (label: string) => `Link: ${label}`,
+} as const;

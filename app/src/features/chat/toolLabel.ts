@@ -1,7 +1,8 @@
 // Libellé d'une ligne d'action : verbe, cible, statistiques. Convention de l'app Claude
-// (docs/13-chat-lisibilite.md, point 3) : `Lit  app/src/boot.ts`, `Exécute  npm test`,
-// `Modifie  pair.tsx  +12 -3`. Fonction pure, sans React, testée sous Node.
+// (docs/13-chat-lisibilite.md, point 3) : `Reads  app/src/boot.ts`, `Runs  npm test`,
+// `Edits  pair.tsx  +12 -3`. Fonction pure, sans React, testée sous Node.
 import type { ToolUseBlock } from '@/protocol';
+import { t } from '@/i18n/en';
 
 export interface ToolLabel {
   /** Verbe court, à l'indicatif présent. Le nom brut de l'outil si on ne le connaît pas. */
@@ -13,21 +14,21 @@ export interface ToolLabel {
 }
 
 const VERBS: Record<string, string> = {
-  Read: 'Lit',
-  Write: 'Écrit',
-  Edit: 'Modifie',
-  MultiEdit: 'Modifie',
-  NotebookEdit: 'Modifie',
-  Bash: 'Exécute',
-  Grep: 'Cherche',
-  Glob: 'Cherche',
-  LS: 'Liste',
-  WebFetch: 'Consulte',
-  WebSearch: 'Recherche',
-  Task: 'Délègue',
-  Agent: 'Délègue',
-  TodoWrite: 'Planifie',
-  Skill: 'Applique',
+  Read: t.toolLabelRead,
+  Write: t.toolLabelWrite,
+  Edit: t.toolLabelEdit,
+  MultiEdit: t.toolLabelEdit,
+  NotebookEdit: t.toolLabelEdit,
+  Bash: t.toolLabelRun,
+  Grep: t.toolLabelSearch,
+  Glob: t.toolLabelSearch,
+  LS: t.toolLabelList,
+  WebFetch: t.toolLabelFetch,
+  WebSearch: t.toolLabelLookUp,
+  Task: t.toolLabelDelegate,
+  Agent: t.toolLabelDelegate,
+  TodoWrite: t.toolLabelPlan,
+  Skill: t.toolLabelApply,
 };
 
 /** Vrai pour les outils qui changent des fichiers : dépliés par défaut, Robin doit voir. */

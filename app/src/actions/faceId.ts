@@ -6,6 +6,7 @@
 // celle qu'on veut.
 import * as LocalAuthentication from 'expo-local-authentication';
 import type { OptionKind } from '@/protocol';
+import { t } from '@/i18n/en';
 
 /** Table unique pour toute l'application. Aucune autre règle Face ID n'existe. */
 export function optionRequiresFaceId(kind: OptionKind): boolean {
@@ -40,7 +41,7 @@ export async function confirmWithFaceId(promptMessage: string): Promise<boolean>
     }
     const res = await LocalAuthentication.authenticateAsync({
       promptMessage,
-      cancelLabel: 'Annuler',
+      cancelLabel: t.actionCancel,
       disableDeviceFallback: false,
     });
     return res.success;

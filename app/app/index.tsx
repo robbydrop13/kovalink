@@ -37,6 +37,7 @@ import { clockTime } from '@/utils/time';
 import { retryBoot, useBootError, useBootState } from '@/boot';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
 import { ErrorScreen } from '@/ui/ErrorScreen';
+import { t } from '@/i18n/en';
 
 export default function SessionsScreen() {
   const insets = useSafeAreaInsets();
@@ -136,9 +137,9 @@ export default function SessionsScreen() {
     setLaunching(true);
     try {
       const res = await postKovaLaunch();
-      setToast(res.alreadyUp ? 'Kova tournait déjà, mis au premier plan' : 'Kova se lance sur le Mac');
+      setToast(res.alreadyUp ? t.sessionsKovaAlreadyUp : t.sessionsKovaLaunching);
     } catch (e) {
-      setToast(`Lancement impossible. ${e instanceof Error ? e.message : String(e)}`);
+      setToast(t.sessionsKovaLaunchFailed(e instanceof Error ? e.message : String(e)));
     } finally {
       setLaunching(false);
     }
@@ -152,9 +153,9 @@ export default function SessionsScreen() {
   if (boot === 'failed') {
     return (
       <ErrorScreen
-        title="Démarrage impossible"
+        title={t.sessionsBootFailedTitle}
         error={bootError}
-        hint="Le stockage local n'a pas répondu. Réessaie, puis relance l'app si l'erreur persiste."
+        hint={t.sessionsBootFailedHint}
         onRetry={retryBoot}
       />
     );
@@ -172,14 +173,14 @@ export default function SessionsScreen() {
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
         <Txt variant="title1" color={colors.text.primary}>
-          Sessions
+          {t.sessionsTitle}
         </Txt>
         <View style={styles.grow} />
         <LinkPill onPress={() => router.push('/settings')} />
         {/* Le bloc C ne dépend pas de Kova : l'accès aux fichiers reste offert même quand
             la liste des sessions est vide parce que Kova est quitté (CA-123). */}
-        <LinkAction label="Fichiers" onPress={() => router.push('/files')} />
-        <LinkAction label="Réglages" onPress={() => router.push('/settings')} />
+        <LinkAction label={t.sessionsNavFiles} onPress={() => router.push('/files')} />
+        <LinkAction label={t.sessionsNavSettings} onPress={() => router.push('/settings')} />
       </View>
 
       {degraded ? (
@@ -187,16 +188,16 @@ export default function SessionsScreen() {
           tone={link === 'offline' ? 'offline' : 'warn'}
           text={
             link === 'offline'
-              ? `iPhone hors ligne, dernier état à ${clockTime(fetchedAt)}`
-              : `Mac endormi ou éteint, dernier état à ${clockTime(fetchedAt)}`
+              ? t.sessionsOfflineBanner(clockTime(fetchedAt))
+              : t.sessionsMacAsleepBanner(clockTime(fetchedAt))
           }
-          actionLabel="Réessayer"
+          actionLabel={t.actionRetry}
           onAction={forceReconnect}
         />
       ) : null}
 
       {!degraded && lastError ? (
-        <Banner tone="error" text={lastError} actionLabel="Réessayer" onAction={forceReconnect} />
+        <Banner tone="error" text={lastError} actionLabel={t.actionRetry} onAction={forceReconnect} />
       ) : null}
 
       {/* Bandeau discret et non bloquant : tout le reste de l'app fonctionne normalement. */}
@@ -206,7 +207,7 @@ export default function SessionsScreen() {
         <View style={styles.searchRow}>
           <TextInput
             style={styles.search}
-            placeholder="Onglet, projet ou titre de pane"
+            placeholder={t.sessionsSearchPlaceholder}
             placeholderTextColor={colors.text.tertiary}
             value={query}
             onChangeText={setQuery}
@@ -214,7 +215,7 @@ export default function SessionsScreen() {
             autoCapitalize="none"
             clearButtonMode="while-editing"
             keyboardAppearance="dark"
-            accessibilityLabel="Rechercher une session"
+            accessibilityLabel={t.sessionsSearchAccessibilityLabel}
           />
           {summary ? (
             <Txt variant="footnote" color={colors.status.awaiting} numberOfLines={1}>
@@ -236,26 +237,23 @@ export default function SessionsScreen() {
         {kovaDown ? (
           // État « Kova n'est pas lancé » du design 4.1. Aucun chemin de socket, aucun
           // message technique (CA-62). `Lancer Kova` appelle `POST /v1/kova/launch`.
-          <EmptyState title="Kova n’est pas lancé" body="Les fichiers du Mac restent accessibles.">
+          <EmptyState title={t.sessionsKovaDownTitle} body={t.sessionsKovaDownBody}>
             <Button
-              label={launching ? 'Lancement…' : 'Lancer Kova'}
+              label={launching ? t.sessionsLaunchingKova : t.sessionsLaunchKova}
               disabled={launching || degraded}
-              accessibilityHint="Ouvre l’application Kova sur le Mac"
+              accessibilityHint={t.sessionsLaunchKovaHint}
               onPress={() => void launchKova()}
             />
-            <Button label="Parcourir le Mac" kind="secondary" onPress={() => router.push('/files')} />
+            <Button label={t.sessionsBrowseMac} kind="secondary" onPress={() => router.push('/files')} />
           </EmptyState>
         ) : null}
 
         {!kovaDown && !loading && panes.length === 0 ? (
-          <EmptyState
-            title="Aucune session"
-            body="Ouvre un pane dans Kova, il apparaîtra ici."
-          />
+          <EmptyState title={t.sessionsEmptyTitle} body={t.sessionsEmptyBody} />
         ) : null}
 
         {!kovaDown && panes.length > 0 && shown.length === 0 ? (
-          <EmptyState title="Aucune session ne correspond" body="Essaie un autre mot : nom d’onglet, projet, titre de pane." />
+          <EmptyState title={t.sessionsNoMatchTitle} body={t.sessionsNoMatchBody} />
         ) : null}
 
         <View style={styles.groups}>
@@ -266,7 +264,7 @@ export default function SessionsScreen() {
               <View key={group.key} style={styles.groupSlot}>
                 {newWindow ? (
                   <Txt variant="caption" color={colors.text.tertiary} style={styles.windowLabel}>
-                    FENÊTRE {group.window + 1}
+                    {t.sessionsWindowLabel(group.window + 1)}
                   </Txt>
                 ) : null}
                 <TabGroupView
@@ -293,21 +291,21 @@ export default function SessionsScreen() {
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + space[3] }]}>
         <View style={styles.bottomButton}>
           <Button
-            label="Panes"
+            label={t.sessionsPanesButton}
             kind="secondary"
             height={layout.touchPrimary}
             disabled={kovaDown}
-            accessibilityHint="Palette de tous les panes, comme Cmd+P dans Kova"
+            accessibilityHint={t.sessionsPanesHint}
             onPress={() => router.push('/panes')}
           />
         </View>
         <View style={styles.bottomButton}>
           <Button
-            label="Projets"
+            label={t.sessionsProjectsButton}
             kind="secondary"
             height={layout.touchPrimary}
             disabled={degraded}
-            accessibilityHint="Palette des projets récents, comme Cmd+O dans Kova"
+            accessibilityHint={t.sessionsProjectsHint}
             onPress={() => router.push('/new-session')}
           />
         </View>

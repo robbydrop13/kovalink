@@ -35,7 +35,7 @@ function installForegroundHandler(): void {
     });
     handlerInstalled = true;
   } catch (error) {
-    bootWarn('gestionnaire de notifications', error);
+    bootWarn('notification handler', error);
   }
 }
 
@@ -46,7 +46,7 @@ export async function setupNotifications(): Promise<PushSetupResult> {
   if (!pushAvailable) {
     // Expo Go. On ne demande rien, on n'enregistre rien, on ne pose aucun badge. Le bandeau
     // de l'écran Sessions et des Réglages dit pourquoi.
-    bootLog('notifications ignorées, environnement sans push distant');
+    bootLog('notifications skipped, no remote push in this environment');
     return 'unavailable';
   }
 
@@ -57,7 +57,7 @@ export async function setupNotifications(): Promise<PushSetupResult> {
   try {
     await registerNotificationCategories();
   } catch (error) {
-    bootWarn('catégories de notification', error);
+    bootWarn('notification categories', error);
     return 'error';
   }
 
@@ -72,7 +72,7 @@ export async function setupNotifications(): Promise<PushSetupResult> {
     }
     if (status !== 'granted') return 'denied';
   } catch (error) {
-    bootWarn('autorisation de notification', error);
+    bootWarn('notification permission', error);
     return 'error';
   }
 
@@ -83,10 +83,10 @@ export async function setupNotifications(): Promise<PushSetupResult> {
       projectId ? { projectId: String(projectId) } : undefined,
     );
     setPushToken(token.data);
-    bootLog('jeton de push obtenu');
+    bootLog('push token obtained');
     return 'granted';
   } catch (error) {
-    bootWarn('jeton de push', error);
+    bootWarn('push token', error);
     return 'error';
   }
 }
@@ -112,7 +112,7 @@ export function subscribeToNotifications(): () => void {
       }),
     );
   } catch (error) {
-    bootWarn('écouteurs de notification', error);
+    bootWarn('notification listeners', error);
   }
 
   return () => {

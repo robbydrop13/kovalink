@@ -28,7 +28,7 @@ export class Sha256 {
   private finished = false;
 
   update(data: Uint8Array): this {
-    if (this.finished) throw new Error('empreinte déjà close');
+    if (this.finished) throw new Error('digest already finalized');
     let offset = 0;
     const len = data.length;
     this.total += len;
@@ -55,7 +55,7 @@ export class Sha256 {
 
   /** Empreinte hexadécimale en minuscules, 64 caractères. */
   digest(): string {
-    if (this.finished) throw new Error('empreinte déjà close');
+    if (this.finished) throw new Error('digest already finalized');
     this.finished = true;
     const bitLenHi = Math.floor(this.total / 0x20000000);
     const bitLenLo = (this.total << 3) >>> 0;

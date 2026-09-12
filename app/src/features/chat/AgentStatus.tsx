@@ -1,9 +1,10 @@
 // Bandeau d'état fixe de la session (docs/13-chat-lisibilite.md, point 1).
 //
-// Toujours visible, sous le sous-titre : `Travaille · 1 min 12 s` avec un glyphe qui pulse,
-// `Attend ta réponse`, `Terminé il y a 3 min`, `Hors ligne`. Robin doit savoir d'un coup
+// Toujours visible, sous le sous-titre : `Working · 1m 12s` avec un glyphe qui pulse,
+// `Waiting for you`, `Done 3 min ago`, `Offline`. Robin doit savoir d'un coup
 // d'oeil si le modèle travaille, sans chercher un indicateur de frappe en bas du fil.
 import { StyleSheet, View } from 'react-native';
+import { t } from '@/i18n/en';
 import { colors, layout, space } from '@/theme';
 import { StatusGlyph } from '@/ui/StatusGlyph';
 import { Txt } from '@/ui/Txt';
@@ -30,7 +31,7 @@ export function AgentStatus(props: AgentStatusInput) {
   return (
     <View
       accessibilityRole="header"
-      accessibilityLabel={`État de l’agent : ${label}`}
+      accessibilityLabel={t.statusA11y(label)}
       style={[styles.bar, { borderLeftColor: color }]}
     >
       <StatusGlyph state={glyph} size={10} />

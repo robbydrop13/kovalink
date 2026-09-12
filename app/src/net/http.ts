@@ -28,6 +28,7 @@ import {
   type Turn,
 } from '@/protocol';
 import { loadCredentials, type Credentials } from '@/store/credentials';
+import { t } from '@/i18n/en';
 
 export class HttpError extends Error {
   constructor(
@@ -55,7 +56,7 @@ interface RequestOptions {
 
 async function request<T>(path: string, o: RequestOptions = {}): Promise<T> {
   const creds = o.credentials !== undefined ? o.credentials : await loadCredentials();
-  if (!creds) throw new HttpError(401, 'UNAUTHORIZED', 'Appareil non appairé');
+  if (!creds) throw new HttpError(401, 'UNAUTHORIZED', t.httpNotPaired);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? 8000);
@@ -80,7 +81,7 @@ async function request<T>(path: string, o: RequestOptions = {}): Promise<T> {
       if (!res.ok) {
         throw new HttpError(res.status, 'INTERNAL', `HTTP ${res.status} ${text.slice(0, 200)}`);
       }
-      throw new HttpError(res.status, 'INTERNAL', `réponse illisible : ${text.slice(0, 200)}`);
+      throw new HttpError(res.status, 'INTERNAL', t.httpUnreadableBody(text.slice(0, 200)));
     }
     if (!res.ok) {
       const e = json as { code?: string; message?: string };
@@ -89,7 +90,7 @@ async function request<T>(path: string, o: RequestOptions = {}): Promise<T> {
       throw new HttpError(
         res.status,
         e.code ?? 'INTERNAL',
-        e.message ?? `HTTP ${res.status} sur ${path}`,
+        e.message ?? t.httpStatusOn(res.status, path),
       );
     }
     return json as T;

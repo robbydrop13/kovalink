@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react';
 import { Animated, StyleSheet, useWindowDimensions, View } from 'react-native';
 import type { ToolResultBlock, Turn } from '@/protocol';
+import { t } from '@/i18n/en';
 import { colors, layout, motion, radius, space } from '@/theme';
 import { imageCount, textOf } from '@/store/session';
 import { Txt } from '@/ui/Txt';
@@ -85,10 +86,10 @@ export function UserBubble({
             variant="footnote"
             color={colors.status.error}
             accessibilityRole="button"
-            accessibilityLabel="Échec, renvoyer"
+            accessibilityLabel={t.bubbleResendA11y}
             onPress={onRetry}
           >
-            {`${mark} renvoyer`}
+            {`${mark} ${t.bubbleResend}`}
           </Txt>
         ) : (
           <Txt variant="footnote" color={markColor}>
@@ -135,7 +136,7 @@ export function AssistantTurn({
         }
         return (
           <Txt key={i} variant="footnote" color={colors.text.tertiary} style={styles.thinking}>
-            Réfléchit
+            {t.bubbleThinking}
           </Txt>
         );
       })}
@@ -188,7 +189,7 @@ export function StreamDot() {
   }, [pulse]);
   return (
     <Animated.View
-      accessibilityLabel="l’agent écrit"
+      accessibilityLabel={t.bubbleStreamingA11y}
       style={[styles.streamDot, { opacity: pulse }]}
     />
   );

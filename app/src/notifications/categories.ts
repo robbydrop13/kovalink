@@ -14,8 +14,9 @@
 // pas redéclarée ici (R1). Elle existait en deux exemplaires, un par moitié du produit : une
 // catégorie ajoutée côté daemon (l'agrégat du plafond horaire, CA-32) manquait ici.
 import * as Notifications from 'expo-notifications';
-import { NOTIFICATION_CATEGORY_ACTIONS, type QuickAction } from '@/protocol';
+import { NOTIFICATION_ACTION, NOTIFICATION_CATEGORY_ACTIONS, type QuickAction } from '@/protocol';
 import { bootLog, bootWarn, pushAvailable } from '@/env';
+import { t } from '@/i18n/en';
 
 /**
  * Traduction d'une action du protocole vers `expo-notifications`.
@@ -30,12 +31,22 @@ import { bootLog, bootWarn, pushAvailable } from '@/env';
 function toAction(a: QuickAction): Notifications.NotificationAction {
   return {
     identifier: a.identifier,
-    buttonTitle: a.buttonTitle,
+    buttonTitle: buttonTitle(a),
     options: {
       opensAppToForeground: a.opensAppToForeground,
       isAuthenticationRequired: a.authenticationRequired,
     },
   };
+}
+
+/**
+ * Libellé visible du bouton. Les actions nommées (`Ouvrir`, `Interrompre`) passent par
+ * l'i18n de l'app ; les actions numérotées gardent leur chiffre, qui n'a pas de langue.
+ */
+function buttonTitle(a: QuickAction): string {
+  if (a.identifier === NOTIFICATION_ACTION.open) return t.notifActionOpen;
+  if (a.identifier === NOTIFICATION_ACTION.interrupt) return t.notifActionInterrupt;
+  return a.buttonTitle;
 }
 
 /**
@@ -66,10 +77,10 @@ export async function registerNotificationCategories(): Promise<void> {
       await Notifications.setNotificationCategoryAsync(entry.id, entry.actions);
       posed += 1;
     } catch (error) {
-      bootWarn(`catégorie ${entry.id}`, error);
+      bootWarn(`category ${entry.id}`, error);
     }
   }
-  bootLog(`catégories enregistrées : ${posed} sur ${CATALOG.length}`);
+  bootLog(`categories registered: ${posed} of ${CATALOG.length}`);
 }
 
 // Aucune catégorie ne porte d'action de saisie de texte libre, sur aucune surface (C26).

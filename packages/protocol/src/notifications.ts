@@ -87,13 +87,13 @@ export interface QuickAction {
 
 const OPEN: QuickAction = {
   identifier: NOTIFICATION_ACTION.open,
-  buttonTitle: 'Ouvrir',
+  buttonTitle: 'Open',
   opensAppToForeground: true,
   authenticationRequired: false,
 };
 const INTERRUPT: QuickAction = {
   identifier: NOTIFICATION_ACTION.interrupt,
-  buttonTitle: 'Interrompre',
+  buttonTitle: 'Interrupt',
   opensAppToForeground: false,
   authenticationRequired: false,
 };

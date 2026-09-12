@@ -5,6 +5,7 @@
 // sous Node.
 import type { Pane, Tab } from '@/protocol';
 import { fold } from '@/utils/search';
+import { t } from '@/i18n/en';
 
 export interface TabGroup {
   /** `w<window>-i<tab_index>` : la clé de jointure, stable d'un instantané à l'autre. */
@@ -25,7 +26,7 @@ export interface TabGroup {
 /** Nom d'un onglet dont `list-tabs` n'est pas encore arrivé : celui de son premier pane. */
 function fallbackTitle(panes: Pane[], tabIndex: number): string {
   const first = panes[0];
-  return first?.title || first?.projectName || `Onglet ${tabIndex + 1}`;
+  return first?.title || first?.projectName || t.tabFallbackTitle(tabIndex + 1);
 }
 
 const keyOf = (window: number, tabIndex: number): string => `w${window}-i${tabIndex}`;
@@ -125,13 +126,13 @@ export function filterGroups(groups: TabGroup[], query: string): TabGroup[] {
   return out;
 }
 
-/** Résumé d'un coup d'œil, tout en haut : « 1 en attente · 2 travaillent ». Vide sinon. */
+/** Résumé d'un coup d'œil, tout en haut : « 1 waiting · 2 working ». Vide sinon. */
 export function summaryLine(panes: Pane[]): string | null {
   const awaiting = panes.filter((p) => p.awaiting).length;
   const working = panes.filter((p) => !p.awaiting && p.working).length;
   const parts: string[] = [];
-  if (awaiting > 0) parts.push(`${awaiting} en attente`);
-  if (working > 0) parts.push(working === 1 ? '1 travaille' : `${working} travaillent`);
+  if (awaiting > 0) parts.push(t.summaryWaiting(awaiting));
+  if (working > 0) parts.push(t.summaryWorking(working));
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 

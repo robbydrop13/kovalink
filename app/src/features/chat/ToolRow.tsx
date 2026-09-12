@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import { Animated, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import type { ToolResultBlock, ToolUseBlock } from '@/protocol';
+import { t } from '@/i18n/en';
 import { colors, motion, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 import { isEditTool, toolLabel, toolRowState, type ToolRowState } from './toolLabel';
@@ -37,7 +38,7 @@ export function ToolRow({ call, result, working }: Props) {
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${label.verb} ${label.target}, ${STATE_LABEL[state]}`}
+        accessibilityLabel={t.toolRowA11y(label.verb, label.target, STATE_LABEL[state])}
         onPress={() => setOpen((v) => !v)}
         style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       >
@@ -55,7 +56,7 @@ export function ToolRow({ call, result, working }: Props) {
         ) : null}
         {state === 'failed' ? (
           <Txt variant="caption" color={colors.status.error}>
-            échec
+            {t.toolStateFailed}
           </Txt>
         ) : null}
       </Pressable>
@@ -70,12 +71,12 @@ export function ToolRow({ call, result, working }: Props) {
           </ScrollView>
           {hidden > 0 ? (
             <Txt variant="caption" color={colors.text.tertiary}>
-              {`${hidden} lignes supplémentaires, visibles sur le Mac`}
+              {t.toolRowMoreLines(hidden)}
             </Txt>
           ) : null}
           {result?.truncated ? (
             <Txt variant="caption" color={colors.text.tertiary}>
-              Résultat complet non récupérable, voir sur le Mac.
+              {t.toolRowTruncated}
             </Txt>
           ) : null}
         </View>
@@ -83,7 +84,7 @@ export function ToolRow({ call, result, working }: Props) {
       {open && body.length === 0 && state === 'done' ? (
         <View style={styles.body}>
           <Txt variant="caption" color={colors.text.tertiary}>
-            Aucune sortie.
+            {t.toolRowNoOutput}
           </Txt>
         </View>
       ) : null}
@@ -92,10 +93,10 @@ export function ToolRow({ call, result, working }: Props) {
 }
 
 const STATE_LABEL: Record<ToolRowState, string> = {
-  running: 'en cours',
-  done: 'terminé',
-  failed: 'échec',
-  unknown: 'sans résultat',
+  running: t.toolStateRunning,
+  done: t.toolStateDone,
+  failed: t.toolStateFailed,
+  unknown: t.toolStateUnknown,
 };
 
 /** Glyphe d'état, décodable par la forme et pas seulement la couleur (P4). */

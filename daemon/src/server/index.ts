@@ -154,10 +154,10 @@ export async function createHttpServer(
       const deviceId = (bearer ?? '').split('.')[0] ?? 'inconnu';
       services.authFailures.record(deviceId);
       audit({ action: 'auth', result: 'denied', detail: verdict.code });
-      return fail(reply, 401, verdict.code, 'authentification refusee');
+      return fail(reply, 401, verdict.code, 'authentication refused');
     }
     if (services.authFailures.blocked(verdict.deviceId)) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop d echecs d authentification');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many authentication failures');
     }
     services.authFailures.clear(verdict.deviceId);
     req.deviceId = verdict.deviceId;
@@ -177,17 +177,17 @@ export async function createHttpServer(
     const pairing = readPairing();
     if (!pairing) {
       audit({ action: 'pair.claim', result: 'denied', detail: 'no_active_code' });
-      return fail(reply, 403, 'UNAUTHORIZED', 'aucun appairage en cours');
+      return fail(reply, 403, 'UNAUTHORIZED', 'no pairing in progress');
     }
     // Usage unique : consomme immediatement, quoi qu'il arrive ensuite.
     consumePairing();
     if (typeof body.pairingCode !== 'string' || body.pairingCode.length !== pairing.code.length) {
       audit({ action: 'pair.claim', result: 'denied', detail: 'bad_code' });
-      return fail(reply, 403, 'UNAUTHORIZED', 'code d appairage invalide');
+      return fail(reply, 403, 'UNAUTHORIZED', 'invalid pairing code');
     }
     if (!timingSafeEqualStr(body.pairingCode, pairing.code)) {
       audit({ action: 'pair.claim', result: 'denied', detail: 'bad_code' });
-      return fail(reply, 403, 'UNAUTHORIZED', 'code d appairage invalide');
+      return fail(reply, 403, 'UNAUTHORIZED', 'invalid pairing code');
     }
 
     const { deviceId, exp, bearer } = mintToken(services.master);
@@ -226,7 +226,7 @@ export async function createHttpServer(
 
   app.get(ROUTE_PATTERNS.panes, async (req, reply) => {
     if (!services.rate.allow(req.deviceId ?? '', 'panes')) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many reads');
     }
     return {
       panes: services.panes.all(),
@@ -242,7 +242,7 @@ export async function createHttpServer(
    */
   app.get<{ Params: { promptRef: string } }>(ROUTE_PATTERNS.prompt, async (req, reply) => {
     if (!services.rate.allow(req.deviceId ?? '', 'prompt')) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures de prompt');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many prompt reads');
     }
     const entry = services.refs.resolve(req.params.promptRef);
     if (!entry) {
@@ -250,13 +250,13 @@ export async function createHttpServer(
       // banniere aveugle. Le compteur de l'onglet Diagnostic mesure ce chemin, pas une
       // estimation.
       audit({ deviceId: req.deviceId, action: 'prompt.fetch', result: 'denied', detail: 'ref_expiree' });
-      return fail(reply, 404, 'SESSION_NOT_FOUND', 'reference inconnue ou expiree');
+      return fail(reply, 404, 'SESSION_NOT_FOUND', 'unknown or expired reference');
     }
 
     const pane = services.panes.get(entry.paneId);
     if (!pane) {
       audit({ deviceId: req.deviceId, action: 'prompt.fetch', result: 'denied', detail: 'pane_ferme' });
-      return fail(reply, 404, 'PANE_NOT_FOUND', 'pane ferme');
+      return fail(reply, 404, 'PANE_NOT_FOUND', 'pane closed');
     }
     audit({ deviceId: req.deviceId, action: 'prompt.fetch', paneId: pane.id, result: 'ok' });
 
@@ -296,11 +296,11 @@ export async function createHttpServer(
     async (req, reply) => {
       const deviceId = req.deviceId ?? '';
       if (!services.rate.allow(deviceId, 'interrupt')) {
-        return fail(reply, 429, 'RATE_LIMITED', 'trop d interruptions');
+        return fail(reply, 429, 'RATE_LIMITED', 'too many interrupts');
       }
       const nonce = req.body?.nonce;
       if (typeof nonce !== 'string' || nonce.length === 0) {
-        return fail(reply, 400, 'BAD_REQUEST', 'nonce requis');
+        return fail(reply, 400, 'BAD_REQUEST', 'nonce required');
       }
       if (!services.nonces.reserve(nonce)) return { applied: false, reason: 'duplicate' };
       try {
@@ -373,11 +373,11 @@ export async function createHttpServer(
     async (req, reply) => {
       const deviceId = req.deviceId ?? '';
       if (!services.rate.allow(deviceId, 'text')) {
-        return fail(reply, 429, 'RATE_LIMITED', 'trop d envois');
+        return fail(reply, 429, 'RATE_LIMITED', 'too many sends');
       }
       const { text, nonce } = req.body ?? {};
       if (typeof text !== 'string' || typeof nonce !== 'string') {
-        return fail(reply, 400, 'BAD_REQUEST', 'text et nonce requis');
+        return fail(reply, 400, 'BAD_REQUEST', 'text and nonce required');
       }
       if (!services.nonces.reserve(nonce)) return { applied: false, reason: 'duplicate' };
       try {
@@ -407,7 +407,7 @@ export async function createHttpServer(
   }>(ROUTE_PATTERNS.paneAnswer, async (req, reply) => {
     const deviceId = req.deviceId ?? '';
     if (!services.rate.allow(deviceId, 'answer')) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop de reponses');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many answers');
     }
     const { optionIndex, promptHash, awaitingSince, nonce } = req.body ?? {};
     if (
@@ -418,7 +418,7 @@ export async function createHttpServer(
       typeof nonce !== 'string' ||
       nonce.length === 0
     ) {
-      return fail(reply, 400, 'BAD_REQUEST', 'optionIndex, promptHash, awaitingSince et nonce requis');
+      return fail(reply, 400, 'BAD_REQUEST', 'optionIndex, promptHash, awaitingSince and nonce required');
     }
     try {
       const res = await services.answer(
@@ -443,10 +443,10 @@ export async function createHttpServer(
   /** Repli monospace (~30 lignes), lot 1. Pas de xterm.js, pas de flux d'octets. */
   app.get<{ Params: { paneId: string } }>(ROUTE_PATTERNS.paneScreen, async (req, reply) => {
     if (!services.rate.allow(req.deviceId ?? '', 'screen')) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures d ecran');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many screen reads');
     }
     const screen = await services.prompts.screen(Number(req.params.paneId));
-    if (!screen) return fail(reply, 404, 'PANE_NOT_FOUND', 'pane inconnu');
+    if (!screen) return fail(reply, 404, 'PANE_NOT_FOUND', 'unknown pane');
     return screen;
   });
 
@@ -460,14 +460,14 @@ export async function createHttpServer(
     ROUTE_PATTERNS.sessionTurns,
     async (req, reply) => {
       if (!services.rate.allow(req.deviceId ?? '', 'turns')) {
-        return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures');
+        return fail(reply, 429, 'RATE_LIMITED', 'too many reads');
       }
       // Une session fermee se lit aussi (design 4.11, lecture seule) : son `cwd` vient
       // de l'index des transcripts, pas d'un pane.
       const pane = services.panes.findBySession(req.params.sessionId);
       const closed = pane ? null : findSession(req.params.sessionId, services.panes.all(), services.panes.allTabs());
       const cwd = pane?.cwd ?? closed?.cwd;
-      if (!cwd) return fail(reply, 404, 'SESSION_NOT_FOUND', 'session inconnue');
+      if (!cwd) return fail(reply, 404, 'SESSION_NOT_FOUND', 'unknown session');
 
       const num = (raw: string | undefined): number | null => {
         if (raw === undefined || raw === '') return null;
@@ -518,7 +518,7 @@ export async function createHttpServer(
   app.post(ROUTE_PATTERNS.kovaLaunch, async (req, reply) => {
     const deviceId = req.deviceId ?? '';
     if (!services.rate.allow(deviceId, 'launch')) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop de lancements');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many launches');
     }
     const alreadyUp = services.ipc.state === 'up';
     try {
@@ -527,7 +527,7 @@ export async function createHttpServer(
       });
     } catch (e) {
       audit({ deviceId, action: 'kova.launch', result: 'error', detail: (e as Error).message });
-      return fail(reply, 500, 'INTERNAL', `open -a Kova a echoue : ${(e as Error).message}`);
+      return fail(reply, 500, 'INTERNAL', `open -a Kova failed: ${(e as Error).message}`);
     }
     audit({ deviceId, action: 'kova.launch', result: 'ok', detail: alreadyUp ? 'deja lance' : 'lance' });
     logger.info('kova lance depuis l app', { deviceId, alreadyUp });
@@ -544,7 +544,7 @@ export async function createHttpServer(
    */
   app.get(ROUTE_PATTERNS.kovaRecentProjects, async (req, reply) => {
     if (!services.rate.allow(req.deviceId ?? '', 'panes')) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many reads');
     }
     const res: KovaRecentProjectsResponse = { projects: listRecentProjects() };
     return res;
@@ -553,14 +553,14 @@ export async function createHttpServer(
   app.post<{ Body: Partial<KovaNewTabRequest> }>(ROUTE_PATTERNS.kovaNewTab, async (req, reply) => {
     const deviceId = req.deviceId ?? '';
     if (!services.rate.allow(deviceId, 'launch')) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop de lancements');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many launches');
     }
     const body = req.body ?? {};
     const index = typeof body.recentProjectIndex === 'number' ? body.recentProjectIndex : -1;
     const cwd = typeof body.path === 'string' ? resolveRecentProject(index, body.path) : null;
     if (cwd === null) {
       audit({ deviceId, action: 'kova.newTab', result: 'denied', detail: `index=${index}` });
-      return fail(reply, 400, 'BAD_REQUEST', 'projet recent inconnu, la liste a peut-etre change');
+      return fail(reply, 400, 'BAD_REQUEST', 'unknown recent project, the list may have changed');
     }
     let data: { tab_id?: unknown; pane_id?: unknown };
     try {
@@ -570,7 +570,7 @@ export async function createHttpServer(
     } catch (e) {
       audit({ deviceId, action: 'kova.newTab', path: cwd, result: 'error', detail: (e as Error).message });
       const code: ErrorCode = e instanceof IpcError ? e.code : 'KOVA_DOWN';
-      return fail(reply, 502, code, `new-tab a echoue : ${(e as Error).message}`);
+      return fail(reply, 502, code, `new-tab failed: ${(e as Error).message}`);
     }
     const tabId = typeof data.tab_id === 'number' ? data.tab_id : -1;
     const paneId = typeof data.pane_id === 'number' ? data.pane_id : -1;
@@ -587,7 +587,7 @@ export async function createHttpServer(
    */
   app.get(ROUTE_PATTERNS.kovaSessions, async (req, reply) => {
     if (!services.rate.allow(req.deviceId ?? '', 'panes')) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop de lectures');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many reads');
     }
     const res: KovaSessionsResponse = { sessions: listSessions(services.panes.all(), services.panes.allTabs()) };
     return res;
@@ -601,7 +601,7 @@ export async function createHttpServer(
   app.post<{ Body: Partial<KovaResumeRequest> }>(ROUTE_PATTERNS.kovaResume, async (req, reply) => {
     const deviceId = req.deviceId ?? '';
     if (!services.rate.allow(deviceId, 'launch')) {
-      return fail(reply, 429, 'RATE_LIMITED', 'trop de lancements');
+      return fail(reply, 429, 'RATE_LIMITED', 'too many launches');
     }
     const out = await resumeSession(services, req.body?.sessionId, deviceId);
     if (!out.ok) return fail(reply, out.status, out.code, out.message);

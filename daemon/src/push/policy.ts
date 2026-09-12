@@ -200,7 +200,7 @@ export class PushNotifier {
   }
 
   private whatChanged(pane: Pane | undefined, ref: string | null): string | null {
-    if (!pane) return 'pane ferme';
+    if (!pane) return 'pane closed';
     if (pane.working) return 'l agent est reparti';
     if (ref && !this.ports.isRefValid(ref)) return 'reference invalidee';
     return null;

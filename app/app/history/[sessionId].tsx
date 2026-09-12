@@ -16,6 +16,7 @@ import { resumeSession } from '@/features/sessions/resume';
 import { fetchTurns } from '@/net/http';
 import { merge, toolCallIds } from '@/store/session';
 import { truncatePath } from '@/utils/time';
+import { t } from '@/i18n/en';
 
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
@@ -36,14 +37,14 @@ export default function HistoryScreen() {
       void Promise.resolve().then(() => setLoading(true));
       void request.then(
         (page) => {
-          setTurns((t) => merge(t ?? [], page.turns, []));
+          setTurns((prev) => merge(prev ?? [], page.turns, []));
           setHasMore(page.hasMoreBefore);
           setError(null);
           setLoading(false);
         },
         (e: unknown) => {
-          setError(`Transcript indisponible. ${e instanceof Error ? e.message : String(e)}`);
-          setTurns((t) => t ?? []);
+          setError(t.historyUnavailable(e instanceof Error ? e.message : String(e)));
+          setTurns((prev) => prev ?? []);
           setLoading(false);
         },
       );
@@ -87,15 +88,15 @@ export default function HistoryScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
-        <LinkAction label="< Retour" onPress={() => router.back()} />
+        <LinkAction label={t.historyBack} onPress={() => router.back()} />
         <View style={styles.grow} />
         <Txt variant="caption" color={colors.text.tertiary}>
-          lecture seule
+          {t.historyReadOnly}
         </Txt>
       </View>
       <View style={styles.subtitle}>
         <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1}>
-          {params.title ?? 'Session fermée'}
+          {params.title ?? t.historyClosedSession}
         </Txt>
         {params.cwd ? (
           <Txt variant="monoPath" color={colors.text.tertiary} numberOfLines={1}>
@@ -103,16 +104,16 @@ export default function HistoryScreen() {
           </Txt>
         ) : null}
       </View>
-      {error ? <Banner tone="error" text={error} actionLabel="Réessayer" onAction={() => load()} /> : null}
+      {error ? <Banner tone="error" text={error} actionLabel={t.actionRetry} onAction={() => load()} /> : null}
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: space[8] }]}>
         {turns === null ? <SkeletonList count={4} height={72} /> : null}
         {turns !== null && turns.length === 0 && !error ? (
-          <EmptyState title="Transcript vide" body="Cette session n’a aucun échange lisible." />
+          <EmptyState title={t.historyEmptyTitle} body={t.historyEmptyBody} />
         ) : null}
         {hasMore && first ? (
           <View style={styles.more}>
-            <LinkAction label={loading ? 'Chargement…' : 'Charger plus ancien'} disabled={loading} onPress={() => load(first.seq)} />
+            <LinkAction label={loading ? t.actionLoading : t.actionLoadOlder} disabled={loading} onPress={() => load(first.seq)} />
           </View>
         ) : null}
         <View style={styles.turns}>
@@ -126,9 +127,9 @@ export default function HistoryScreen() {
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + space[3] }]}>
         <Button
-          label={resuming ? 'Reprise…' : 'Reprendre cette session'}
+          label={resuming ? t.historyResuming : t.historyResume}
           disabled={resuming}
-          accessibilityHint="Lance Claude sur le Mac dans un nouvel onglet, avec l’historique de cette session"
+          accessibilityHint={t.historyResumeHint}
           onPress={() => void resume()}
         />
       </View>

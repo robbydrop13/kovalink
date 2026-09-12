@@ -22,19 +22,19 @@ export function formatDuration(ms: number): string {
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
-  if (h > 0) return `${h} h ${String(m).padStart(2, '0')} min`;
-  if (m > 0) return `${m} min ${String(s).padStart(2, '0')} s`;
-  return `${s} s`;
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`;
+  return `${s}s`;
 }
 
 /**
- * Sous-titre de la banniere de fin de tour (PRD 4.2 : `4 min 12 s, 11 outils`).
+ * Sous-titre de la banniere de fin de tour (PRD 4.2 : `4m 12s, 11 tools`), en anglais.
  * Aucun contenu de conversation n'y figure, seulement des compteurs.
  */
 export function formatTurnEndSubtitle(durationMs: number | null, toolCount: number): string {
   const parts: string[] = [];
   if (durationMs !== null && durationMs > 0) parts.push(formatDuration(durationMs));
-  parts.push(toolCount === 1 ? '1 outil' : `${toolCount} outils`);
+  parts.push(toolCount === 1 ? '1 tool' : `${toolCount} tools`);
   return parts.join(', ');
 }
 

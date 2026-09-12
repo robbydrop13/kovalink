@@ -67,7 +67,7 @@ export function buildPayload(
   return {
     to: expoPushToken,
     title: `${pane.title ?? pane.agent ?? 'session'} . ${pane.projectName}`,
-    body: prompt.state === 'turn_end' ? 'Le tour est termine' : 'Validation requise',
+    body: prompt.state === 'turn_end' ? 'Turn finished' : 'Validation required',
     sound: passive ? null : 'default',
     priority: passive ? 'normal' : prompt.state === 'turn_end' ? 'normal' : 'high',
     interruptionLevel: passive ? 'passive' : 'active',
@@ -110,7 +110,7 @@ function buildAggregatePayload(
   return {
     to: expoPushToken,
     title: 'KovaLink',
-    body: waiting === 1 ? '1 agent attend' : `${waiting} agents attendent`,
+    body: waiting === 1 ? '1 agent is waiting' : `${waiting} agents are waiting`,
     sound: passive ? null : 'default',
     priority: 'normal',
     interruptionLevel: passive ? 'passive' : 'active',

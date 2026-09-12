@@ -29,6 +29,6 @@ describe('followPane', () => {
   it('liaison coupée : la session s’ouvre quand même et le toast le dit', () => {
     const res = followPane(3, true, () => false);
     assert.equal(res, 'unreachable');
-    assert.match(followNotice(res) ?? '', /Mac injoignable/);
+    assert.match(followNotice(res) ?? '', /Mac unreachable/);
   });
 });

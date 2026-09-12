@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { isBypassMode, type Pane, type PermissionMode } from '@/protocol';
 import { colors, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
+import { t } from '@/i18n/en';
 
 function TabColorDot({ index }: { index: number | null | undefined }) {
   const tint =
@@ -13,7 +14,7 @@ function TabColorDot({ index }: { index: number | null | undefined }) {
 }
 
 /** Texte explicatif du PRD (CA-07), affiché ET lu tel quel. */
-const BYPASS_EXPLANATION = 'aucune validation ne te sera demandée';
+const BYPASS_EXPLANATION = t.paneBypassExplanation;
 
 /** La règle vit dans le protocole (`isBypassMode`) : `bypassPermissions`, et `auto` qui porte le même sens. */
 function isBypass(mode: PermissionMode | null | undefined): boolean {
@@ -22,7 +23,7 @@ function isBypass(mode: PermissionMode | null | undefined): boolean {
 
 /** Ce que VoiceOver doit ajouter au libellé d'une ligne ou d'une carte pour un pane en bypass. */
 export function bypassAccessibilitySuffix(mode: PermissionMode | null | undefined): string {
-  return isBypass(mode) ? `, bypass, ${BYPASS_EXPLANATION}` : '';
+  return isBypass(mode) ? t.paneBypassAccessibilitySuffix(BYPASS_EXPLANATION) : '';
 }
 
 /**
@@ -32,9 +33,9 @@ export function bypassAccessibilitySuffix(mode: PermissionMode | null | undefine
 function PermissionBadge({ mode }: { mode: PermissionMode | null }) {
   if (!isBypass(mode)) return null;
   return (
-    <View accessible accessibilityLabel={`bypass, ${BYPASS_EXPLANATION}`} style={styles.badge}>
+    <View accessible accessibilityLabel={t.paneBypassAccessibilityLabel(BYPASS_EXPLANATION)} style={styles.badge}>
       <Txt variant="caption" color={colors.text.secondary}>
-        bypass
+        {t.paneBypassBadge}
       </Txt>
     </View>
   );
@@ -58,7 +59,7 @@ export function PaneTitle({ pane }: { pane: Pane }) {
     <View style={styles.row}>
       <TabColorDot index={pane.color ?? null} />
       <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.title}>
-        {pane.projectName} · {pane.title ?? pane.agent ?? 'pane'}
+        {pane.projectName} · {pane.title ?? pane.agent ?? t.paneFallbackTitle}
       </Txt>
       <PermissionBadge mode={pane.permissionMode} />
     </View>

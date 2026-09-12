@@ -1,10 +1,11 @@
 // Transferts en cours, affichés là où ils ont été lancés.
 //
-// Une coupure réseau donne `en pause, reprise automatique`, JAMAIS `échec` : c'est la
+// Une coupure réseau donne `paused, resuming automatically`, JAMAIS `failed` : c'est la
 // différence entre un utilisateur qui attend et un utilisateur qui recommence tout
 // (design 4.7). L'échec définitif n'apparaît qu'après 3 tentatives, ou tout de suite
 // quand le refus est définitif, et il porte alors la phrase exacte du daemon.
 import { StyleSheet, View } from 'react-native';
+import { t } from '@/i18n/en';
 import { colors, radius, space } from '@/theme';
 import { Button, LinkAction } from '@/ui/Button';
 import { Txt } from '@/ui/Txt';
@@ -45,25 +46,25 @@ function TransferRow({ transfer }: { transfer: Transfer }) {
       </View>
 
       <Txt variant="caption" color={colors.text.tertiary} numberOfLines={1}>
-        vers {transfer.destLabel}
+        {t.transferTo(transfer.destLabel)}
       </Txt>
 
       {transfer.state === 'awaiting-choice' ? (
         <View style={styles.choice}>
           {/* A4 : au delà de 100 Mo en cellulaire, le transfert ne part JAMAIS tout seul. */}
           <Txt variant="footnote" color={colors.text.secondary}>
-            Fichier de {humanSize(transfer.size)} en données cellulaires.
+            {t.transferCellularBody(humanSize(transfer.size))}
           </Txt>
           <Button
-            label="Envoyer maintenant"
+            label={t.transferSendNow}
             onPress={() => resolveChoice(transfer.id, 'now')}
           />
           <Button
-            label="Attendre le Wi-Fi"
+            label={t.transferWaitWifi}
             kind="secondary"
             onPress={() => resolveChoice(transfer.id, 'wifi')}
           />
-          <LinkAction label="Annuler" onPress={() => cancel(transfer.id)} />
+          <LinkAction label={t.actionCancel} onPress={() => cancel(transfer.id)} />
         </View>
       ) : (
         <>
@@ -83,10 +84,10 @@ function TransferRow({ transfer }: { transfer: Transfer }) {
             </Txt>
             <View style={styles.grow} />
             {transfer.state === 'done' || transfer.state === 'failed' ? (
-              <LinkAction label="Masquer" onPress={() => remove(transfer.id)} />
+              <LinkAction label={t.actionDismiss} onPress={() => remove(transfer.id)} />
             ) : (
               <LinkAction
-                label="Annuler"
+                label={t.actionCancel}
                 color={colors.action.interrupt.text}
                 onPress={() => cancel(transfer.id)}
               />
@@ -104,29 +105,29 @@ function TransferRow({ transfer }: { transfer: Transfer }) {
 
       {transfer.renamed && transfer.finalName ? (
         <Txt variant="caption" color={colors.status.awaiting}>
-          renommé en {transfer.finalName}, l’original n’a pas été touché
+          {t.transferRenamed(transfer.finalName)}
         </Txt>
       ) : null}
     </View>
   );
 }
 
-function statusLabel(t: Transfer): string {
-  switch (t.state) {
+function statusLabel(tr: Transfer): string {
+  switch (tr.state) {
     case 'queued':
-      return 'en file';
+      return t.transferStatusQueued;
     case 'waiting-wifi':
-      return 'en attente du Wi-Fi';
+      return t.transferStatusWaitingWifi;
     case 'running':
-      if (t.phase === 'hashing') return 'Empreinte SHA-256…';
-      return `${Math.round(progressOf(t) * 100)} % · ${humanSize(t.sentBytes)}`;
+      if (tr.phase === 'hashing') return t.transferStatusHashing;
+      return t.transferStatusProgress(Math.round(progressOf(tr) * 100), humanSize(tr.sentBytes));
     case 'paused':
-      // Jamais « échec » : la reprise est automatique, et le dire évite un geste inutile.
-      return `en pause, reprise automatique (tentative ${t.attempts + 1})`;
+      // Jamais « failed » : la reprise est automatique, et le dire évite un geste inutile.
+      return t.transferStatusPaused(tr.attempts + 1);
     case 'done':
-      return 'envoyé sur le Mac';
+      return t.transferStatusDone;
     case 'failed':
-      return 'échec';
+      return t.transferStatusFailed;
     default:
       return '';
   }

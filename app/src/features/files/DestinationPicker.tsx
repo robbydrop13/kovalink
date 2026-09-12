@@ -5,10 +5,11 @@
 // puis les dossiers système. Le pane focalisé en tête, c'est littéralement le
 // « directement dans le bon dossier » demandé par Robin.
 //
-// La première ligne est PRÉ-SÉLECTIONNÉE : un seul tap sur `Envoyer` doit suffire.
+// La première ligne est PRÉ-SÉLECTIONNÉE : un seul tap sur `Send` doit suffire.
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import type { QuickDest } from '@/protocol';
+import { t } from '@/i18n/en';
 import { colors, radius, space } from '@/theme';
 import { Banner, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
@@ -23,7 +24,7 @@ export interface DestOption {
   writable: boolean;
 }
 
-/** Six lignes au maximum, le reste passe par `Choisir un autre dossier…` (PRD S7). */
+/** Six lignes au maximum, le reste passe par `Choose another folder…` (PRD S7). */
 const DEST_LIST_MAX = 6;
 
 function mergeDestinations(recents: RecentDest[], quick: QuickDest[]): DestOption[] {
@@ -40,7 +41,7 @@ function mergeDestinations(recents: RecentDest[], quick: QuickDest[]): DestOptio
     push({
       path: r.path,
       label: r.label,
-      badge: 'dernier envoi',
+      badge: t.destLastSent,
       // Une destination récente peut être devenue non inscriptible entre deux usages :
       // on croit le daemon, pas l'historique local.
       writable: known ? known.writable : true,
@@ -140,8 +141,8 @@ export function DestinationPicker({
     return (
       <Banner
         tone="error"
-        text={`Destinations indisponibles : ${error}`}
-        {...(onRetry ? { actionLabel: 'Réessayer', onAction: onRetry } : {})}
+        text={t.destUnavailable(error)}
+        {...(onRetry ? { actionLabel: t.actionRetry, onAction: onRetry } : {})}
       />
     );
   }
@@ -150,8 +151,8 @@ export function DestinationPicker({
     return (
       <Banner
         tone="warn"
-        text="Aucune destination proposée. Ouvre un pane dans Kova, ou choisis un dossier à la main."
-        {...(onBrowse ? { actionLabel: 'Parcourir', onAction: onBrowse } : {})}
+        text={t.destNone}
+        {...(onBrowse ? { actionLabel: t.destBrowse, onAction: onBrowse } : {})}
       />
     );
   }
@@ -165,7 +166,7 @@ export function DestinationPicker({
             key={o.path}
             accessibilityRole="radio"
             accessibilityState={{ selected: active, disabled: !o.writable }}
-            accessibilityLabel={`${o.label}, ${o.badge}`}
+            accessibilityLabel={t.destA11y(o.label, o.badge)}
             disabled={!o.writable}
             onPress={() => onSelect(o)}
             style={({ pressed }) => [
@@ -186,7 +187,7 @@ export function DestinationPicker({
               {/* Un dossier de la liste noire reste VISIBLE et barré : « pourquoi il n'est
                   pas là » est une question plus coûteuse que « pourquoi il est grisé ». */}
               <Txt variant="caption" color={colors.text.tertiary} numberOfLines={1}>
-                {o.writable ? o.badge : 'écriture refusée sur ce chemin'}
+                {o.writable ? o.badge : t.destWriteRefused}
               </Txt>
             </View>
           </Pressable>
@@ -196,12 +197,12 @@ export function DestinationPicker({
       {onBrowse ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Choisir un autre dossier"
+          accessibilityLabel={t.destChooseOtherA11y}
           onPress={onBrowse}
           style={({ pressed }) => [styles.browse, pressed && styles.pressed]}
         >
           <Txt variant="callout" color={colors.accent.primary}>
-            Choisir un autre dossier…
+            {t.destChooseOther}
           </Txt>
         </Pressable>
       ) : null}

@@ -1,16 +1,16 @@
 // Mise en forme propre à l'écran Fichiers. Aucune de ces fonctions ne décide quoi que ce
 // soit : elles habillent des valeurs que le daemon a déjà tranchées.
 import type { FsEntry } from '@/protocol';
+import { t } from '@/i18n/en';
 
 /**
- * Taille lisible. Base 1000 et unités françaises (`Ko`, `Mo`, `Go`), comme le Finder :
- * afficher `1,0 Kio` pour un fichier que macOS annonce à `1 Ko` ferait douter Robin de
- * ce qu'il regarde.
+ * Taille lisible. Base 1000 et unités du Finder (`KB`, `MB`, `GB`) : afficher `1.0 KiB`
+ * pour un fichier que macOS annonce à `1 KB` ferait douter Robin de ce qu'il regarde.
  */
 export function humanSize(bytes: number | null): string {
   if (bytes === null) return '--';
-  if (bytes < 1000) return `${bytes} o`;
-  const units = ['Ko', 'Mo', 'Go', 'To'];
+  if (bytes < 1000) return t.filesSizeBytes(bytes);
+  const units = t.filesSizeUnits;
   let value = bytes / 1000;
   let i = 0;
   while (value >= 1000 && i < units.length - 1) {
@@ -18,7 +18,7 @@ export function humanSize(bytes: number | null): string {
     i += 1;
   }
   const shown = value >= 100 ? value.toFixed(0) : value.toFixed(1);
-  return `${shown.replace('.', ',')} ${units[i]}`;
+  return t.filesSize(shown, units[i] ?? '');
 }
 
 /** `~` remplace le dossier personnel. Affichage seulement, jamais une comparaison. */
@@ -62,16 +62,16 @@ export function truncateMiddle(name: string, max = 30): string {
 /** Date courte, telle que le Finder l'affiche : heure aujourd'hui, date au delà. */
 export function shortDate(iso: string | null, now = Date.now()): string {
   if (!iso) return '';
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return '';
-  const d = new Date(t);
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return '';
+  const d = new Date(ts);
   const sameDay = new Date(now).toDateString() === d.toDateString();
   if (sameDay) {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
-  const days = Math.floor((now - t) / 86_400_000);
-  if (days < 7) return `${days} j`;
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  const days = Math.floor((now - ts) / 86_400_000);
+  if (days < 7) return t.filesDaysAgo(days);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
 export type PreviewKind = 'image' | 'pdf' | 'text' | 'markdown' | 'none';

@@ -57,7 +57,7 @@ const turnEnd: Prompt = {
   sessionId: 'sess-42',
   endedAt: '2026-09-11T10:00:00.000Z',
   summary: 'Tout passe.',
-  subtitle: '4 min 12 s, 11 outils',
+  subtitle: '4m 12s, 11 tools',
   toolCount: 11,
   durationMs: 252_000,
   promptRef: 'ref-1',
@@ -184,7 +184,7 @@ describe('plafond horaire (PRD 4.4, CA-32)', () => {
     const m = messages[0];
     assert.equal(m?.categoryId, NOTIFICATION_CATEGORY.AGGREGATE);
     assert.equal(m?.collapseId, 'aggregate');
-    assert.equal(m?.body, '1 agent attend');
+    assert.equal(m?.body, '1 agent is waiting');
     assert.equal(m?.data.kind, 'aggregate');
     assert.deepEqual(
       NOTIFICATION_CATEGORY_ACTIONS[NOTIFICATION_CATEGORY.AGGREGATE].map((a) => a.identifier),

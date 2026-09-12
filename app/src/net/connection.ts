@@ -19,6 +19,7 @@ import { useScreens } from '@/store/screen';
 import { usePrefs, type Prefs } from '@/store/prefs';
 import { flushOutbox } from '@/actions/outboxRunner';
 import { bootLog, bootWarn } from '@/env';
+import { t } from '@/i18n/en';
 
 let socket: Socket | null = null;
 let deviceId: string | null = null;
@@ -97,11 +98,11 @@ function handle(msg: S2C): void {
       // Le message du daemon est TOUJOURS conservé : il porte la cause. Le remplacer par
       // un libellé fixe (« Transcript illisible ») masquait aussi bien un fichier absent
       // qu'un refus d'accès ou un pane fermé.
-      bootWarn(`message d’erreur du daemon (${msg.code})`, msg.message);
+      bootWarn(`daemon error message (${msg.code})`, msg.message);
       if (msg.code === 'KOVA_DOWN') conn.setKova('down');
       else if (msg.code === 'SESSION_NOT_FOUND' || msg.code === 'IO_ERROR') {
-        useSession.getState().fail(`${msg.code} : ${msg.message}`);
-      } else conn.setError(`${msg.code} : ${msg.message}`);
+        useSession.getState().fail(t.linkDaemonError(msg.code, msg.message));
+      } else conn.setError(t.linkDaemonError(msg.code, msg.message));
       break;
     default:
       // Message inconnu : ignoré silencieusement, jamais une erreur bloquante (C12).
@@ -122,7 +123,7 @@ export async function startConnection(): Promise<void> {
   if (socket) return;
   const creds = await loadCredentials();
   if (!creds) {
-    bootLog('connexion ignorée, aucun appairage');
+    bootLog('connection skipped, not paired');
     return;
   }
   deviceId = creds.deviceId;
@@ -149,7 +150,7 @@ export async function startConnection(): Promise<void> {
       void (async () => {
         const state = useConnection.getState();
         if (!(await online())) state.setLink('offline');
-        else if (reason === 'auth') state.setError('Appairage refusé, ré-appaire depuis les Réglages.');
+        else if (reason === 'auth') state.setError(t.linkPairingRefused);
         else state.setLink('macUnreachable');
       })();
     },
@@ -158,9 +159,9 @@ export async function startConnection(): Promise<void> {
   // s'afficher : la pastille de liaison dira `Mac injoignable`, et le cache reste lisible.
   try {
     socket.connect();
-    bootLog('connexion lancée', `wss://${creds.tsDns}:${creds.port}/ws`);
+    bootLog('connection started', `wss://${creds.tsDns}:${creds.port}/ws`);
   } catch (error) {
-    bootWarn('ouverture du WebSocket', error);
+    bootWarn('WebSocket open', error);
     useConnection.getState().setLink('macUnreachable');
   }
 
@@ -174,7 +175,7 @@ export async function startConnection(): Promise<void> {
       }
     });
   } catch (error) {
-    bootWarn('écoute du réseau', error);
+    bootWarn('network listener', error);
   }
 
   appSub = AppState.addEventListener('change', (status: AppStateStatus) => {

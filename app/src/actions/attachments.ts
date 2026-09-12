@@ -5,6 +5,7 @@
 // de 4 Mo, la même reprise, la même vérification d'empreinte au `complete`. Ce module se
 // contente d'enchaîner les pièces dans l'ordre et de rendre leurs chemins sur le Mac.
 import { attachmentName } from '@/protocol';
+import { t } from '@/i18n/en';
 import { isFinalCode, queueUpload, useTransfers, waitForTransfer } from '@/store/transfers';
 import type { Attachment } from '@/features/chat/attachments';
 
@@ -15,7 +16,7 @@ export class AttachmentError extends Error {
     message: string,
     readonly code: string | null,
   ) {
-    super(`${attachment.name} : ${message}`);
+    super(t.attachmentError(attachment.name, message));
     this.name = 'AttachmentError';
   }
 
@@ -52,7 +53,7 @@ export async function uploadAttachments(
         filename: attachmentName(a.name),
         size: a.size,
         destDir,
-        destLabel: 'Pièce jointe du chat',
+        destLabel: t.attachmentDestLabel,
       },
       { cellularApproved: o.cellularApproved ?? false },
     );

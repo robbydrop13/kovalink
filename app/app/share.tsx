@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { TRANSFER_SELECTION_MAX } from '@/protocol';
+import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Button, LinkAction } from '@/ui/Button';
 import { Banner, EmptyState } from '@/ui/States';
@@ -106,7 +107,7 @@ export default function ShareScreen() {
   // et c'est précisément ce genre d'effet qui déclenche des rendus en cascade.
   const pickedPath = usePickedDir((s) => s.path);
   const custom: DestOption | null = pickedPath
-    ? { path: pickedPath, label: pickedPath, badge: 'choisi à la main', writable: true }
+    ? { path: pickedPath, label: pickedPath, badge: t.destPickedByHand, writable: true }
     : null;
 
   // Pré-sélection : le dossier choisi à la main, sinon la première destination
@@ -160,9 +161,9 @@ export default function ShareScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
-        <LinkAction label="Annuler" onPress={() => router.back()} />
+        <LinkAction label={t.actionCancel} onPress={() => router.back()} />
         <Txt variant="title2" color={colors.text.primary}>
-          Envoyer vers le Mac
+          {t.shareTitle}
         </Txt>
         <View style={styles.grow} />
       </View>
@@ -170,17 +171,17 @@ export default function ShareScreen() {
       {/* Dégradation propre, comme `pushAvailable` le fait déjà pour les notifications :
           on prévient, on n'empêche pas. */}
       {!shareExtensionAvailable ? <Banner tone="warn" text={SHARE_EXTENSION_UNAVAILABLE_LABEL} /> : null}
-      {sendError ? <Banner tone="error" text={sendError} actionLabel="Masquer" onAction={() => setSendError(null)} /> : null}
+      {sendError ? <Banner tone="error" text={sendError} actionLabel={t.actionDismiss} onAction={() => setSendError(null)} /> : null}
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 96 }]}>
         {items.length === 0 ? (
           <EmptyState
             glyph="▢"
-            title="Aucun fichier à envoyer"
-            body="Partage un fichier depuis une autre app, ou choisis en un ici."
+            title={t.shareEmptyTitle}
+            body={t.shareEmptyBody}
           >
-            <Button label="Choisir dans Photos" onPress={() => addManually('photos')} />
-            <Button label="Choisir dans Fichiers" kind="secondary" onPress={() => addManually('files')} />
+            <Button label={t.sharePickPhotos} onPress={() => addManually('photos')} />
+            <Button label={t.sharePickFiles} kind="secondary" onPress={() => addManually('files')} />
           </EmptyState>
         ) : (
           <>
@@ -188,7 +189,7 @@ export default function ShareScreen() {
               <Txt variant="caption" color={colors.text.tertiary}>
                 {items.length === 1
                   ? humanSize(items[0]?.size ?? 0)
-                  : `${items.length} fichiers · ${humanSize(total)}`}
+                  : t.shareFilesCount(items.length, humanSize(total))}
               </Txt>
               {items.map((item) => (
                 <View key={item.uri} style={styles.file}>
@@ -204,7 +205,7 @@ export default function ShareScreen() {
             </View>
 
             <Txt variant="caption" color={colors.text.tertiary} style={styles.section}>
-              DESTINATION
+              {t.shareDestination}
             </Txt>
             <DestinationPicker
               options={custom ? [custom, ...options] : options}
@@ -223,10 +224,10 @@ export default function ShareScreen() {
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + space[3] }]}>
         {done ? (
-          <Button label="Terminé" onPress={() => router.back()} />
+          <Button label={t.shareDone} onPress={() => router.back()} />
         ) : (
           <Button
-            label={selected ? `Envoyer vers ${truncateMiddle(selected.label, 22)}` : 'Choisis une destination'}
+            label={selected ? t.shareSendTo(truncateMiddle(selected.label, 22)) : t.shareChooseDest}
             disabled={!selected || items.length === 0}
             onPress={send}
           />

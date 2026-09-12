@@ -5,6 +5,7 @@
 // libellé : Claude Code reconnaît le chemin. Ce module compose ce message, le relit pour
 // l'affichage, et ne touche ni au réseau ni à l'écran.
 import { isAttachmentPath, mimeForName } from '@/protocol';
+import { t } from '@/i18n/en';
 
 export interface Attachment {
   /** Identifiant local, réutilisé comme identifiant de transfert. */
@@ -41,9 +42,7 @@ export function mimeOfName(name: string): string | null {
 export function composeMessage(text: string, attachments: readonly Attachment[]): string {
   const missing = attachments.filter((a) => !a.path);
   if (missing.length > 0) {
-    throw new Error(
-      `${missing.length === 1 ? 'une pièce n’est pas arrivée' : `${missing.length} pièces ne sont pas arrivées`} sur le Mac : ${missing.map((a) => a.name).join(', ')}`,
-    );
+    throw new Error(t.attachmentMissing(missing.length, missing.map((a) => a.name).join(', ')));
   }
   const lines = [text.trim(), ...attachments.map((a) => a.path as string)].filter((l) => l.length > 0);
   return lines.join('\n');

@@ -149,7 +149,7 @@ describe('resumeSession', () => {
   it('refuse un identifiant inconnu ou mal forme, sans rien lancer', async () => {
     const { services, requests } = harness(true);
     const unknown = await resumeSession(services, 'a444aea0-10c1-4c4e-9a1d-ffffffffffff', 'dev');
-    assert.deepEqual(unknown, { ok: false, status: 404, code: 'SESSION_NOT_FOUND', message: 'session inconnue de l index' });
+    assert.deepEqual(unknown, { ok: false, status: 404, code: 'SESSION_NOT_FOUND', message: 'session not in the index' });
     const bad = await resumeSession(services, 'x; rm -rf /', 'dev');
     assert.equal(bad.ok, false);
     assert.equal(requests.length, 0);

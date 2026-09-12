@@ -19,6 +19,7 @@ import { askResume, readSession, sessionAge } from '@/features/sessions/resume';
 import { isDegraded, useConnection } from '@/store/connection';
 import { shortAge } from '@/utils/time';
 import { ImpactStyle, impact } from '@/utils/haptics';
+import { t } from '@/i18n/en';
 
 const CLOSED_PREFIX = 'closed:';
 
@@ -46,7 +47,7 @@ export default function NewSessionScreen() {
       },
       (e: unknown) => {
         setProjects([]);
-        setError(`Projets récents indisponibles. ${e instanceof Error ? e.message : String(e)}`);
+        setError(t.projectsUnavailable(e instanceof Error ? e.message : String(e)));
       },
     );
   }, []);
@@ -81,7 +82,7 @@ export default function NewSessionScreen() {
         tint: p.path === wantedCwd ? colors.accent.primary : null,
         title: p.label,
         subtitle: p.path,
-        badge: busy ? 'création…' : p.lastOpenedMs > 0 ? shortAge(new Date(p.lastOpenedMs).toISOString()) : undefined,
+        badge: busy ? t.projectsCreating : p.lastOpenedMs > 0 ? shortAge(new Date(p.lastOpenedMs).toISOString()) : undefined,
         badgeColor: busy ? colors.status.working : colors.text.tertiary,
         highlighted: p.path === wantedCwd,
         disabled: blocked || (launching !== null && !busy),
@@ -92,7 +93,7 @@ export default function NewSessionScreen() {
           key: `${CLOSED_PREFIX}${s.sessionId}`,
           tint: colors.status.closed,
           title: s.title,
-          subtitle: `session fermée · il y a ${sessionAge(s)}`,
+          subtitle: t.projectsClosedSubtitle(sessionAge(s)),
           indent: true,
           disabled: blocked || launching !== null,
         });
@@ -125,7 +126,7 @@ export default function NewSessionScreen() {
         // `launched`, la commande attend dans le shell du nouveau pane : la vue Term le montre.
         router.replace(res.launched ? `/session/${res.paneId}` : `/session/${res.paneId}?view=term`);
       } catch (e) {
-        setError(`Création impossible. ${e instanceof Error ? e.message : String(e)}`);
+        setError(t.projectsCreateFailed(e instanceof Error ? e.message : String(e)));
         setLaunching(null);
       }
     },
@@ -134,12 +135,12 @@ export default function NewSessionScreen() {
 
   return (
     <Palette
-      title="Projets"
-      placeholder="Nom de dossier ou chemin"
+      title={t.projectsTitle}
+      placeholder={t.projectsPlaceholder}
       hint={
         wantedCwd && !wantedMissing
-          ? 'Relancer Claude : le dossier de la session périmée est en tête.'
-          : 'Un tap ouvre un onglet Kova sur le Mac, avec Claude lancé dans ce dossier.'
+          ? t.projectsHintRelaunch
+          : t.projectsHint
       }
       rows={rows}
       query={query}
@@ -149,22 +150,22 @@ export default function NewSessionScreen() {
         const session = closedOf(row);
         if (session) readSession(session);
       }}
-      emptyTitle={query ? 'Aucun projet ne correspond' : 'Aucun projet récent'}
-      emptyBody={query ? 'Essaie un autre mot.' : 'Ouvre un projet dans Kova, il apparaîtra ici.'}
-      accessibilityLabel="Rechercher un projet récent"
+      emptyTitle={query ? t.projectsNoMatchTitle : t.projectsEmptyTitle}
+      emptyBody={query ? t.projectsNoMatchBody : t.projectsEmptyBody}
+      accessibilityLabel={t.projectsSearchAccessibilityLabel}
       banners={
         <>
           {blocked ? (
             <Banner
               tone={kova === 'down' ? 'warn' : link === 'offline' ? 'offline' : 'warn'}
-              text={kova === 'down' ? 'Kova n’est pas lancé sur le Mac' : 'Mac injoignable pour le moment'}
+              text={kova === 'down' ? t.kovaNotRunningOnMac : t.macUnreachableNow}
             />
           ) : null}
-          {error ? <Banner tone="error" text={error} actionLabel="Réessayer" onAction={load} /> : null}
+          {error ? <Banner tone="error" text={error} actionLabel={t.actionRetry} onAction={load} /> : null}
           {wantedMissing ? (
             <Banner
               tone="warn"
-              text={`${wantedCwd} n’est pas dans les projets récents de Kova : ouvre le dossier une fois sur le Mac.`}
+              text={t.projectsWantedMissing(wantedCwd ?? '')}
             />
           ) : null}
         </>

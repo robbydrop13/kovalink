@@ -7,6 +7,7 @@ import type { KovaSessionEntry } from '@/protocol';
 import { postResume } from '@/net/http';
 import { shortAge } from '@/utils/time';
 import { ImpactStyle, impact } from '@/utils/haptics';
+import { t } from '@/i18n/en';
 
 export function sessionAge(entry: KovaSessionEntry, now = Date.now()): string {
   return shortAge(new Date(entry.lastActiveMs).toISOString(), now);
@@ -25,11 +26,11 @@ export async function resumeSession(entry: KovaSessionEntry, onNotice: (text: st
   impact(ImpactStyle.Medium);
   try {
     const res = await postResume(entry.sessionId);
-    if (res.alreadyOpen) onNotice('Cette session est déjà ouverte sur le Mac');
+    if (res.alreadyOpen) onNotice(t.resumeAlreadyOpen);
     router.replace(res.launched || res.alreadyOpen ? `/session/${res.paneId}` : `/session/${res.paneId}?view=term`);
     return true;
   } catch (e) {
-    onNotice(`Reprise impossible. ${e instanceof Error ? e.message : String(e)}`);
+    onNotice(t.resumeFailed(e instanceof Error ? e.message : String(e)));
     return false;
   }
 }
@@ -37,12 +38,12 @@ export async function resumeSession(entry: KovaSessionEntry, onNotice: (text: st
 /** Feuille « Reprendre cette session ? » : projet, libellé et date, puis Lire ou Reprendre. */
 export function askResume(entry: KovaSessionEntry, onNotice: (text: string) => void): void {
   Alert.alert(
-    'Reprendre cette session ?',
-    `${entry.projectName} · ${entry.title}\nDernière activité il y a ${sessionAge(entry)}.\n\nReprendre lance Claude sur le Mac dans un nouvel onglet, avec l’historique de cette session.`,
+    t.resumeConfirmTitle,
+    t.resumeConfirmBody(entry.projectName, entry.title, sessionAge(entry)),
     [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Lire', onPress: () => readSession(entry) },
-      { text: 'Reprendre', onPress: () => void resumeSession(entry, onNotice) },
+      { text: t.actionCancel, style: 'cancel' },
+      { text: t.resumeRead, onPress: () => readSession(entry) },
+      { text: t.resumeButton, onPress: () => void resumeSession(entry, onNotice) },
     ],
     { userInterfaceStyle: 'dark' },
   );

@@ -20,17 +20,18 @@ import { fetchAudit } from '@/net/files';
 import { humanSize, truncateMiddle } from '@/features/files/format';
 import { describe } from '@/store/transfers';
 import { shortAgeMs } from '@/utils/time';
+import { t } from '@/i18n/en';
 
 type Tab = 'files' | 'diagnostic';
 
 const ACTION_LABEL: Record<string, string> = {
-  'fs.list': 'dossier lu',
-  'fs.read': 'fichier lu',
-  'fs.text': 'aperçu texte',
-  'fs.quickdests': 'destinations lues',
-  'fs.upload.init': 'envoi ouvert',
-  'fs.upload.complete': 'fichier écrit',
-  'fs.upload.abort': 'envoi annulé',
+  'fs.list': t.activityActionList,
+  'fs.read': t.activityActionRead,
+  'fs.text': t.activityActionText,
+  'fs.quickdests': t.activityActionQuickDests,
+  'fs.upload.init': t.activityActionUploadInit,
+  'fs.upload.complete': t.activityActionUploadComplete,
+  'fs.upload.abort': t.activityActionUploadAbort,
 };
 
 export default function ActivityScreen() {
@@ -80,20 +81,20 @@ export default function ActivityScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
-        <LinkAction label="‹ Retour" onPress={() => router.back()} />
+        <LinkAction label={t.activityBack} onPress={() => router.back()} />
         <Txt variant="title2" color={colors.text.primary}>
-          Activité
+          {t.activityTitle}
         </Txt>
         <View style={styles.grow} />
       </View>
 
       <View style={styles.tabs}>
-        <TabButton label="Fichiers" active={tab === 'files'} onPress={() => setTab('files')} />
-        <TabButton label="Diagnostic" active={tab === 'diagnostic'} onPress={() => setTab('diagnostic')} />
+        <TabButton label={t.activityTabFiles} active={tab === 'files'} onPress={() => setTab('files')} />
+        <TabButton label={t.activityTabDiagnostic} active={tab === 'diagnostic'} onPress={() => setTab('diagnostic')} />
       </View>
 
       {error ? (
-        <Banner tone="error" text={error} actionLabel="Réessayer" onAction={() => void load()} />
+        <Banner tone="error" text={error} actionLabel={t.activityRetry} onAction={() => void load()} />
       ) : null}
 
       <ScrollView
@@ -114,9 +115,9 @@ export default function ActivityScreen() {
         {!loading && !error && data && tab === 'files' ? (
           data.files.length === 0 ? (
             <EmptyState
-              glyph="▢"
-              title="Aucun accès fichier"
-              body={`Le journal conserve ${data.retentionDays} jours. Rien n’a été lu ni écrit sur cette période.`}
+              glyph={t.activityEmptyGlyph}
+              title={t.activityEmptyTitle}
+              body={t.activityEmptyBody(data.retentionDays)}
             />
           ) : (
             data.files.map((entry, i) => (
@@ -140,7 +141,7 @@ export default function ActivityScreen() {
                 ) : null}
                 <View style={styles.rowHead}>
                   <Txt variant="caption" color={colors.text.tertiary}>
-                    {entry.direction === 'read' ? 'Mac → iPhone' : entry.direction === 'write' ? 'iPhone → Mac' : '·'}
+                    {entry.direction === 'read' ? t.activityDirectionRead : entry.direction === 'write' ? t.activityDirectionWrite : '·'}
                     {entry.bytes !== null ? ` · ${humanSize(entry.bytes)}` : ''}
                   </Txt>
                   <View style={styles.grow} />
@@ -148,7 +149,7 @@ export default function ActivityScreen() {
                       noire déclenchée, pas un « refusé » muet. */}
                   {entry.result !== 'ok' ? (
                     <Txt variant="caption" color={colors.status.error}>
-                      {entry.result === 'denied' ? 'refusé' : 'erreur'}
+                      {entry.result === 'denied' ? t.activityResultDenied : t.activityResultError}
                       {entry.detail ? ` · ${entry.detail}` : ''}
                     </Txt>
                   ) : null}
@@ -160,20 +161,20 @@ export default function ActivityScreen() {
 
         {!loading && !error && data && tab === 'diagnostic' ? (
           <View style={styles.diag}>
-            <DiagRow label="Échecs de parsing de prompt" value={String(data.diagnostic.parseFailed)} />
-            <DiagRow label="Échecs de la Notification Service Extension" value={String(data.diagnostic.nseFailed)} />
+            <DiagRow label={t.activityDiagParseFailed} value={String(data.diagnostic.parseFailed)} />
+            <DiagRow label={t.activityDiagNseFailed} value={String(data.diagnostic.nseFailed)} />
             <DiagRow
-              label="Dernière notification livrée"
+              label={t.activityDiagLastNotification}
               value={
                 data.diagnostic.lastNotificationAgeMs === null
-                  ? 'aucune'
-                  : `il y a ${shortAgeMs(data.diagnostic.lastNotificationAgeMs)}`
+                  ? t.activityDiagNone
+                  : t.activityDiagAgo(shortAgeMs(data.diagnostic.lastNotificationAgeMs))
               }
             />
-            <DiagRow label="Notifications aujourd’hui" value={String(data.diagnostic.notificationsToday)} />
-            <DiagRow label="Lu depuis le Mac aujourd’hui" value={humanSize(data.diagnostic.bytesReadToday)} />
-            <DiagRow label="Écrit sur le Mac aujourd’hui" value={humanSize(data.diagnostic.bytesWrittenToday)} />
-            <Button label="Rafraîchir" kind="secondary" onPress={() => void load()} />
+            <DiagRow label={t.activityDiagNotificationsToday} value={String(data.diagnostic.notificationsToday)} />
+            <DiagRow label={t.activityDiagReadToday} value={humanSize(data.diagnostic.bytesReadToday)} />
+            <DiagRow label={t.activityDiagWrittenToday} value={humanSize(data.diagnostic.bytesWrittenToday)} />
+            <Button label={t.activityRefresh} kind="secondary" onPress={() => void load()} />
           </View>
         ) : null}
       </ScrollView>

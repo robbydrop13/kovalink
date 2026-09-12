@@ -4,28 +4,28 @@ import { describe, it } from 'node:test';
 import { GROUP_COLLAPSE_OVER, isCollapsible, isEditTool, shortPath, toolLabel, toolRowState } from '@/features/chat/toolLabel';
 
 describe('toolLabel', () => {
-  it('Read : Lit, chemin raccourci aux trois derniers segments', () => {
+  it('Read : Reads, chemin raccourci aux trois derniers segments', () => {
     const l = toolLabel({ name: 'Read', input: { file_path: '/Users/robin/link/app/src/boot.ts' }, preview: '' });
-    assert.deepEqual(l, { verb: 'Lit', target: 'app/src/boot.ts', stats: null });
+    assert.deepEqual(l, { verb: 'Reads', target: 'app/src/boot.ts', stats: null });
   });
 
-  it('Edit : Modifie, avec +ajoutées -retirées en lignes', () => {
+  it('Edit : Edits, avec +ajoutées -retirées en lignes', () => {
     const l = toolLabel({
       name: 'Edit',
       input: { file_path: 'app/pair.tsx', old_string: 'a\nb\nc', new_string: 'a\nb\nc\nd\ne' },
       preview: '',
     });
-    assert.deepEqual(l, { verb: 'Modifie', target: 'app/pair.tsx', stats: '+5 -3' });
+    assert.deepEqual(l, { verb: 'Edits', target: 'app/pair.tsx', stats: '+5 -3' });
   });
 
-  it('Bash : Exécute, première ligne de la commande', () => {
+  it('Bash : Runs, première ligne de la commande', () => {
     const l = toolLabel({ name: 'Bash', input: { command: 'npm test\necho fin' }, preview: '' });
-    assert.deepEqual(l, { verb: 'Exécute', target: 'npm test', stats: null });
+    assert.deepEqual(l, { verb: 'Runs', target: 'npm test', stats: null });
   });
 
-  it('Grep : Cherche, motif entre guillemets', () => {
+  it('Grep : Searches, motif entre guillemets', () => {
     const l = toolLabel({ name: 'Grep', input: { pattern: 'promptHash' }, preview: '' });
-    assert.equal(l.verb, 'Cherche');
+    assert.equal(l.verb, 'Searches');
     assert.equal(l.target, '"promptHash"');
   });
 

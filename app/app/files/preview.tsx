@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 
 import { TEXT_PREVIEW_TRUNCATED } from '@/protocol';
+import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Button, LinkAction } from '@/ui/Button';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
@@ -69,7 +70,7 @@ export default function PreviewScreen() {
     let alive = true;
     void (async () => {
       if (!path) {
-        if (alive) setError('Aucun chemin de fichier fourni à l’aperçu.');
+        if (alive) setError(t.previewNoPath);
         return;
       }
       try {
@@ -116,21 +117,21 @@ export default function PreviewScreen() {
       setSaving(false);
     }
   };
-  const savingLabel = savePhase === 'verifying' ? 'Vérification…' : 'Téléchargement…';
+  const savingLabel = savePhase === 'verifying' ? t.previewVerifying : t.filesDownloading;
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.nav}>
-        <LinkAction label="Fermer" onPress={() => router.back()} />
+        <LinkAction label={t.previewClose} onPress={() => router.back()} />
         <Txt variant="title2" color={colors.text.primary} numberOfLines={1} style={styles.title}>
           {truncateMiddle(meta.name, 28)}
         </Txt>
         <View style={styles.grow} />
-        <LinkAction label={saving ? savingLabel : 'Partager'} disabled={saving} onPress={() => void save()} />
+        <LinkAction label={saving ? savingLabel : t.filesShare} disabled={saving} onPress={() => void save()} />
       </View>
 
       {error ? (
-        <Banner tone="error" text={error} actionLabel="Réessayer" onAction={() => setError(null)} />
+        <Banner tone="error" text={error} actionLabel={t.actionRetry} onAction={() => setError(null)} />
       ) : null}
 
       {saved ? (
@@ -138,8 +139,8 @@ export default function PreviewScreen() {
           tone={saved.verified ? 'info' : 'warn'}
           text={
             saved.verified
-              ? `Enregistré sur l’iPhone sous ${saved.name}, empreinte vérifiée.`
-              : `Enregistré sur l’iPhone sous ${saved.name}, sans empreinte du Mac : non vérifié.`
+              ? t.previewSavedVerified(saved.name)
+              : t.previewSavedUnverified(saved.name)
           }
         />
       ) : null}
@@ -149,7 +150,7 @@ export default function PreviewScreen() {
         // qu'il a tout lu (CA-99).
         <Banner
           tone="warn"
-          text={`Fichier de ${humanSize(size)} : seuls les ${humanSize(TEXT_PREVIEW_TRUNCATED)} premiers sont affichés.`}
+          text={t.previewTruncated(humanSize(size), humanSize(TEXT_PREVIEW_TRUNCATED))}
         />
       ) : null}
 
@@ -170,7 +171,7 @@ export default function PreviewScreen() {
 
       <View style={[styles.bottom, { paddingBottom: insets.bottom + space[3] }]}>
         <Button
-          label={saving ? savingLabel : 'Enregistrer sur l’iPhone'}
+          label={saving ? savingLabel : t.previewSave}
           disabled={saving}
           onPress={() => void save()}
         />
@@ -215,7 +216,7 @@ function Body({
     // La visionneuse PDF native d'iOS est celle de la WebView : elle pagine, zoome et
     // rend un document de 50 pages sans qu'on écrive un rendu maison (CA-98).
     if (Platform.OS !== 'ios') {
-      return <EmptyState glyph="▤" title="Aperçu PDF disponible sur iOS" body={path} />;
+      return <EmptyState glyph="▤" title={t.previewPdfIosOnly} body={path} />;
     }
     return (
       <WebView
@@ -229,7 +230,7 @@ function Body({
 
   if ((kind === 'text' || kind === 'markdown') && text !== null) {
     if (text.length === 0) {
-      return <EmptyState glyph="▢" title="Fichier vide" body="0 octet. Il peut être enregistré tel quel." />;
+      return <EmptyState glyph="▢" title={t.previewEmptyFile} body={t.previewEmptyBody} />;
     }
     const lines = text.split('\n');
     return (
@@ -260,13 +261,13 @@ function Body({
         ▫
       </Txt>
       <Txt variant="title2" color={colors.text.primary} align="center">
-        Aperçu indisponible pour ce format
+        {t.previewUnavailable}
       </Txt>
       <View style={styles.metaRows}>
-        <MetaRow label="Nom" value={meta.name} />
-        <MetaRow label="Type" value={mime ?? `inconnu (${meta.ext || 'sans extension'})`} />
-        <MetaRow label="Taille" value={size === null ? 'inconnue' : humanSize(size)} />
-        <MetaRow label="Chemin" value={path} />
+        <MetaRow label={t.previewMetaName} value={meta.name} />
+        <MetaRow label={t.previewMetaType} value={mime ?? t.previewUnknownType(meta.ext || t.previewNoExtension)} />
+        <MetaRow label={t.previewMetaSize} value={size === null ? t.previewUnknownSize : humanSize(size)} />
+        <MetaRow label={t.previewMetaPath} value={path} />
       </View>
     </ScrollView>
   );

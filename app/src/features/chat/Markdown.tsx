@@ -8,6 +8,7 @@
 // natif dans ce build : la feuille de partage d'iOS offre `Copier`). Liens : Safari.
 import { Fragment, type ReactNode } from 'react';
 import { Linking, Pressable, ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 import { parseMarkdown, type Align, type MdBlock, type Span } from './markdownAst';
@@ -74,16 +75,16 @@ function CodeBlock({ block }: { block: Extract<MdBlock, { type: 'code' }> }) {
     <View style={styles.codeBlock}>
       <View style={styles.codeBar}>
         <Txt variant="caption" color={colors.text.tertiary}>
-          {block.lang || 'code'}
+          {block.lang || t.markdownCodeLang}
         </Txt>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Share this code block"
+          accessibilityLabel={t.markdownShareA11y}
           hitSlop={8}
           onPress={() => void Share.share({ message: block.code }).catch(() => undefined)}
         >
           <Txt variant="caption" color={colors.accent.primary}>
-            Share
+            {t.markdownShare}
           </Txt>
         </Pressable>
       </View>

@@ -2,9 +2,10 @@
 //
 // Ce composant n'expose AUCUNE action destructrice, et il n'y a rien à retirer : le PRD
 // exclut renommer, déplacer, dupliquer et supprimer, et le daemon ne sert aucune route
-// qui les rendrait possibles. La seule action secondaire est `Partager`.
+// qui les rendrait possibles. La seule action secondaire est `Share`.
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { FsEntry } from '@/protocol';
+import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 import { glyphFor, humanSize, shortDate, truncateMiddle } from './format';
@@ -26,7 +27,7 @@ export function FileRow({ entry, onPress, onShare, selected = false, selecting =
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${entry.name}, ${isDir ? 'dossier' : humanSize(entry.size)}`}
+      accessibilityLabel={t.filesRowA11y(entry.name, isDir ? t.filesFolder : humanSize(entry.size))}
       accessibilityState={{ selected }}
       onPress={onPress}
       onLongPress={onShare}
@@ -59,7 +60,7 @@ export function FileRow({ entry, onPress, onShare, selected = false, selecting =
         ) : null}
         {!entry.readable ? (
           <Txt variant="caption" color={colors.status.error}>
-            illisible
+            {t.filesUnreadable}
           </Txt>
         ) : null}
       </View>
@@ -121,7 +122,7 @@ export function SortHeader({
   const cell = (key: 'name' | 'size' | 'mtime', label: string, style?: object) => (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Trier par ${label}`}
+      accessibilityLabel={t.filesSortBy(label)}
       hitSlop={{ top: 8, bottom: 8 }}
       onPress={() => onSort(key)}
       style={style}
@@ -134,9 +135,9 @@ export function SortHeader({
   );
   return (
     <View style={headerStyles.row}>
-      {cell('name', 'Nom', headerStyles.grow)}
-      {cell('size', 'Taille')}
-      {cell('mtime', 'Modifié')}
+      {cell('name', t.filesSortName, headerStyles.grow)}
+      {cell('size', t.filesSortSize)}
+      {cell('mtime', t.filesSortModified)}
     </View>
   );
 }

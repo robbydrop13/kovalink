@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { t } from '@/i18n/en';
 import { colors, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
 import { fileUrl } from '@/net/files';
@@ -18,7 +19,7 @@ import { displayNameOf, isImageMime, mimeOfName, type Attachment } from './attac
 
 const THUMB = 64;
 
-/** Le sélecteur du « + » : Photos, Appareil photo, Fichiers. Ceux du bloc Fichiers. */
+/** Le sélecteur du « + » : Photos, Camera, Files. Ceux du bloc Fichiers. */
 export function askAttachmentSource(onPicked: (items: Attachment[]) => void, onError: (message: string) => void): void {
   const run = (pick: () => Promise<Candidate[]>): void => {
     void pick()
@@ -37,11 +38,11 @@ export function askAttachmentSource(onPicked: (items: Attachment[]) => void, onE
       })
       .catch((e: unknown) => onError(e instanceof Error ? e.message : String(e)));
   };
-  Alert.alert('Ajouter une pièce jointe', undefined, [
-    { text: 'Photos', onPress: () => run(pickFromPhotos) },
-    { text: 'Appareil photo', onPress: () => run(pickFromCamera) },
-    { text: 'Fichiers', onPress: () => run(pickFromFiles) },
-    { text: 'Annuler', style: 'cancel' },
+  Alert.alert(t.attachmentAdd, undefined, [
+    { text: t.attachmentSourcePhotos, onPress: () => run(pickFromPhotos) },
+    { text: t.attachmentSourceCamera, onPress: () => run(pickFromCamera) },
+    { text: t.attachmentSourceFiles, onPress: () => run(pickFromFiles) },
+    { text: t.actionCancel, style: 'cancel' },
   ]);
 }
 
@@ -52,11 +53,11 @@ export function askAttachmentSource(onPicked: (items: Attachment[]) => void, onE
 export function confirmCellularSend(bytes: number): Promise<boolean> {
   return new Promise((resolve) => {
     Alert.alert(
-      'Envoi en données cellulaires',
-      `${humanSize(bytes)} de pièces jointes partiraient en cellulaire. Envoyer maintenant ?`,
+      t.attachmentCellularTitle,
+      t.attachmentCellularBody(humanSize(bytes)),
       [
-        { text: 'Annuler', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'Envoyer maintenant', onPress: () => resolve(true) },
+        { text: t.actionCancel, style: 'cancel', onPress: () => resolve(false) },
+        { text: t.transferSendNow, onPress: () => resolve(true) },
       ],
       { cancelable: true, onDismiss: () => resolve(false) },
     );
@@ -93,13 +94,13 @@ function StripThumb({ item, sending, onRemove }: { item: Attachment; sending: bo
   const transfer = useTransfers((s) => s.items.find((t) => t.id.startsWith(`${item.id}-`)));
   const ratio = transfer ? progressOf(transfer) : item.path ? 1 : 0;
   const label = item.path
-    ? 'arrivée'
+    ? t.attachmentArrived
     : transfer?.phase === 'hashing'
-      ? 'empreinte…'
+      ? t.attachmentHashing
       : transfer?.state === 'paused'
-        ? 'reprise…'
+        ? t.attachmentResuming
         : transfer
-          ? `${Math.round(ratio * 100)} %`
+          ? t.attachmentPercent(Math.round(ratio * 100))
           : null;
   return (
     <View style={styles.thumbWrap}>
@@ -115,7 +116,7 @@ function StripThumb({ item, sending, onRemove }: { item: Attachment; sending: bo
       {!sending ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Retirer ${item.name}`}
+          accessibilityLabel={t.attachmentRemoveA11y(item.name)}
           hitSlop={8}
           onPress={onRemove}
           style={styles.remove}
@@ -187,7 +188,7 @@ export function AttachmentChips({
         <Pressable
           key={it.key}
           accessibilityRole={it.path ? 'button' : undefined}
-          accessibilityLabel={it.local?.name ?? (it.path ? displayNameOf(it.path) : 'photo')}
+          accessibilityLabel={it.local?.name ?? (it.path ? displayNameOf(it.path) : t.attachmentPhoto)}
           disabled={!it.path}
           onPress={() => {
             if (!it.path) return;
@@ -201,7 +202,7 @@ export function AttachmentChips({
           ) : it.path ? (
             <RemoteThumb path={it.path} />
           ) : (
-            <FileTile name="photo" size={null} />
+            <FileTile name={t.attachmentPhoto} size={null} />
           )}
         </Pressable>
       ))}

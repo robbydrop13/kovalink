@@ -22,6 +22,7 @@ import { Txt } from '@/ui/Txt';
 import { shortAge } from '@/utils/time';
 import { isAgingSince, usePrompts, type BarPhase } from '@/store/prompts';
 import { OptionButton as OptionRow } from './OptionButton';
+import { t } from '@/i18n/en';
 
 interface Props {
   prompt: Prompt;
@@ -54,9 +55,9 @@ function UnavailableBar({ onRetry }: { onRetry: () => void }) {
   return (
     <View style={[styles.bar, styles.unavailable]}>
       <Txt variant="callout" color={colors.text.primary} style={styles.grow}>
-        Réponse impossible, Mac injoignable
+        {t.validationUnavailable}
       </Txt>
-      <Button label="Réessayer" kind="secondary" height={32} onPress={onRetry} />
+      <Button label={t.actionRetry} kind="secondary" height={32} onPress={onRetry} />
     </View>
   );
 }
@@ -74,21 +75,21 @@ function UnparsableBar({
 }: Props & { prompt: Extract<Prompt, { state: 'unparsable' }> }) {
   return (
     <View style={[styles.bar, styles.unparsableTop]}>
-      <Header awaitingSince={prompt.awaitingSince} title="Validation requise" />
+      <Header awaitingSince={prompt.awaitingSince} title={t.validationRequired} />
       <Txt variant="bodyStrong" color={colors.text.primary}>
-        Une question attend sur le Mac.
+        {t.awaitingUnparsableTitle}
       </Txt>
       {/* Le texte de la question n'est PAS affiché : on vient de dire qu'on ne sait pas le
           lire, l'afficher quand même serait affirmer une lecture dont on n'a pas la
           certitude. */}
       <Txt variant="callout" color={colors.text.secondary}>
-        Les options n’ont pas pu être lues.
+        {t.awaitingUnparsableDetail}
       </Txt>
-      <Button label="Ouvrir le terminal" onPress={onOpenTerminal} />
+      <Button label={t.actionOpenTerminal} onPress={onOpenTerminal} />
       <View style={styles.footer}>
-        <LinkAction label="Répondre en texte" onPress={onFreeText} />
+        <LinkAction label={t.validationAnswerInText} onPress={onFreeText} />
         <LinkAction
-          label="Interrompre"
+          label={t.interruptLabel}
           color={colors.action.interrupt.text}
           onPress={onInterrupt}
         />
@@ -141,7 +142,7 @@ function ParsedBar({
 
   return (
     <View style={styles.bar}>
-      <Header awaitingSince={prompt.awaitingSince} title="Autorisation requise" />
+      <Header awaitingSince={prompt.awaitingSince} title={t.validationAuthRequired} />
       {notice ? (
         <View style={styles.notice}>
           <Txt variant="callout" color={colors.status.awaiting}>
@@ -208,12 +209,12 @@ function ParsedBar({
 
       <View style={styles.footer}>
         {hasReject ? (
-          <LinkAction label="Répondre autrement" onPress={onRespondOtherwise} />
+          <LinkAction label={t.validationRespondOtherwise} onPress={onRespondOtherwise} />
         ) : (
           <View />
         )}
         <LinkAction
-          label="Interrompre"
+          label={t.interruptLabel}
           color={colors.action.interrupt.text}
           onPress={onInterrupt}
         />
@@ -232,7 +233,7 @@ function Header({ awaitingSince, title }: { awaitingSince: string; title: string
       </Txt>
       <View style={styles.grow} />
       <Txt variant="caption" color={aging ? colors.status.error : colors.text.tertiary}>
-        il y a {shortAge(awaitingSince)}
+        {t.validationAgo(shortAge(awaitingSince))}
       </Txt>
     </View>
   );

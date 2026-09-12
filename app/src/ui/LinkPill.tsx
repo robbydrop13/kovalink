@@ -1,10 +1,11 @@
 // Pastille de liaison. Affichée en permanence, jamais bloquante (P5). Cinq états, dont deux
-// qui se ressemblent et ne doivent surtout pas être confondus : `Hors ligne` est actionnable
+// qui se ressemblent et ne doivent surtout pas être confondus : `Offline` est actionnable
 // par Robin, `Mac injoignable` ne l'est pas.
 import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, radius } from '@/theme';
 import { LINK_LABEL, useConnection, type LinkState } from '@/store/connection';
 import { Txt } from './Txt';
+import { t } from '@/i18n/en';
 
 const TINT: Record<LinkState, string> = {
   connecting: colors.link.connecting,
@@ -30,7 +31,7 @@ export function LinkPill({ compact = false, onPress }: { compact?: boolean; onPr
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Liaison : ${label}`}
+      accessibilityLabel={t.linkPillAccessibilityLabel(label)}
       hitSlop={{ top: 11, bottom: 11, left: 8, right: 8 }}
       onPress={onPress ?? (() => undefined)}
       style={styles.pill}

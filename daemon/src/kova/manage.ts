@@ -33,7 +33,7 @@ export class ManageError extends Error {
  */
 export function sanitizeTabTitle(raw: unknown): string | null {
   if (raw === null || raw === undefined) return null;
-  if (typeof raw !== 'string') throw new ManageError('BAD_REQUEST', 'titre invalide');
+  if (typeof raw !== 'string') throw new ManageError('BAD_REQUEST', 'invalid title');
   const clean = raw
     .normalize('NFC')
     // eslint-disable-next-line no-control-regex
@@ -68,7 +68,7 @@ export async function closePane(deps: ManageDeps, paneId: number, deviceId: stri
   const res = await deps.ipc.request(payload);
   if (!res.ok) {
     audit({ deviceId, action: 'pane.close', paneId, result: 'error', detail: res.error ?? 'erreur IPC' });
-    throw new ManageError('PANE_NOT_FOUND', res.error ?? 'fermeture refusee par Kova');
+    throw new ManageError('PANE_NOT_FOUND', res.error ?? 'close refused by Kova');
   }
   audit({ deviceId, action: 'pane.close', paneId, result: 'ok', detail: String(payload['cmd']) });
   return { applied: true };
@@ -76,10 +76,10 @@ export async function closePane(deps: ManageDeps, paneId: number, deviceId: stri
 
 export async function renameTab(deps: ManageDeps, paneId: number, rawTitle: unknown, deviceId: string): Promise<{ title: string | null }> {
   const pane = deps.panes.get(paneId);
-  if (!pane) throw new ManageError('PANE_NOT_FOUND', 'pane inconnu');
+  if (!pane) throw new ManageError('PANE_NOT_FOUND', 'unknown pane');
   const title = sanitizeTabTitle(rawTitle);
   const res = await deps.ipc.request({ cmd: 'set-tab-title', pane_id: paneId, title });
-  if (!res.ok) throw new ManageError('BAD_REQUEST', res.error ?? 'renommage refuse par Kova');
+  if (!res.ok) throw new ManageError('BAD_REQUEST', res.error ?? 'rename refused by Kova');
   // Jamais le titre dans le journal : c'est du texte de Robin.
   audit({ deviceId, action: 'pane.rename', paneId, result: 'ok', detail: title === null ? 'auto' : `len=${title.length}` });
   return { title };
@@ -103,7 +103,7 @@ export function readBookmarks(file = bookmarksFile()): BookmarksFile {
     raw = readFileSync(file, 'utf8');
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { items: [] };
-    throw new ManageError('BAD_REQUEST', `favoris illisibles : ${(e as Error).message}`);
+    throw new ManageError('BAD_REQUEST', `bookmarks unreadable: ${(e as Error).message}`);
   }
   const parsed = JSON.parse(raw) as Partial<BookmarksFile>;
   const items = Array.isArray(parsed.items) ? parsed.items : [];
@@ -155,7 +155,7 @@ export function setBookmark(
   deviceId: string,
   file = bookmarksFile(),
 ): { bookmarked: boolean } {
-  if (!isSessionId(entry.sessionId)) throw new ManageError('BAD_REQUEST', 'identifiant de session invalide');
+  if (!isSessionId(entry.sessionId)) throw new ManageError('BAD_REQUEST', 'invalid session id');
   const data = readBookmarks(file);
   const others = data.items.filter((b) => b.session_id !== entry.sessionId);
   if (op === 'remove') {

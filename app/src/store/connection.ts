@@ -2,6 +2,7 @@
 // actionnable par Robin, `Mac injoignable` ne l'est pas. Les confondre le laisse chercher
 // une solution qui n'existe pas.
 import { create } from 'zustand';
+import { t } from '@/i18n/en';
 
 export type LinkState = 'connecting' | 'direct' | 'relayed' | 'macUnreachable' | 'offline';
 export type KovaStatus = 'up' | 'down' | 'reconnecting' | 'unknown';
@@ -50,9 +51,9 @@ export function isDegraded(link: LinkState): boolean {
 }
 
 export const LINK_LABEL: Record<LinkState, string> = {
-  connecting: 'Connexion…',
-  direct: 'Direct',
-  relayed: 'Relayé',
-  macUnreachable: 'Mac injoignable',
-  offline: 'Hors ligne',
+  connecting: t.linkConnecting,
+  direct: t.linkDirect,
+  relayed: t.linkRelayed,
+  macUnreachable: t.linkMacUnreachable,
+  offline: t.linkOffline,
 };

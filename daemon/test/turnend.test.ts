@@ -205,7 +205,7 @@ describe('seuil de 60 s de travail avant notification (C29)', () => {
     assert.equal(events.length, 1);
     const prompt = events[0] as { durationMs: number | null; subtitle: string };
     assert.equal(prompt.durationMs, THRESHOLD);
-    assert.equal(prompt.subtitle, '1 min 00 s, 0 outils');
+    assert.equal(prompt.subtitle, '1m 00s, 0 tools');
   });
 
   it('un tour de 55 279 ms, la valeur vue dans le journal, est ignore', async () => {
@@ -250,24 +250,24 @@ describe('references de prompt (R3)', () => {
 
 describe('sous-titre de la banniere de fin de tour', () => {
   it('formate une duree lisible', () => {
-    assert.equal(formatDuration(42_000), '42 s');
-    assert.equal(formatDuration(252_000), '4 min 12 s');
-    assert.equal(formatDuration(3_900_000), '1 h 05 min');
-    assert.equal(formatDuration(-5), '0 s');
+    assert.equal(formatDuration(42_000), '42s');
+    assert.equal(formatDuration(252_000), '4m 12s');
+    assert.equal(formatDuration(3_900_000), '1h 05m');
+    assert.equal(formatDuration(-5), '0s');
   });
 
   it('rend le gabarit du PRD : duree puis nombre d outils', () => {
-    assert.equal(formatTurnEndSubtitle(252_000, 11), '4 min 12 s, 11 outils');
-    assert.equal(formatTurnEndSubtitle(1000, 1), '1 s, 1 outil');
+    assert.equal(formatTurnEndSubtitle(252_000, 11), '4m 12s, 11 tools');
+    assert.equal(formatTurnEndSubtitle(1000, 1), '1s, 1 tool');
   });
 
   it('omet la duree quand elle est inconnue, sans laisser de virgule pendante', () => {
-    assert.equal(formatTurnEndSubtitle(null, 3), '3 outils');
-    assert.equal(formatTurnEndSubtitle(0, 0), '0 outils');
+    assert.equal(formatTurnEndSubtitle(null, 3), '3 tools');
+    assert.equal(formatTurnEndSubtitle(0, 0), '0 tools');
   });
 
   it('ne porte aucun contenu de conversation (A14)', () => {
     const subtitle = formatTurnEndSubtitle(252_000, 11);
-    assert.equal(/[a-z]{6,}/.test(subtitle.replace(/min|outils?/g, '')), false);
+    assert.equal(/[a-z]{6,}/.test(subtitle.replace(/tools?/g, '')), false);
   });
 });

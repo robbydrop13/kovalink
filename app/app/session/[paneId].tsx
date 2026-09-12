@@ -81,6 +81,7 @@ import { shortAgeMs, truncatePath } from '@/utils/time';
 import { useClock } from '@/utils/useClock';
 import { bootWarn } from '@/env';
 import { useOutboxNotices } from '@/store/outboxNotices';
+import { t } from '@/i18n/en';
 
 type ViewMode = 'chat' | 'term';
 
@@ -99,13 +100,13 @@ const QUEUE_POLL_MS = 2_000;
 function refusalLabel(reason: string | undefined): string {
   switch (reason) {
     case 'became_awaiting':
-      return 'L’agent a posé une question, ton message n’est pas parti';
+      return t.sessionRefusalBecameAwaiting;
     case 'not_submitted':
-      return 'Le pane n’a pas validé le message, le champ du Mac a été vidé';
+      return t.sessionRefusalNotSubmitted;
     case 'pane_gone':
-      return 'Ce pane n’existe plus sur le Mac';
+      return t.paneGoneOnMac;
     default:
-      return `Message non transmis au pane (${reason ?? 'raison inconnue'})`;
+      return t.sessionRefusalUnknown(reason ?? t.sessionReasonUnknown);
   }
 }
 
@@ -214,7 +215,7 @@ export default function SessionScreen() {
       const notices = useOutboxNotices.getState();
       const refused = { ...notices.refused };
       const firstCause = Object.values(refused)[0];
-      if (firstCause) setToast(`Refusé par le Mac. ${firstCause}`);
+      if (firstCause) setToast(t.sessionRefusedByMac(firstCause));
       for (const nonce of Object.keys(refused)) notices.forget(nonce);
       setPending((p) => {
         if (!p.some(left)) return p;
@@ -299,7 +300,7 @@ export default function SessionScreen() {
   const turns = useMemo(() => {
     if (showHistory) return session.turns;
     if (!floor || floor.sessionId !== session.sessionId) return recentExchanges(session.turns);
-    return session.turns.filter((t) => t.seq >= floor.seq);
+    return session.turns.filter((turn) => turn.seq >= floor.seq);
   }, [session.turns, session.sessionId, showHistory, floor]);
   const hiddenCount = session.turns.length - turns.length;
   // La jointure `tool_use` vers `tool_result` : une fois, sur tout ce qui est en mémoire.
@@ -316,8 +317,8 @@ export default function SessionScreen() {
     if (working) return null;
     if (prompt?.state === 'turn_end') return Date.parse(prompt.endedAt) || null;
     for (let i = session.turns.length - 1; i >= 0; i--) {
-      const t = session.turns[i];
-      if (t?.kind === 'assistant') return Date.parse(t.ts) || null;
+      const turn = session.turns[i];
+      if (turn?.kind === 'assistant') return Date.parse(turn.ts) || null;
     }
     return null;
   }, [working, prompt, session.turns]);
@@ -331,7 +332,7 @@ export default function SessionScreen() {
       const page = await fetchTurns(session.sessionId, first ? { beforeSeq: first.seq } : {});
       useSession.getState().applyOlder(session.sessionId, page.turns, page.hasMoreBefore);
     } catch (e) {
-      setToast(`Historique indisponible. ${e instanceof Error ? e.message : String(e)}`);
+      setToast(t.sessionHistoryUnavailable(e instanceof Error ? e.message : String(e)));
     } finally {
       setLoadingOlder(false);
     }
@@ -362,7 +363,7 @@ export default function SessionScreen() {
       let pieces: Pieces | null = null;
       if (attachments.length > 0) {
         if (!agentSessionId) {
-          setToast('Ce pane n’a pas de session d’agent : aucune pièce ne peut lui être envoyée');
+          setToast(t.sessionNoAgentForAttachments);
           return false;
         }
         // A4 : au delà de 100 Mo en cellulaire, une question, une seule, pour tout le message.
@@ -381,19 +382,19 @@ export default function SessionScreen() {
       try {
         outcome = await sendText(paneId, text, prompt, pieces);
       } catch (e) {
-        bootWarn('envoi de texte, exception', e);
-        setToast(`Envoi impossible. ${e instanceof Error ? e.message : String(e)}`);
+        bootWarn('text send, exception', e);
+        setToast(t.sessionSendFailed(e instanceof Error ? e.message : String(e)));
         return false;
       }
       if (!outcome.ok) {
         if (outcome.kind === 'locked') {
-          bootWarn('envoi de texte refusé', 'prompt parsé en attente');
-          setToast('Réponds d’abord à la question ci dessus');
+          bootWarn('text send refused', 'parsed prompt awaiting');
+          setToast(t.sessionAnswerFirst);
           return false;
         }
         if (outcome.kind === 'cancelled') {
-          bootWarn('envoi de texte annulé', 'Face ID refusé ou annulé');
-          setToast('Face ID annulé, le message est conservé dans le champ');
+          bootWarn('text send cancelled', 'Face ID refused or cancelled');
+          setToast(t.sessionFaceIdCancelled);
           return false;
         }
         if (outcome.kind === 'queued') {
@@ -413,12 +414,12 @@ export default function SessionScreen() {
         }
         if (outcome.kind === 'refused') {
           // Rien n'est mis en file : le Mac a répondu et a dit non. On montre sa raison.
-          bootWarn('envoi de texte refusé par le Mac', outcome.cause);
-          setToast(`Refusé par le Mac. ${outcome.cause}`);
+          bootWarn('text send refused by the Mac', outcome.cause);
+          setToast(t.sessionRefusedByMac(outcome.cause));
           return false;
         }
-        bootWarn('envoi de texte refusé', 'file pleine');
-        setToast(`File pleine, ${TEXT_QUEUE_MAX} messages en attente`);
+        bootWarn('text send refused', 'queue full');
+        setToast(t.sessionQueueFull(TEXT_QUEUE_MAX));
         return false;
       }
       const applied = outcome.result.applied;
@@ -439,8 +440,8 @@ export default function SessionScreen() {
       if (!applied) {
         // Le Mac a accepté la requête mais n'a rien validé dans le pane : la bulle passe en
         // échec avec la cause, et le message reste renvoyable. Jamais silencieux.
-        bootWarn('envoi de texte non appliqué', outcome.result.reason ?? 'raison absente');
-        setToast(cause ?? 'Message non transmis au pane');
+        bootWarn('text send not applied', outcome.result.reason ?? 'no reason');
+        setToast(cause ?? t.sessionNotDelivered);
         if (outcome.result.reason === 'became_awaiting') peek(paneId);
       }
       stickToBottom.current = true;
@@ -468,8 +469,8 @@ export default function SessionScreen() {
       await confirmStale(job.nonce);
       const report = await flushOutbox();
       const refused = report.refused.find((r) => r.nonce === job.nonce);
-      if (refused) setToast(`Refusé par le Mac. ${refused.cause}`);
-      else if (report.sent === 0) setToast('Mac injoignable, le message reste en file');
+      if (refused) setToast(t.sessionRefusedByMac(refused.cause));
+      else if (report.sent === 0) setToast(t.sessionMacUnreachableQueued);
       refreshQueue();
     },
     [refreshQueue],
@@ -505,8 +506,8 @@ export default function SessionScreen() {
           setNotice(
             paneId,
             outcome.kind === 'refused'
-              ? `Refusé par le Mac. ${outcome.cause}`
-              : `Envoi impossible, réessaie. ${outcome.cause}`,
+              ? t.sessionRefusedByMac(outcome.cause)
+              : t.sessionSendFailedRetry(outcome.cause),
           );
         }
         return;
@@ -520,7 +521,7 @@ export default function SessionScreen() {
         // Rien n'a été envoyé, et ce fait est écrit dans le bandeau. `hash_mismatch` n'est
         // pas `expired` : ici ce n'est PAS réglé, et Robin a failli répondre à côté.
         setPhase(paneId, 'hash_mismatch');
-        setNotice(paneId, 'La question a changé sur le Mac. Ta réponse n’a pas été envoyée.');
+        setNotice(paneId, t.sessionPromptChanged);
         notify(NotifyType.Warning);
         peek(paneId);
         return;
@@ -528,19 +529,19 @@ export default function SessionScreen() {
       if (outcome.result.reason === 'pane_gone') {
         // CA-69 : le pane a été fermé entre l'affichage et le tap. Rien n'est parti.
         setPhase(paneId, 'expired');
-        setNotice(paneId, 'Cette session n’existe plus. Rien n’a été envoyé.');
+        setNotice(paneId, t.sessionGoneNothingSent);
         notify(NotifyType.Warning);
         return;
       }
       if (outcome.result.reason === 'not_awaiting') {
         // `expired` : c'est réglé, Robin a répondu sur le Mac.
         setPhase(paneId, 'expired');
-        setNotice(paneId, 'Répondu sur le Mac.');
+        setNotice(paneId, t.sessionAnsweredOnMac);
         peek(paneId);
         return;
       }
       setPhase(paneId, 'armed');
-      setNotice(paneId, 'Déjà répondu.');
+      setNotice(paneId, t.sessionAlreadyAnswered);
     },
     [paneId, prompt, setNotice, setPhase],
   );
@@ -554,7 +555,7 @@ export default function SessionScreen() {
     const reject = prompt.options.find((o) => o.kind === 'reject');
     if (!reject) return;
     await onAnswer(reject);
-    setNotice(paneId, 'Refus envoyé, explique à Claude');
+    setNotice(paneId, t.sessionRejectSent);
   }, [onAnswer, paneId, prompt, setNotice]);
 
   const openMenu = useCallback(() => showPaneMenu(paneId, setToast), [paneId]);
@@ -563,20 +564,17 @@ export default function SessionScreen() {
     if (resolveTimedOut) {
       return (
         <View style={[styles.screen, { paddingTop: insets.top }]}>
-          <NavBar view={view} onView={setView} title="Sessions" onMenu={openMenu} />
-          <EmptyState
-            title="Pane introuvable"
-            body={`Le pane ${paneId} n’apparaît pas dans l’instantané du Mac. Il a pu être fermé, ou la liaison n’a pas encore renvoyé la liste (${LINK_LABEL[link]}).`}
-          >
-            <Button label="Réessayer" onPress={forceReconnect} />
-            <Button label="Voir les sessions" kind="secondary" onPress={() => router.replace('/')} />
+          <NavBar view={view} onView={setView} title={t.sessionsTitle} onMenu={openMenu} />
+          <EmptyState title={t.sessionPaneNotFoundTitle} body={t.sessionPaneNotFoundBody(paneId, LINK_LABEL[link])}>
+            <Button label={t.actionRetry} onPress={forceReconnect} />
+            <Button label={t.actionSeeSessions} kind="secondary" onPress={() => router.replace('/')} />
           </EmptyState>
         </View>
       );
     }
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
-        <NavBar view={view} onView={setView} title="Sessions" onMenu={openMenu} />
+        <NavBar view={view} onView={setView} title={t.sessionsTitle} onMenu={openMenu} />
         <SkeletonList count={4} height={72} />
       </View>
     );
@@ -588,10 +586,10 @@ export default function SessionScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={{ paddingTop: insets.top }}>
-        <NavBar view={view} onView={setView} title="Sessions" onMenu={openMenu} />
+        <NavBar view={view} onView={setView} title={t.sessionsTitle} onMenu={openMenu} />
         <View style={styles.subtitle}>
           <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1}>
-            {pane ? `${pane.projectName} · ${pane.title ?? pane.agent ?? 'pane'}` : 'Session'}
+            {pane ? `${pane.projectName} · ${pane.title ?? pane.agent ?? t.paneFallbackTitle}` : t.sessionFallbackTitle}
           </Txt>
           <View style={styles.grow} />
           <Txt variant="monoPath" color={colors.text.tertiary} numberOfLines={1}>
@@ -611,8 +609,8 @@ export default function SessionScreen() {
       {closed ? (
         <Banner
           tone="error"
-          text="Cette session n’existe plus."
-          actionLabel="Retour"
+          text={t.sessionGone}
+          actionLabel={t.actionBack}
           onAction={() => router.back()}
         />
       ) : null}
@@ -621,30 +619,29 @@ export default function SessionScreen() {
         // dit, avec l'âge de ce cache. Rien n'est présenté comme frais.
         <Banner
           tone={link === 'offline' ? 'offline' : 'warn'}
-          text={`${link === 'offline' ? 'iPhone hors ligne' : 'Mac endormi ou éteint'}${
-            session.servedFromCacheAt !== null
-              ? `, dernier échange en cache (${shortAgeMs(now - session.servedFromCacheAt)})`
-              : ', état figé'
-          }`}
-          actionLabel="Réessayer"
+          text={t.sessionDegradedBanner(
+            link === 'offline',
+            session.servedFromCacheAt !== null ? shortAgeMs(now - session.servedFromCacheAt) : null,
+          )}
+          actionLabel={t.actionRetry}
           onAction={forceReconnect}
         />
       ) : session.servedFromCacheAt !== null ? (
         // Ouverture depuis le cache, liaison vivante : le Mac réconcilie (design 4.2).
-        <Banner tone="working" text="Dernier échange en cache, mise à jour depuis le Mac…" />
+        <Banner tone="working" text={t.sessionCacheUpdating} />
       ) : null}
       {!chatCapable ? (
         <Banner
-          text="Vue chat indisponible pour cet agent"
-          actionLabel="Ouvrir le terminal"
+          text={t.sessionChatUnavailable}
+          actionLabel={t.actionOpenTerminal}
           onAction={() => setView('term')}
         />
       ) : null}
       {session.status === 'error' ? (
         <Banner
           tone="error"
-          text={session.error ?? 'Transcript illisible'}
-          actionLabel="Ouvrir le terminal"
+          text={session.error ?? t.sessionTranscriptUnreadable}
+          actionLabel={t.actionOpenTerminal}
           onAction={() => setView('term')}
         />
       ) : null}
@@ -655,10 +652,10 @@ export default function SessionScreen() {
           tone="warn"
           text={
             late.length === 1
-              ? 'Non confirmé : le message est parti, le pane ne l’a pas encore reçu'
-              : `Non confirmé : ${late.length} messages partis, le pane ne les a pas encore reçus`
+              ? t.sessionUnconfirmedOne
+              : t.sessionUnconfirmedMany(late.length)
           }
-          actionLabel="Voir le terminal"
+          actionLabel={t.actionOpenTerminal}
           onAction={() => setView('term')}
         />
       ) : null}
@@ -667,10 +664,10 @@ export default function SessionScreen() {
           tone="warn"
           text={
             otherAwaiting.length === 1 && otherAwaiting[0]
-              ? `Un autre pane attend : ${otherAwaiting[0].projectName} · ${paneIdentity(otherAwaiting[0]).tab}`
-              : `${otherAwaiting.length} autres panes attendent`
+              ? t.sessionOtherAwaitingOne(otherAwaiting[0].projectName, paneIdentity(otherAwaiting[0]).tab)
+              : t.sessionOtherAwaitingMany(otherAwaiting.length)
           }
-          actionLabel="Voir"
+          actionLabel={t.actionSee}
           onAction={() =>
             otherAwaiting.length === 1 && otherAwaiting[0]
               ? router.push(`/session/${otherAwaiting[0].id}?focus=awaiting`)
@@ -699,7 +696,7 @@ export default function SessionScreen() {
                 refreshing={loadingOlder}
                 onRefresh={pullOlder}
                 tintColor={colors.text.secondary}
-                title={hiddenCount > 0 ? `Historique · ${hiddenCount} messages` : 'Plus ancien'}
+                title={hiddenCount > 0 ? t.sessionHistoryCount(hiddenCount) : t.sessionOlder}
                 titleColor={colors.text.tertiary}
               />
             ) : undefined
@@ -718,35 +715,27 @@ export default function SessionScreen() {
           {session.status === 'loading' && (degraded || resolveTimedOut) ? (
             // Jamais un squelette sans fin (CA-120) : sans cache et sans Mac, on le dit.
             <EmptyState
-              title={degraded ? 'Transcript indisponible hors ligne' : 'Transcript en attente du Mac'}
-              body={
-                degraded
-                  ? 'Cette session n’a pas encore été ouverte sur cet iPhone : rien n’est en cache. Le dernier échange arrivera à la reconnexion.'
-                  : 'Le Mac n’a pas encore envoyé le transcript de cette session.'
-              }
+              title={degraded ? t.sessionTranscriptOfflineTitle : t.sessionTranscriptWaitingTitle}
+              body={degraded ? t.sessionTranscriptOfflineBody : t.sessionTranscriptWaitingBody}
             >
-              <Button label="Réessayer" kind="secondary" onPress={forceReconnect} />
-              <Button label="Ouvrir le terminal" kind="secondary" onPress={() => setView('term')} />
+              <Button label={t.actionRetry} kind="secondary" onPress={forceReconnect} />
+              <Button label={t.actionOpenTerminal} kind="secondary" onPress={() => setView('term')} />
             </EmptyState>
           ) : null}
 
           {session.status === 'ready' && session.turns.length === 0 ? (
             <EmptyState
-              title="Rien à afficher"
-              body={
-                hasAgentSession
-                  ? 'Le dernier échange arrivera dès que l’agent parle.'
-                  : 'Ce pane n’a pas de session d’agent.'
-              }
+              title={t.sessionNothingTitle}
+              body={hasAgentSession ? t.sessionNothingBodyAgent : t.sessionNothingBodyNoAgent}
             >
-              <Button label="Ouvrir le terminal" kind="secondary" onPress={() => setView('term')} />
+              <Button label={t.actionOpenTerminal} kind="secondary" onPress={() => setView('term')} />
             </EmptyState>
           ) : null}
 
           {hiddenCount > 0 ? (
             <LinkAction
-              label={`Historique · ${hiddenCount} messages`}
-              accessibilityHint="Tire vers le bas pour le révéler"
+              label={t.sessionHistoryCount(hiddenCount)}
+              accessibilityHint={t.sessionHistoryHint}
               onPress={() => {
                 stickToBottom.current = false;
                 setShowHistory(true);
@@ -755,7 +744,7 @@ export default function SessionScreen() {
           ) : null}
           {showHistory && session.hasMoreBefore ? (
             <LinkAction
-              label={loadingOlder ? 'Chargement…' : 'Charger plus ancien'}
+              label={loadingOlder ? t.actionLoading : t.actionLoadOlder}
               disabled={loadingOlder}
               onPress={() => void loadOlder()}
             />
@@ -801,7 +790,7 @@ export default function SessionScreen() {
               cols={screen.cols}
               rows={screen.rows}
               paneLabel={pane ? `${pane.projectName} · ${pane.title ?? ''}` : ''}
-              frozen={degraded ? 'Instantané figé' : null}
+              frozen={degraded ? t.sessionFrozenSnapshot : null}
             />
           ) : prompt?.state === 'unparsable' ? (
             <MonospaceFallback
@@ -809,18 +798,14 @@ export default function SessionScreen() {
               cols={prompt.cols}
               rows={prompt.rows}
               paneLabel={pane ? `${pane.projectName} · ${pane.title ?? ''}` : ''}
-              frozen={degraded ? 'Instantané figé' : null}
+              frozen={degraded ? t.sessionFrozenSnapshot : null}
             />
           ) : (
             <EmptyState
-              title={degraded ? 'Écran indisponible' : 'Capture de l’écran…'}
-              body={
-                degraded
-                  ? 'Le Mac est injoignable, l’écran du pane arrivera à la reconnexion.'
-                  : 'Le contenu visible du pane s’affiche ici, rafraîchi toutes les 2 secondes.'
-              }
+              title={degraded ? t.sessionScreenUnavailableTitle : t.sessionScreenCapturingTitle}
+              body={degraded ? t.sessionScreenUnavailableBody : t.sessionScreenCapturingBody}
             >
-              <Button label="Rafraîchir" kind="secondary" onPress={() => requestScreen(paneId)} />
+              <Button label={t.actionRefresh} kind="secondary" onPress={() => requestScreen(paneId)} />
             </EmptyState>
           )}
           {pane?.awaiting ? (
@@ -864,12 +849,12 @@ export default function SessionScreen() {
           degraded={degraded}
           disabled={closed || !hasAgentSession}
           disabledPlaceholder={
-            closed ? 'Cette session n’existe plus' : 'Ce pane n’a pas de session d’agent'
+            closed ? t.sessionGoneShort : t.sessionNoAgentSession
           }
           queuedCount={queued}
           onSend={onSend}
           onInterrupt={() => void interrupt(paneId)}
-          onLockedTap={() => setToast('Réponds d’abord à la question ci dessus')}
+          onLockedTap={() => setToast(t.sessionAnswerFirst)}
           onNotice={setToast}
         />
       </View>
@@ -920,7 +905,7 @@ function NavBar({
             style={[styles.segment, view === v && styles.segmentOn]}
           >
             <Txt variant="caption" color={view === v ? colors.text.primary : colors.text.secondary}>
-              {v === 'chat' ? 'Chat' : 'Term'}
+              {v === 'chat' ? t.sessionViewChat : t.sessionViewTerm}
             </Txt>
           </Pressable>
         ))}
@@ -930,7 +915,7 @@ function NavBar({
       {/* Menu `...` du design 4.2 : `Ouvrir sur le Mac`. */}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Plus d’actions"
+        accessibilityLabel={t.sessionMoreActions}
         hitSlop={8}
         onPress={onMenu}
         style={styles.menu}

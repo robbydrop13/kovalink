@@ -83,7 +83,7 @@ export class UploadStore {
 
   private read(uploadId: string): Manifest {
     if (!/^[0-9a-f-]{36}$/.test(uploadId)) {
-      throw new FsError('BAD_REQUEST', 400, `identifiant de transfert invalide`, uploadId);
+      throw new FsError('BAD_REQUEST', 400, `invalid transfer id`, uploadId);
     }
     try {
       return JSON.parse(readFileSync(manifestPath(uploadId), 'utf8')) as Manifest;
@@ -134,7 +134,7 @@ export class UploadStore {
     const cfg = this.cfg();
     const size = typeof req.size === 'number' ? req.size : Number.NaN;
     if (!Number.isFinite(size) || size < 0 || !Number.isInteger(size)) {
-      throw new FsError('BAD_REQUEST', 400, 'taille de fichier requise, en octets', '');
+      throw new FsError('BAD_REQUEST', 400, 'file size required, in bytes', '');
     }
     const sha256 =
       typeof req.sha256 === 'string' && /^[0-9a-f]{64}$/i.test(req.sha256)
@@ -295,7 +295,7 @@ export class UploadStore {
     const onDisk = this.partSize(m);
 
     if (!Number.isInteger(offset) || offset < 0) {
-      throw new FsError('BAD_REQUEST', 400, `offset invalide : ${offset}`, m.partPath);
+      throw new FsError('BAD_REQUEST', 400, `invalid offset: ${offset}`, m.partPath);
     }
     if (offset !== onDisk) {
       const err = new FsError(

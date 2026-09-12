@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { NotifyType, notify } from '@/utils/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +29,7 @@ import { setupNotifications } from '@/notifications/register';
 import { shortAgeMs } from '@/utils/time';
 import { PUSH_UNAVAILABLE_LABEL, bootLog, bootWarn, pushAvailable } from '@/env';
 import { markPaired } from '@/boot';
+import { t } from '@/i18n/en';
 
 type Step = 'welcome' | 'scan' | 'manual' | 'verify' | 'done';
 type CheckState = 'pending' | 'running' | 'ok' | 'failed' | 'skipped';
@@ -52,6 +54,15 @@ const EMPTY: Checks = {
  */
 function parsePayload(raw: string): PairPayload | null {
   return decodePairPayload(raw);
+}
+
+/**
+ * Nom de l'appareil tel qu'il s'affiche sur le Mac. `expo-constants` expose le nom que
+ * l'utilisateur a donné à son iPhone ; à défaut (simulateur, valeur vide), un repli neutre.
+ */
+function deviceName(): string {
+  const name = Constants.deviceName;
+  return typeof name === 'string' && name.trim().length > 0 ? name.trim() : t.pairDefaultDeviceName;
 }
 
 export default function PairScreen() {
@@ -91,7 +102,7 @@ export default function PairScreen() {
       setExpiresIn(remaining);
       if (Number.isFinite(remaining) && remaining <= 0) {
         setChecks({ ...EMPTY, reachable: 'failed' });
-        setError('Ce code a expiré, régénère-le sur le Mac.');
+        setError(t.pairCodeExpired);
         claiming.current = false;
         return;
       }
@@ -103,22 +114,22 @@ export default function PairScreen() {
     // système refusait le certificat, `fetch` échouerait avant toute réponse.
     try {
       const ok = await health(target);
-      if (!ok) throw new Error('le Mac a repondu mais /health ne renvoie pas ok:true');
+      if (!ok) throw new Error(t.pairHealthNotOk);
       setChecks((c) => ({ ...c, reachable: 'ok', certificate: 'ok', token: 'running' }));
     } catch (error) {
       setChecks((c) => ({ ...c, reachable: 'failed' }));
       // L'URL tentee ET la cause reelle. Un « Mac injoignable » nu a deja coute deux heures
       // alors que le Mac repondait parfaitement : le message doit permettre de trancher
       // entre un probleme de reseau, de nom, de port et de certificat.
-      bootWarn('health injoignable', error);
+      bootWarn('health unreachable', error);
       const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-      setError(`Mac injoignable sur ${baseUrl(target)}/health\n${detail}`);
+      setError(t.pairUnreachable(`${baseUrl(target)}/health`, detail));
       claiming.current = false;
       return;
     }
 
     try {
-      const result = await pairClaim(target, payload.code, 'iPhone de Robin');
+      const result = await pairClaim(target, payload.code, deviceName());
       await saveCredentials({
         deviceId: result.deviceId,
         token: result.token,
@@ -133,14 +144,14 @@ export default function PairScreen() {
     } catch (error) {
       setChecks((c) => ({ ...c, token: 'failed' }));
       // Le message exact, jamais un libelle generique : sans lui, le diagnostic est aveugle.
-      bootWarn('appairage refuse', error);
+      bootWarn('pairing refused', error);
       const detail =
         error instanceof HttpError
           ? `${error.status} ${error.code} ${error.message}`
           : error instanceof Error
             ? error.message
             : String(error);
-      setError(`Appairage refusé : ${detail}`);
+      setError(t.pairRefused(detail));
       claiming.current = false;
       return;
     }
@@ -150,7 +161,7 @@ export default function PairScreen() {
     try {
       await startConnection();
     } catch (error) {
-      bootWarn('connexion après appairage', error);
+      bootWarn('connection after pairing', error);
     }
 
     try {
@@ -161,10 +172,10 @@ export default function PairScreen() {
         notifications: notif === 'granted' ? 'ok' : notif === 'unavailable' ? 'skipped' : 'failed',
       }));
     } catch (error) {
-      bootWarn('notifications après appairage', error);
+      bootWarn('notifications after pairing', error);
       setChecks((c) => ({ ...c, notifications: 'failed' }));
     }
-    bootLog('appairage terminé');
+    bootLog('pairing done');
     setRelay(null);
     notify(NotifyType.Success);
     setStep('done');
@@ -174,24 +185,24 @@ export default function PairScreen() {
     return (
       <ScrollView contentContainerStyle={[styles.screen, { paddingTop: insets.top + space[9] }]}>
         <Txt variant="display" color={colors.text.primary}>
-          KovaLink
+          {t.pairAppName}
         </Txt>
         <Txt variant="body" color={colors.text.secondary}>
-          Pilote tes sessions Kova depuis ton iPhone.
+          {t.pairTagline}
         </Txt>
         <View style={styles.steps}>
           <Txt variant="callout" color={colors.text.secondary}>
-            1. Ouvre Kova sur le Mac
+            {t.pairStep1}
           </Txt>
           <Txt variant="callout" color={colors.text.secondary}>
-            2. Menu Kova, puis KovaLink
+            {t.pairStep2}
           </Txt>
           <Txt variant="callout" color={colors.text.secondary}>
-            3. Scanne le QR code
+            {t.pairStep3}
           </Txt>
         </View>
         <Button
-          label="Scanner le QR code"
+          label={t.pairScanButton}
           onPress={() => {
             void (async () => {
               if (!permission?.granted) await requestPermission();
@@ -199,7 +210,7 @@ export default function PairScreen() {
             })();
           }}
         />
-        <LinkAction label="Saisir le code à la main" onPress={() => setStep('manual')} />
+        <LinkAction label={t.pairManualLink} onPress={() => setStep('manual')} />
       </ScrollView>
     );
   }
@@ -209,12 +220,12 @@ export default function PairScreen() {
       return (
         <View style={[styles.screen, { paddingTop: insets.top + space[9] }]}>
           <Txt variant="title2" color={colors.text.primary}>
-            Caméra refusée
+            {t.pairCameraDeniedTitle}
           </Txt>
           <Txt variant="callout" color={colors.text.secondary}>
-            Saisis le code à la main, ou autorise la caméra dans les Réglages d’iOS.
+            {t.pairCameraDeniedBody}
           </Txt>
-          <Button label="Saisir le code à la main" onPress={() => setStep('manual')} />
+          <Button label={t.pairManualLink} onPress={() => setStep('manual')} />
         </View>
       );
     }
@@ -231,13 +242,13 @@ export default function PairScreen() {
           }}
         />
         <View style={[styles.cameraOverlay, { paddingTop: insets.top }]}>
-          <LinkAction label="Annuler" color={colors.text.onFill} onPress={() => setStep('welcome')} />
+          <LinkAction label={t.pairCancel} color={colors.text.onFill} onPress={() => setStep('welcome')} />
           <View style={styles.viewfinder} />
           <Txt variant="callout" color={colors.text.onFill} align="center">
-            Vise le QR code affiché sur ton Mac
+            {t.pairScanHint}
           </Txt>
           <LinkAction
-            label="Saisir le code à la main"
+            label={t.pairManualLink}
             color={colors.text.onFill}
             onPress={() => setStep('manual')}
           />
@@ -250,13 +261,13 @@ export default function PairScreen() {
     return (
       <ScrollView contentContainerStyle={[styles.screen, { paddingTop: insets.top + space[9] }]}>
         <Txt variant="title1" color={colors.text.primary}>
-          Saisie manuelle
+          {t.pairManualTitle}
         </Txt>
         <TextInput
           style={styles.input}
           value={manualHost}
           onChangeText={setManualHost}
-          placeholder="macbook-robin.tail1234.ts.net"
+          placeholder={t.pairManualHostPlaceholder}
           placeholderTextColor={colors.text.tertiary}
           autoCapitalize="none"
           autoCorrect={false}
@@ -267,7 +278,7 @@ export default function PairScreen() {
           style={styles.input}
           value={manualCode}
           onChangeText={setManualCode}
-          placeholder="code sensible a la casse"
+          placeholder={t.pairManualCodePlaceholder}
           placeholderTextColor={colors.text.tertiary}
           autoCapitalize="none"
           autoCorrect={false}
@@ -275,7 +286,7 @@ export default function PairScreen() {
           keyboardAppearance="dark"
         />
         <Button
-          label="Appairer"
+          label={t.pairButton}
           disabled={manualHost.trim().length === 0 || manualCode.trim().length === 0}
           onPress={() =>
             void run({
@@ -287,7 +298,7 @@ export default function PairScreen() {
             })
           }
         />
-        <LinkAction label="Revenir au scan" onPress={() => setStep('scan')} />
+        <LinkAction label={t.pairBackToScan} onPress={() => setStep('scan')} />
       </ScrollView>
     );
   }
@@ -296,19 +307,19 @@ export default function PairScreen() {
     return (
       <View style={[styles.screen, { paddingTop: insets.top + space[9] }]}>
         <Txt variant="title1" color={colors.text.primary}>
-          Connexion au Mac
+          {t.pairVerifyTitle}
         </Txt>
         {expiresIn !== null && expiresIn > 0 ? (
           <Txt variant="footnote" color={colors.text.tertiary}>
-            Ce code expire dans {shortAgeMs(expiresIn)}
+            {t.pairCodeExpiresIn(shortAgeMs(expiresIn))}
           </Txt>
         ) : null}
         <View style={styles.checklist}>
-          <CheckRow label="Mac trouvé" state={checks.reachable} />
-          <CheckRow label="Certificat valide" state={checks.certificate} />
-          <CheckRow label="Jeton vérifié" state={checks.token} />
+          <CheckRow label={t.pairCheckReachable} state={checks.reachable} />
+          <CheckRow label={t.pairCheckCertificate} state={checks.certificate} />
+          <CheckRow label={t.pairCheckToken} state={checks.token} />
           <CheckRow
-            label={pushAvailable ? 'Notifications' : 'Notifications (indisponibles ici)'}
+            label={pushAvailable ? t.pairCheckNotifications : t.pairCheckNotificationsUnavailable}
             state={checks.notifications}
           />
         </View>
@@ -317,7 +328,7 @@ export default function PairScreen() {
             <Txt variant="callout" color={colors.status.error}>
               {error}
             </Txt>
-            <Button label="Rescanner" kind="secondary" onPress={() => setStep('scan')} />
+            <Button label={t.pairRescan} kind="secondary" onPress={() => setStep('scan')} />
           </View>
         ) : null}
       </View>
@@ -327,25 +338,24 @@ export default function PairScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top + space[9] }]}>
       <Txt variant="display" color={colors.status.success}>
-        Appairé
+        {t.pairDoneTitle}
       </Txt>
       <Txt variant="body" color={colors.text.primary}>
         {macName}
       </Txt>
       <Txt variant="callout" color={colors.text.secondary}>
-        {relay ? 'Connexion relayée' : 'Connexion directe'}
+        {relay ? t.pairDoneRelayed : t.pairDoneDirect}
       </Txt>
       {checks.notifications === 'skipped' || !pushAvailable ? (
         <Txt variant="footnote" color={colors.text.secondary}>
-          {PUSH_UNAVAILABLE_LABEL} Tout le reste fonctionne.
+          {PUSH_UNAVAILABLE_LABEL} {t.pairDoneEverythingElseWorks}
         </Txt>
       ) : checks.notifications !== 'ok' ? (
         <Txt variant="footnote" color={colors.status.awaiting}>
-          Les notifications ne sont pas autorisées. Sans elles, tu ne sauras pas qu’un agent a
-          fini.
+          {t.pairDoneNotificationsDenied}
         </Txt>
       ) : null}
-      <Button label="Commencer" onPress={() => router.replace('/')} />
+      <Button label={t.pairStart} onPress={() => router.replace('/')} />
     </View>
   );
 }

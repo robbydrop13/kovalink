@@ -1,6 +1,7 @@
 // Choix de l'état affiché par le bandeau de session. Pur, testé sous Node : l'ordre de
 // priorité (fermée, hors ligne, attend, travaille, terminé, inactif) est le contrat.
-import { duration, shortAgeMs } from '@/utils/time';
+import { t } from '@/i18n/en';
+import { shortAgeMs } from '@/utils/time';
 
 export type AgentStatusKind = 'offline' | 'closed' | 'awaiting' | 'working' | 'done' | 'idle';
 
@@ -15,21 +16,27 @@ export interface AgentStatusInput {
   finishedAt: number | null;
 }
 
+/** Durée compacte du bandeau (`1m 12s`), plus courte que `duration()` du reste de l'app. */
+function elapsed(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  return t.statusElapsed(Math.floor(total / 60), total % 60);
+}
+
 /** Choix de l'état et du libellé. Pur, testable : l'ordre de priorité est le contrat. */
 export function agentStatus(input: AgentStatusInput, now = Date.now()): { kind: AgentStatusKind; label: string } {
-  if (input.closed) return { kind: 'closed', label: 'Session fermée' };
-  if (input.degraded) return { kind: 'offline', label: 'Hors ligne, état figé' };
-  if (input.awaiting) return { kind: 'awaiting', label: 'Attend ta réponse' };
+  if (input.closed) return { kind: 'closed', label: t.statusClosed };
+  if (input.degraded) return { kind: 'offline', label: t.statusOffline };
+  if (input.awaiting) return { kind: 'awaiting', label: t.statusAwaiting };
   if (input.working) {
     const since = input.workingSince;
     return {
       kind: 'working',
-      label: since !== null ? `Travaille · ${duration(now - since)}` : 'Travaille',
+      label: since !== null ? t.statusWorkingFor(elapsed(now - since)) : t.statusWorking,
     };
   }
   if (input.finishedAt !== null) {
-    return { kind: 'done', label: `Terminé il y a ${shortAgeMs(now - input.finishedAt)}` };
+    return { kind: 'done', label: t.statusDoneAgo(shortAgeMs(now - input.finishedAt)) };
   }
-  return { kind: 'idle', label: 'Inactif' };
+  return { kind: 'idle', label: t.statusIdle };
 }
 

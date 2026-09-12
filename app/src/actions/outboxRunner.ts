@@ -15,6 +15,7 @@ import { usePrompts } from '@/store/prompts';
 import { needsCellularChoice } from '@/store/transfers';
 import { totalSize } from '@/features/chat/attachments';
 import { bootWarn } from '@/env';
+import { t } from '@/i18n/en';
 import { AttachmentError } from './attachments';
 import { materialize, payloadOf } from './sendText';
 import { useOutboxNotices } from '@/store/outboxNotices';
@@ -70,8 +71,8 @@ export async function flushOutbox(): Promise<FlushReport> {
             // Le Mac a répondu mais n'a rien validé dans le pane (question apparue,
             // retour chariot jamais honoré). Ce n'est ni envoyé ni à rejouer en boucle :
             // on le retire, et la cause remonte jusqu'à la bulle.
-            const cause = `non appliqué : ${result.reason ?? 'raison inconnue'}`;
-            bootWarn('file d’attente, texte non appliqué', cause);
+            const cause = t.outboxNotApplied(result.reason ?? t.outboxUnknownReason);
+            bootWarn('outbox, text not applied', cause);
             await dequeue(job.nonce);
             report.refused.push({ nonce: job.nonce, cause });
             useOutboxNotices.getState().refuse(job.nonce, cause);
@@ -88,14 +89,14 @@ export async function flushOutbox(): Promise<FlushReport> {
           (e instanceof AttachmentError && e.final);
         if (refusedByMac) {
           const cause =
-            e instanceof HttpError ? `${e.status} ${e.code} : ${e.message}` : (e as Error).message;
-          bootWarn(`file d’attente, ${job.kind} refusé`, cause);
+            e instanceof HttpError ? t.refusedCause(`${e.status} ${e.code}`, e.message) : (e as Error).message;
+          bootWarn(`outbox, ${job.kind} refused`, cause);
           await dequeue(job.nonce);
           report.refused.push({ nonce: job.nonce, cause });
           useOutboxNotices.getState().refuse(job.nonce, cause);
           continue;
         }
-        bootWarn(`file d’attente, ${job.kind} différé`, e);
+        bootWarn(`outbox, ${job.kind} deferred`, e);
         await bumpAttempt(job.nonce);
         report.held += 1;
       }

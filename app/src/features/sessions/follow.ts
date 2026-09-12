@@ -1,6 +1,8 @@
 // « Suivre sur le Mac » : ouvrir une session depuis l'iPhone bascule l'onglet sur le Mac,
 // comme Cmd+P le fait sur ordinateur (affiche le pane ET bascule l'onglet). Décision pure,
 // testée sous Node : le réglage et l'émetteur sont injectés.
+import { t } from '@/i18n/en';
+
 export type FollowResult = 'sent' | 'off' | 'unreachable';
 
 /**
@@ -15,5 +17,5 @@ export function followPane(paneId: number, enabled: boolean, send: (paneId: numb
 
 /** Libellé du toast, `null` quand il n'y a rien à dire. */
 export function followNotice(result: FollowResult): string | null {
-  return result === 'unreachable' ? 'Mac injoignable, l’onglet n’a pas basculé sur le Mac' : null;
+  return result === 'unreachable' ? t.followUnreachable : null;
 }

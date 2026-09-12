@@ -1,0 +1,120 @@
+// Chaînes visibles : files, share, transferts à l'écran. Voir `../en.ts`.
+export const files = {
+  // Écran Fichiers (`app/files/index.tsx`).
+  filesTitle: 'Files',
+  filesBack: '‹ Back',
+  filesSelect: 'Select',
+  filesSelectedCount: (n: number) => `${n} selected`,
+  filesCachedBanner: (time: string) =>
+    `Cached, last state at ${time}. Sending is disabled while the Mac is unreachable.`,
+  filesFilterPlaceholder: 'Filter this folder',
+  filesFilterA11y: 'Filter the current folder',
+  filesShowHiddenA11y: 'Show hidden files',
+  filesHiddenToggle: 'hidden',
+  filesGoUp: 'Go up one folder',
+  filesNoResults: 'No results in this folder',
+  filesEmptyFolder: 'Empty folder',
+  filesFilterHint: 'The filter only applies to the current folder, never the whole disk.',
+  filesSendHere: 'Send a file here',
+  filesLoadMore: (shown: number, total: number) => `Load more (${shown} of ${total})`,
+  filesChooseFolder: 'Choose this folder',
+  filesDownloading: 'Downloading…',
+  filesShareCount: (n: number) => `Share (${n})`,
+  filesMacUnreachableSend: 'Mac unreachable, sending disabled',
+  filesPreview: 'Preview',
+  filesShare: 'Share',
+  filesFromPhotos: 'From Photos',
+  filesFromFiles: 'From Files',
+  filesErrReadDenied: 'Access denied by macOS',
+  filesErrNotFound: 'This folder no longer exists',
+  filesErrNotDir: 'This path is not a folder',
+  filesErrNetwork: 'Mac unreachable',
+  filesErrRead: 'Could not read',
+
+  // Lignes et en-tête (`FileRow`, `Breadcrumb`).
+  filesFolder: 'folder',
+  filesUnreadable: 'unreadable',
+  filesRowA11y: (name: string, detail: string) => `${name}, ${detail}`,
+  filesSortBy: (label: string) => `Sort by ${label}`,
+  filesSortName: 'Name',
+  filesSortSize: 'Size',
+  filesSortModified: 'Modified',
+  filesGoToA11y: (label: string) => `Go to ${label}`,
+
+  // Mise en forme (`format`).
+  filesSizeBytes: (n: number) => `${n} B`,
+  filesSizeUnits: ['KB', 'MB', 'GB', 'TB'],
+  filesSize: (value: string, unit: string) => `${value} ${unit}`,
+  filesDaysAgo: (days: number) => `${days}d`,
+
+  // Sélecteurs iOS (`pick`).
+  filesPhotosDenied: 'Photo library access denied. Allow KovaLink in Settings, Privacy, Photos.',
+  filesCameraDenied: 'Camera access denied. Allow KovaLink in Settings, Privacy, Camera.',
+  filesShareUnavailable: 'The iOS share sheet is not available on this device.',
+
+  // Client HTTP (`net/files`).
+  filesNotPaired: 'Device not paired',
+  filesHttpError: (status: number, path: string) => `HTTP ${status} on ${path}`,
+  filesHttpErrorBody: (status: number, path: string, body: string) => `HTTP ${status} on ${path}: ${body}`,
+  filesDownloadCanceled: 'Download canceled.',
+  filesChecksumMismatch: (local: string, mac: string) =>
+    `Checksum mismatch after download: ${local}… on the iPhone, ${mac}… on the Mac. The file was deleted, try again.`,
+
+  // Aperçu (`app/files/preview.tsx`).
+  previewNoPath: 'No file path given to the preview.',
+  previewVerifying: 'Verifying…',
+  previewClose: 'Close',
+  previewSavedVerified: (name: string) => `Saved on the iPhone as ${name}, checksum verified.`,
+  previewSavedUnverified: (name: string) =>
+    `Saved on the iPhone as ${name}, no checksum from the Mac: unverified.`,
+  previewTruncated: (size: string, shown: string) => `${size} file: only the first ${shown} are shown.`,
+  previewSave: 'Save to iPhone',
+  previewPdfIosOnly: 'PDF preview available on iOS',
+  previewEmptyFile: 'Empty file',
+  previewEmptyBody: '0 bytes. It can be saved as is.',
+  previewUnavailable: 'No preview for this format',
+  previewMetaName: 'Name',
+  previewMetaType: 'Type',
+  previewMetaSize: 'Size',
+  previewMetaPath: 'Path',
+  previewUnknownType: (ext: string) => `unknown (${ext})`,
+  previewNoExtension: 'no extension',
+  previewUnknownSize: 'unknown',
+
+  // Destinations (`DestinationPicker`).
+  destLastSent: 'last sent',
+  destPickedByHand: 'picked by hand',
+  destUnavailable: (cause: string) => `Destinations unavailable: ${cause}`,
+  destNone: 'No destination suggested. Open a pane in Kova, or pick a folder by hand.',
+  destBrowse: 'Browse',
+  destA11y: (label: string, badge: string) => `${label}, ${badge}`,
+  destWriteRefused: 'Write refused on this path',
+  destChooseOther: 'Choose another folder…',
+  destChooseOtherA11y: 'Choose another folder',
+
+  // Partage iOS (`app/share.tsx`).
+  shareTitle: 'Send to the Mac',
+  shareEmptyTitle: 'No file to send',
+  shareEmptyBody: 'Share a file from another app, or pick one here.',
+  sharePickPhotos: 'Choose from Photos',
+  sharePickFiles: 'Choose from Files',
+  shareFilesCount: (n: number, size: string) => `${n} files · ${size}`,
+  shareDestination: 'DESTINATION',
+  shareDone: 'Done',
+  shareSendTo: (label: string) => `Send to ${label}`,
+  shareChooseDest: 'Choose a destination',
+
+  // Transferts à l'écran (`TransferList`).
+  transferTo: (label: string) => `to ${label}`,
+  transferCellularBody: (size: string) => `${size} file over cellular.`,
+  transferSendNow: 'Send now',
+  transferWaitWifi: 'Wait for Wi-Fi',
+  transferRenamed: (name: string) => `renamed to ${name}, the original was left untouched`,
+  transferStatusQueued: 'queued',
+  transferStatusWaitingWifi: 'waiting for Wi-Fi',
+  transferStatusHashing: 'SHA-256 checksum…',
+  transferStatusProgress: (percent: number, sent: string) => `${percent}% · ${sent}`,
+  transferStatusPaused: (attempt: number) => `paused, resuming automatically (attempt ${attempt})`,
+  transferStatusDone: 'sent to the Mac',
+  transferStatusFailed: 'failed',
+} as const;

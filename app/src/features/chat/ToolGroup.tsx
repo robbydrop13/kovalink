@@ -9,6 +9,7 @@
 // ne se replie tout seul dans le temps ni à l'arrivée d'un événement (point 10).
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { ToolResultBlock, ToolUseBlock } from '@/protocol';
+import { t } from '@/i18n/en';
 import { colors, radius, space } from '@/theme';
 import { useSession } from '@/store/session';
 import { Txt } from '@/ui/Txt';
@@ -49,10 +50,10 @@ export function ToolGroup({ calls, results, working }: Props) {
           >
             <StateGlyph state={summary} />
             <Txt variant="footnote" color={colors.text.tertiary}>
-              {`${calls.length} actions`}
+              {t.toolGroupCount(calls.length)}
             </Txt>
             <Txt variant="footnote" color={colors.text.tertiary}>
-              replier
+              {t.toolGroupCollapse}
             </Txt>
           </Pressable>
         ) : null}
@@ -67,24 +68,24 @@ export function ToolGroup({ calls, results, working }: Props) {
   const failed = states.filter((s) => s === 'failed').length;
   const detail =
     summary === 'running'
-      ? `${done} sur ${calls.length} terminées`
+      ? t.toolGroupProgress(done, calls.length)
       : failed > 0
-        ? `${failed} en échec`
+        ? t.toolGroupFailedCount(failed)
         : summary === 'done'
-          ? 'terminées'
+          ? t.toolGroupDone
           : '';
   return (
     <View style={styles.group}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: false }}
-        accessibilityLabel={`${calls.length} actions, ${detail}`}
+        accessibilityLabel={t.toolGroupA11y(t.toolGroupCount(calls.length), detail)}
         onPress={() => setOpen(true)}
         style={({ pressed }) => [styles.header, pressed && styles.pressed]}
       >
         <StateGlyph state={summary} />
         <Txt variant="action" color={colors.text.secondary}>
-          {`${calls.length} actions`}
+          {t.toolGroupCount(calls.length)}
         </Txt>
         <Txt variant="footnote" color={colors.text.tertiary} numberOfLines={1} style={styles.detail}>
           {detail}

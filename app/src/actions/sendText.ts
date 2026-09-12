@@ -19,6 +19,7 @@
 // reconnexion.
 import { ImpactStyle, impact } from '@/utils/haptics';
 import type { ActionResponse, Prompt } from '@/protocol';
+import { t } from '@/i18n/en';
 import { HttpError, postText } from '@/net/http';
 import { enqueue, dequeue, replaceJob, OUTBOX_TTL_MS, countPending, TEXT_QUEUE_MAX, type OutboxJob } from '@/db/outbox';
 import { isDegraded, useConnection } from '@/store/connection';
@@ -71,7 +72,7 @@ export async function materialize(job: OutboxJob): Promise<string> {
   const payload = payloadOf(job);
   const pieces = payload.attachments ?? [];
   if (pieces.length === 0) return payload.text;
-  if (!payload.destDir) throw new AttachmentError(pieces[0] as Attachment, 'dossier de destination inconnu', 'BAD_REQUEST');
+  if (!payload.destDir) throw new AttachmentError(pieces[0] as Attachment, t.attachmentNoDestDir, 'BAD_REQUEST');
   const arrived = await uploadAttachments(pieces, payload.destDir, {
     cellularApproved: payload.cellularApproved ?? false,
     onDone: async (a) => {
@@ -93,7 +94,7 @@ export async function sendText(
   if (prompt?.state === 'parsed') return { ok: false, kind: 'locked' };
 
   if (prompt?.state === 'unparsable') {
-    const ok = await confirmWithFaceId('Envoyer une réponse libre');
+    const ok = await confirmWithFaceId(t.faceIdSendFreeText);
     if (!ok) return { ok: false, kind: 'cancelled' };
   }
 
@@ -149,7 +150,7 @@ export async function sendText(
       // attente). Le mettre en file le ferait repartir en boucle : on le retire et on
       // affiche la cause exacte au lieu d'un « message en attente » mensonger.
       await dequeue(id);
-      return { ok: false, kind: 'refused', cause: `${e.code} : ${e.message}` };
+      return { ok: false, kind: 'refused', cause: t.refusedCause(e.code, e.message) };
     }
     // Vraie panne réseau : mis en file, pas rejeté (P5). Revalidé à la reprise.
     return { ok: false, kind: 'queued', nonce: id, attachments };
