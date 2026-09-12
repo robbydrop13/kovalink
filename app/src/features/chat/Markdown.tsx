@@ -1,76 +1,50 @@
-// Markdown de base, lot 1 : gras, italique, code en ligne, liens, listes, titres.
+// Rendu Markdown des tours assistant, sur l'arbre de `markdownAst.ts` (markdown-it).
 //
-// Le rendu enrichi du contenu déplié (coloration syntaxique, diffs teintés) est en lot 2.
-// Une dépendance de rendu Markdown complète est également en lot 2 : ici, un rendu minimal
-// suffit et évite d'embarquer une bibliothèque pour six règles.
+// Tableaux GFM : en-tête distinct (fond `bg.overlay`, gras), lignes séparées d'un filet,
+// cellules 15 pt qui vont à la ligne, alignement respecté. Un tableau à deux colonnes
+// tient en largeur ; au delà, ou si le contenu est long, il vit dans un conteneur à
+// défilement horizontal, comme les blocs de code, jamais compressé jusqu'à l'illisible.
+// Blocs de code : monospace, langage, bouton `Partager` (aucun module presse-papiers
+// natif dans ce build : la feuille de partage d'iOS offre `Copier`). Liens : Safari.
 import { Fragment, type ReactNode } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
-import { colors, radius, space } from '@/theme';
+import { Linking, Pressable, ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { colors, layout, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
+import { parseMarkdown, type Align, type MdBlock, type Span } from './markdownAst';
 
-type Segment =
-  | { kind: 'plain'; text: string }
-  | { kind: 'bold'; text: string }
-  | { kind: 'italic'; text: string }
-  | { kind: 'code'; text: string }
-  | { kind: 'link'; text: string; href: string };
+const CELL_MIN = 96;
+const CELL_MAX = 240;
+const CELL_FONT = 15;
 
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)]+\))/g;
-
-function parseInline(input: string): Segment[] {
-  const out: Segment[] = [];
-  let last = 0;
-  for (const m of input.matchAll(INLINE)) {
-    const idx = m.index ?? 0;
-    if (idx > last) out.push({ kind: 'plain', text: input.slice(last, idx) });
-    const token = m[0];
-    if (token.startsWith('`')) out.push({ kind: 'code', text: token.slice(1, -1) });
-    else if (token.startsWith('**')) out.push({ kind: 'bold', text: token.slice(2, -2) });
-    else if (token.startsWith('[')) {
-      const sep = token.indexOf('](');
-      out.push({
-        kind: 'link',
-        text: token.slice(1, sep),
-        href: token.slice(sep + 2, -1),
-      });
-    } else out.push({ kind: 'italic', text: token.slice(1, -1) });
-    last = idx + token.length;
-  }
-  if (last < input.length) out.push({ kind: 'plain', text: input.slice(last) });
-  return out;
+function openLink(href: string): void {
+  void Linking.openURL(href).catch(() => undefined);
 }
 
-function Inline({ text }: { text: string }): ReactNode {
+function Spans({ spans, variant = 'body' }: { spans: Span[]; variant?: 'body' | 'callout' | 'calloutStrong' }) {
   return (
     <>
-      {parseInline(text).map((seg, i) => {
-        if (seg.kind === 'code') {
+      {spans.map((s, i) => {
+        if (s.code) {
           return (
             <Txt key={i} variant="monoCodeInline" color={colors.text.primary} style={styles.code}>
-              {seg.text}
+              {s.text}
             </Txt>
           );
         }
-        if (seg.kind === 'link') {
-          return (
-            <Txt
-              key={i}
-              color={colors.accent.primary}
-              style={styles.link}
-              onPress={() => void Linking.openURL(seg.href).catch(() => undefined)}
-            >
-              {seg.text}
-            </Txt>
-          );
-        }
+        const style = [
+          s.italic && styles.italic,
+          s.strike && styles.strike,
+          s.href && styles.link,
+        ];
         return (
           <Txt
             key={i}
-            variant={seg.kind === 'bold' ? 'bodyStrong' : 'body'}
-            color={colors.text.primary}
-            style={seg.kind === 'italic' ? styles.italic : undefined}
+            variant={s.bold ? 'bodyStrong' : variant}
+            color={s.href ? colors.accent.primary : colors.text.primary}
+            style={style}
+            {...(s.href ? { onPress: () => openLink(s.href as string) } : {})}
           >
-            {seg.text}
+            {s.text}
           </Txt>
         );
       })}
@@ -78,67 +52,190 @@ function Inline({ text }: { text: string }): ReactNode {
   );
 }
 
+function ListBlock({ block, depth }: { block: Extract<MdBlock, { type: 'list' }>; depth: number }) {
+  return (
+    <View style={styles.list}>
+      {block.items.map((item, i) => (
+        <View key={i} style={styles.bulletRow}>
+          <Txt variant="body" color={colors.text.secondary} style={styles.marker}>
+            {block.ordered ? `${block.start + i}.` : depth % 2 === 0 ? '•' : '◦'}
+          </Txt>
+          <View style={styles.flex}>
+            <Blocks blocks={item} depth={depth + 1} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function CodeBlock({ block }: { block: Extract<MdBlock, { type: 'code' }> }) {
+  return (
+    <View style={styles.codeBlock}>
+      <View style={styles.codeBar}>
+        <Txt variant="caption" color={colors.text.tertiary}>
+          {block.lang || 'code'}
+        </Txt>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Share this code block"
+          hitSlop={8}
+          onPress={() => void Share.share({ message: block.code }).catch(() => undefined)}
+        >
+          <Txt variant="caption" color={colors.accent.primary}>
+            Share
+          </Txt>
+        </Pressable>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.codeScroll}>
+        <Txt variant="monoCode" color={colors.text.primary} selectable>
+          {block.code}
+        </Txt>
+      </ScrollView>
+    </View>
+  );
+}
+
+function alignStyle(align: Align): { textAlign: 'left' | 'center' | 'right' } {
+  return { textAlign: align ?? 'left' };
+}
+
+/**
+ * Largeur des colonnes : le tableau se partage la largeur de la bulle quand il tient,
+ * sinon chaque colonne prend au moins `CELL_MIN` et le tout défile horizontalement.
+ */
+export function columnWidths(count: number, available: number): number[] {
+  const share = Math.floor(available / Math.max(1, count));
+  const width = Math.max(CELL_MIN, Math.min(CELL_MAX, share));
+  return Array.from({ length: count }, () => width);
+}
+
+function TableBlock({ block }: { block: Extract<MdBlock, { type: 'table' }> }) {
+  const { width: screen } = useWindowDimensions();
+  const available = screen - 2 * layout.screenPaddingH - 2;
+  const count = Math.max(block.header.length, ...block.rows.map((r) => r.length));
+  const widths = columnWidths(count, available);
+  const total = widths.reduce((a, b) => a + b, 0);
+  const cell = (spans: Span[] | undefined, col: number, header: boolean): ReactNode => (
+    <View key={col} style={[styles.cell, { width: widths[col] ?? CELL_MIN }]}>
+      <Txt
+        variant={header ? 'calloutStrong' : 'callout'}
+        color={colors.text.primary}
+        style={[styles.cellText, alignStyle(block.align[col] ?? null)]}
+      >
+        <Spans spans={spans ?? []} variant={header ? 'calloutStrong' : 'callout'} />
+      </Txt>
+    </View>
+  );
+  const table = (
+    <View style={[styles.table, { width: total }]}>
+      <View style={[styles.row, styles.headRow]}>{widths.map((_, c) => cell(block.header[c], c, true))}</View>
+      {block.rows.map((r, i) => (
+        <View key={i} style={[styles.row, i < block.rows.length - 1 && styles.rowBorder]}>
+          {widths.map((_, c) => cell(r[c], c, false))}
+        </View>
+      ))}
+    </View>
+  );
+  if (total <= available) return table;
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={styles.tableScroll}>
+      {table}
+    </ScrollView>
+  );
+}
+
+function Blocks({ blocks, depth }: { blocks: MdBlock[]; depth: number }) {
+  return (
+    <>
+      {blocks.map((b, i) => {
+        switch (b.type) {
+          case 'paragraph':
+            return (
+              <Txt key={i} variant="body" color={colors.text.primary}>
+                <Spans spans={b.spans} />
+              </Txt>
+            );
+          case 'heading':
+            return (
+              <Txt key={i} variant={b.level <= 2 ? 'title2' : 'calloutStrong'} color={colors.text.primary} style={styles.heading}>
+                <Spans spans={b.spans} variant="calloutStrong" />
+              </Txt>
+            );
+          case 'list':
+            return <ListBlock key={i} block={b} depth={depth} />;
+          case 'code':
+            return <CodeBlock key={i} block={b} />;
+          case 'quote':
+            return (
+              <View key={i} style={styles.quote}>
+                <Blocks blocks={b.blocks} depth={depth} />
+              </View>
+            );
+          case 'hr':
+            return <View key={i} style={styles.hr} />;
+          case 'table':
+            return <TableBlock key={i} block={b} />;
+          default:
+            return <Fragment key={i} />;
+        }
+      })}
+    </>
+  );
+}
+
 export function Markdown({ text }: { text: string }) {
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
   return (
     <View style={styles.block}>
-      {lines.map((line, i) => {
-        if (line.trim() === '') return <View key={i} style={styles.gap} />;
-        const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-        if (heading) {
-          return (
-            <Txt key={i} variant="calloutStrong" color={colors.text.primary}>
-              {heading[2] ?? ''}
-            </Txt>
-          );
-        }
-        const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
-        if (bullet) {
-          return (
-            <View key={i} style={styles.bulletRow}>
-              <Txt variant="body" color={colors.text.secondary}>
-                •
-              </Txt>
-              <Txt variant="body" color={colors.text.primary} style={styles.flex}>
-                <Inline text={bullet[1] ?? ''} />
-              </Txt>
-            </View>
-          );
-        }
-        const ordered = /^\s*(\d+)[.)]\s+(.*)$/.exec(line);
-        if (ordered) {
-          return (
-            <View key={i} style={styles.bulletRow}>
-              <Txt variant="body" color={colors.text.secondary}>
-                {ordered[1]}.
-              </Txt>
-              <Txt variant="body" color={colors.text.primary} style={styles.flex}>
-                <Inline text={ordered[2] ?? ''} />
-              </Txt>
-            </View>
-          );
-        }
-        return (
-          <Fragment key={i}>
-            <Txt variant="body" color={colors.text.primary}>
-              <Inline text={line} />
-            </Txt>
-          </Fragment>
-        );
-      })}
+      <Blocks blocks={parseMarkdown(text)} depth={0} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  block: { gap: space[1] },
-  gap: { height: space[4] },
+  block: { gap: space[3] },
+  heading: { marginTop: space[2] },
+  list: { gap: space[1] },
   bulletRow: { flexDirection: 'row', gap: space[3] },
-  flex: { flex: 1 },
+  marker: { minWidth: 14 },
+  flex: { flex: 1, gap: space[1] },
   italic: { fontStyle: 'italic' },
+  strike: { textDecorationLine: 'line-through' },
   link: { textDecorationLine: 'underline' },
-  code: {
+  code: { backgroundColor: colors.bg.inset, borderRadius: radius.sm },
+  codeBlock: {
+    borderRadius: radius.md,
     backgroundColor: colors.bg.inset,
-    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    overflow: 'hidden',
   },
+  codeBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: space[4],
+    paddingVertical: space[2],
+    backgroundColor: colors.bg.overlay,
+  },
+  codeScroll: { padding: space[4] },
+  quote: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.border.strong,
+    paddingLeft: space[4],
+    gap: space[2],
+  },
+  hr: { height: 1, backgroundColor: colors.border.subtle, marginVertical: space[2] },
+  tableScroll: { paddingBottom: space[2] },
+  table: {
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+  },
+  row: { flexDirection: 'row' },
+  headRow: { backgroundColor: colors.bg.overlay },
+  rowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border.subtle },
+  cell: { paddingHorizontal: space[3], paddingVertical: space[2], justifyContent: 'center' },
+  cellText: { fontSize: CELL_FONT, lineHeight: 20 },
 });
