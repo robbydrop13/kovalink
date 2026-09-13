@@ -30,6 +30,7 @@ export default function RenameScreen() {
   const [tabTitle, setTabTitle] = useState(group?.tabId !== null && group?.tabId !== undefined ? group.title : '');
   const [sessionName, setSessionName] = useState(pane?.agent_session_name ?? '');
   const [busy, setBusy] = useState<'tab' | 'session' | null>(null);
+  const claude = pane?.agent === 'claude';
   // Le renommage est une requête directe au Mac : sans liaison, rien ne part. On le dit
   // avant que Robin ne tape, plutôt qu'une erreur réseau après.
   const degraded = isDegraded(useConnection((s) => s.link));
@@ -89,19 +90,58 @@ export default function RenameScreen() {
           </Txt>
         ) : null}
 
+        {/* La session d'abord : c'est ce que « Rename » veut dire pour Robin (le `/rename`
+            de Claude, le nom qu'on retrouve dans la liste, dans Kova et a la reprise).
+            L'onglet Kova vient en second, presente comme ce qu'il est : le nom de l'onglet. */}
         <View style={styles.field}>
           <Txt variant="calloutStrong" color={colors.text.primary}>
+            {t.renameSessionLabel}
+          </Txt>
+          <TextInput
+            style={[styles.input, claude ? null : styles.inputDisabled]}
+            value={sessionName}
+            onChangeText={setSessionName}
+            autoFocus={claude}
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            keyboardAppearance="dark"
+            maxLength={60}
+            placeholder={t.renameSessionPlaceholder}
+            placeholderTextColor={colors.text.tertiary}
+            returnKeyType="done"
+            editable={claude}
+            onSubmitEditing={() => void renameSession()}
+            accessibilityLabel={t.renameSessionLabel}
+          />
+          <Txt variant="caption" color={colors.text.tertiary}>
+            {claude ? t.renameSessionHint : t.renameSessionNeedsClaude}
+          </Txt>
+          <Button
+            icon="edit-2"
+            height={48}
+            label={t.renameSessionButton}
+            disabled={busy !== null || degraded || !claude || sessionName.trim().length === 0}
+            onPress={() => void renameSession()}
+          />
+        </View>
+
+        <View style={styles.divider} />
+
+        <View style={styles.field}>
+          <Txt variant="calloutStrong" color={colors.text.secondary}>
             {t.renameTabLabel}
           </Txt>
           <TextInput
             style={styles.input}
             value={tabTitle}
             onChangeText={setTabTitle}
-            autoFocus
+            autoFocus={!claude}
             autoCorrect={false}
             clearButtonMode="while-editing"
             keyboardAppearance="dark"
             maxLength={60}
+            placeholder={t.renameTabPlaceholder}
+            placeholderTextColor={colors.text.tertiary}
             returnKeyType="done"
             onSubmitEditing={() => void renameTab()}
             accessibilityLabel={t.renameTabLabel}
@@ -110,35 +150,6 @@ export default function RenameScreen() {
             {t.renameTabHint}
           </Txt>
           <Button icon="edit-2" kind="secondary" height={48} label={t.renameTabButton} disabled={busy !== null || degraded} onPress={() => void renameTab()} />
-        </View>
-
-        <View style={styles.field}>
-          <Txt variant="calloutStrong" color={colors.text.primary}>
-            {t.renameSessionLabel}
-          </Txt>
-          <TextInput
-            style={styles.input}
-            value={sessionName}
-            onChangeText={setSessionName}
-            autoCorrect={false}
-            clearButtonMode="while-editing"
-            keyboardAppearance="dark"
-            maxLength={60}
-            returnKeyType="done"
-            editable={pane?.agent === 'claude'}
-            onSubmitEditing={() => void renameSession()}
-            accessibilityLabel={t.renameSessionLabel}
-          />
-          <Txt variant="caption" color={colors.text.tertiary}>
-            {t.renameSessionHint}
-          </Txt>
-          <Button
-            icon="edit-2"
-            height={48}
-            label={t.renameSessionButton}
-            disabled={busy !== null || degraded || pane?.agent !== 'claude' || sessionName.trim().length === 0}
-            onPress={() => void renameSession()}
-          />
         </View>
       </ScrollView>
     </View>
@@ -151,6 +162,8 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   content: { paddingHorizontal: layout.screenPaddingH, gap: space[7], paddingTop: space[3] },
   field: { gap: space[3] },
+  divider: { height: 1, backgroundColor: colors.border.subtle },
+  inputDisabled: { opacity: 0.5 },
   input: {
     height: 44,
     borderRadius: radius.md,
