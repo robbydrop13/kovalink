@@ -24,6 +24,7 @@ import {
   type PaneTitleResponse,
   type PaneSessionNameRequest,
   type PaneSessionNameResponse,
+  type PaneCommandsResponse,
   type PairClaimRequest,
   type PairClaimResponse,
   type Prompt,
@@ -240,6 +241,11 @@ export function postText(
  */
 export function postKovaLaunch(timeoutMs = 8000): Promise<KovaLaunchResponse> {
   return request(ROUTES.kovaLaunch, { method: 'POST', timeoutMs });
+}
+
+/** Les commandes `/` de Claude Code visibles depuis le pane, pour l'autocomplétion. */
+export function fetchCommands(paneId: number, timeoutMs = 6000): Promise<PaneCommandsResponse> {
+  return request(ROUTES.paneCommands(paneId), { timeoutMs });
 }
 
 /** Projets récents de Kova, pour l'écran « Nouvelle session » (Cmd+O). */

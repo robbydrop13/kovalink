@@ -38,6 +38,12 @@ export const ROUTES = {
    */
   transcribe: '/v1/transcribe',
   paneScreen: (paneId: number): string => `/v1/panes/${paneId}/screen`,
+  /**
+   * Les commandes `/` que Claude Code accepte dans ce pane : integrees, puis celles du
+   * Mac (`~/.claude/commands`, skills, plugins) et du projet (`.claude` du `cwd`). Servent
+   * l'autocompletion de la barre de message, comme le menu du terminal.
+   */
+  paneCommands: (paneId: number): string => `/v1/panes/${paneId}/commands`,
   sessionTurns: (sessionId: string): string =>
     `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
   /**
@@ -98,6 +104,7 @@ export const ROUTE_PATTERNS = {
    */
   transcribe: '/v1/transcribe',
   paneScreen: '/v1/panes/:paneId/screen',
+  paneCommands: '/v1/panes/:paneId/commands',
   sessionTurns: '/v1/sessions/:sessionId/turns',
   kovaLaunch: '/v1/kova/launch',
   kovaRecentProjects: '/v1/kova/recent-projects',
@@ -222,6 +229,21 @@ export interface KovaSplitResponse {
   paneId: number;
   cwd: string;
   launched: boolean;
+}
+
+/** Une commande `/` de Claude Code, telle que le menu du terminal la propose. */
+export interface SlashCommand {
+  /** Sans le `/` initial : `compact`, `qa`, `frontend-design:frontend-design`. */
+  name: string;
+  description: string;
+  /** Indication d'arguments de la commande, si elle en declare une. */
+  argumentHint: string | null;
+  source: 'builtin' | 'user' | 'project' | 'plugin';
+}
+
+/** Reponse de `GET /v1/panes/:paneId/commands`. */
+export interface PaneCommandsResponse {
+  commands: SlashCommand[];
 }
 
 /** Une session Claude Code, ouverte dans un pane ou fermee (transcript sur disque). */

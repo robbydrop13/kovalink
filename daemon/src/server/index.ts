@@ -25,6 +25,7 @@ import {
   type PaneTitleResponse,
   type PaneSessionNameRequest,
   type PaneSessionNameResponse,
+  type PaneCommandsResponse,
   TRANSCRIBE_MAX_BYTES,
   TRANSCRIBE_MIME_TYPES,
   type TranscribeResponse,
@@ -51,6 +52,7 @@ import {
 import type { TlsMaterial } from '../security/tls.js';
 import type { UploadStore } from '../fs/uploads.js';
 import { listRecentProjects, resolveRecentProject } from '../fs/quickdests.js';
+import { listCommands } from '../claude/commands.js';
 import { findSession, listSessions } from '../kova/sessions.js';
 import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession } from '../kova/resume.js';
 import { ManageError, closePane, renameCommand, renameTab, sanitizeSessionName, setBookmark } from '../kova/manage.js';
@@ -480,6 +482,17 @@ export async function createHttpServer(
       if (e instanceof ForbiddenError) return fail(reply, 403, e.code, e.message);
       throw e;
     }
+  });
+
+  /** Les commandes `/` de Claude Code visibles depuis le `cwd` du pane, pour l'autocompletion. */
+  app.get<{ Params: { paneId: string } }>(ROUTE_PATTERNS.paneCommands, async (req, reply) => {
+    if (!services.rate.allow(req.deviceId ?? '', 'panes')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many reads');
+    }
+    const pane = services.panes.get(Number(req.params.paneId));
+    if (!pane) return fail(reply, 404, 'PANE_NOT_FOUND', 'unknown pane');
+    const res: PaneCommandsResponse = { commands: listCommands(pane.cwd) };
+    return res;
   });
 
   /** Repli monospace (~30 lignes), lot 1. Pas de xterm.js, pas de flux d'octets. */

@@ -78,6 +78,8 @@ export const chat = {
 
   // Zone de saisie (`Composer`).
   composerPlaceholder: 'Send message',
+  composerCommandsA11y: 'Slash commands',
+  composerCommandHint: (name: string) => `Insert /${name}`,
   composerLockedPlaceholder: 'Answer the question above first',
   composerUnavailable: 'Unavailable',
   composerFaceIdPlaceholder: 'Free text, Face ID required',

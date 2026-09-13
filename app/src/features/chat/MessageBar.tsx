@@ -10,6 +10,10 @@
 // d'enregistrement ; le texte transcrit s'ajoute au champ. Verrouillée par un prompt
 // parsé, la carte reste la même, grisée, l'explication à la place du placeholder.
 //
+// Un `/` seul en tête du champ ouvre au-dessus de la carte le menu des commandes de
+// Claude Code (intégrées, `~/.claude`, projet, plugins), comme dans le terminal ; il se
+// ferme dès qu'un espace suit la commande.
+//
 // La barre mesure sa hauteur et la donne au parent (`onHeight`) : le fil garde un padding
 // bas égal, et rien ne la chevauche jamais.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,6 +30,8 @@ import { AttachmentStrip, askAttachmentSource } from './AttachmentViews';
 import type { Attachment } from './attachments';
 import { barAction, canEdit, micState, type BarAction } from './barAction';
 import { discardRecording, startRecording, transcribeRecording, VoiceError, type RecorderHandle } from './voice';
+import { SlashSuggestions, useSlashCommands } from './SlashSuggestions';
+import { applyCommand, slashQuery } from './slashCommands';
 
 export interface MessageBarProps {
   paneId: number;
@@ -138,6 +144,8 @@ export function MessageBar({
   const action = barAction(input);
   const mic = micState(input);
   const editable = canEdit(input);
+  const query = editable && !locked ? slashQuery(value) : null;
+  const commands = useSlashCommands(paneId, query !== null);
 
   const placeholder = locked
     ? t.composerLockedPlaceholder
@@ -265,6 +273,8 @@ export function MessageBar({
         <View style={[styles.fadeStep, { opacity: 0.65 }]} />
         <View style={[styles.fadeStep, { opacity: 0.9 }]} />
       </View>
+
+      {query !== null ? <SlashSuggestions commands={commands} query={query} onPick={(c) => setValue(applyCommand(c))} /> : null}
 
       {queuedCount > 0 ? (
         <Txt variant="caption" color={colors.text.tertiary} align="center" style={styles.queue}>
