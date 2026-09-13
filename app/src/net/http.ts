@@ -11,6 +11,8 @@ import {
   type KovaLaunchResponse,
   type KovaNewTabRequest,
   type KovaNewTabResponse,
+  type KovaSplitRequest,
+  type KovaSplitResponse,
   type KovaRecentProjectsResponse,
   type KovaBookmarkRequest,
   type KovaBookmarkResponse,
@@ -286,4 +288,10 @@ export function postResume(sessionId: string, timeoutMs = 12_000): Promise<KovaR
 export function postNewTab(project: RecentProject, timeoutMs = 10_000): Promise<KovaNewTabResponse> {
   const body: KovaNewTabRequest = { recentProjectIndex: project.index, path: project.path };
   return request(ROUTES.kovaNewTab, { method: 'POST', body, timeoutMs });
+}
+
+/** Un pane de plus dans un onglet : le dossier du projet choisi, sinon celui de l'onglet. */
+export function postSplit(tabId: number, project: RecentProject | null, timeoutMs = 10_000): Promise<KovaSplitResponse> {
+  const body: KovaSplitRequest = project ? { tabId, recentProjectIndex: project.index, path: project.path } : { tabId };
+  return request(ROUTES.kovaSplit, { method: 'POST', body, timeoutMs });
 }

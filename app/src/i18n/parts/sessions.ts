@@ -180,6 +180,13 @@ export const sessions = {
 
   // Palette Projets (Cmd+O)
   projectsTitle: 'Projects',
+  projectsSplitTitle: (tab: string) => `Add to ${tab}`,
+  projectsSplitHint: 'A tap adds a pane to this Kova tab, with Claude launched in that folder.',
+  projectsSplitFailed: (cause: string) => `Could not add the pane. ${cause}`,
+  tabAddPane: 'Add a pane',
+  tabAddPaneTitle: (tab: string) => `New pane in ${tab}`,
+  tabAddPaneSameFolder: (folder: string) => `Same folder (${folder})`,
+  tabAddPanePick: 'Pick a project',
   projectsPlaceholder: 'Folder name or path',
   projectsSearchAccessibilityLabel: 'Search recent projects',
   projectsHint: 'A tap opens a Kova tab on the Mac, with Claude launched in that folder.',

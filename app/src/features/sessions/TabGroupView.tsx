@@ -5,6 +5,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { Pane, Prompt } from '@/protocol';
 import { colors, radius, space } from '@/theme';
+import { Icon } from '@/ui/Icon';
 import { Txt } from '@/ui/Txt';
 import { AwaitingCard } from './AwaitingCard';
 import { SessionRow } from './SessionRow';
@@ -20,6 +21,8 @@ interface Props {
   onRelaunch: (pane: Pane) => void;
   /** Tap sur l'en-tête d'onglet : la palette des panes (Cmd+P). */
   onHeaderPress: () => void;
+  /** Le `+` de l'en-tête : un pane de plus dans cet onglet. */
+  onAddPane: () => void;
   /** Balayage d'une ligne : fermer, favori, renommer. */
   swipeFor: (pane: Pane, group: TabGroup) => SwipeActions;
   /** Cmd+J : le pane est non lu sur ce téléphone. */
@@ -41,6 +44,7 @@ export function TabGroupView({
   onOpen,
   onRelaunch,
   onHeaderPress,
+  onAddPane,
   swipeFor,
   isUnread,
   onInterrupt,
@@ -70,6 +74,16 @@ export function TabGroupView({
             </Txt>
           </View>
         ) : null}
+        <View style={styles.grow} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t.tabAddPane}
+          hitSlop={8}
+          onPress={onAddPane}
+          style={({ pressed }) => [styles.add, pressed && styles.addPressed]}
+        >
+          <Icon name="plus" size={16} color={colors.text.secondary} />
+        </Pressable>
       </Pressable>
       <View style={styles.panes}>
         {group.panes.map((pane: Pane) => (
@@ -113,6 +127,17 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 32, borderRadius: radius.sm },
   headerPressed: { backgroundColor: colors.bg.pressed },
   dot: { width: 10, height: 10, borderRadius: 5 },
+  grow: { flex: 1 },
+  add: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg.raised,
+    marginRight: space[1],
+  },
+  addPressed: { backgroundColor: colors.bg.pressed },
   title: { flexShrink: 1 },
   activeChip: {
     paddingHorizontal: 7,

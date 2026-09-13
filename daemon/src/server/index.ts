@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import {
@@ -14,6 +15,8 @@ import {
   type KovaLaunchResponse,
   type KovaNewTabRequest,
   type KovaNewTabResponse,
+  type KovaSplitRequest,
+  type KovaSplitResponse,
   type KovaRecentProjectsResponse,
   type KovaResumeRequest,
   type KovaBookmarkRequest,
@@ -615,9 +618,70 @@ export async function createHttpServer(
     const paneId = typeof data.pane_id === 'number' ? data.pane_id : -1;
     audit({ deviceId, action: 'kova.newTab', paneId, path: cwd, result: 'ok', detail: `tab=${tabId}` });
     logger.info('nouvel onglet kova depuis l app', { deviceId, cwd, tabId, paneId });
+    // Sans titre, Kova nomme l'onglet d'apres la commande (« claude ») : un onglet de plus
+    // nomme « claude » ne dit rien. Le nom du dossier, comme Robin nomme ses onglets.
+    if (paneId >= 0) {
+      try {
+        await services.ipc.request({ cmd: 'set-tab-title', pane_id: paneId, title: basename(cwd) || cwd });
+      } catch (e) {
+        logger.warn('titre du nouvel onglet non applique', { paneId, err: (e as Error).message });
+      }
+    }
     const launched = await launchInFreshPane(services, paneId, deviceId);
     const res: KovaNewTabResponse = { tabId, paneId, cwd, launched };
     return res;
+  });
+
+  /**
+   * Un pane de plus DANS un onglet existant. Kova ne coupe que le pane focalise : le
+   * daemon focalise d'abord le pane au premier plan de l'onglet (ou son premier pane),
+   * puis `split` avec `claude`. Le dossier vient d'un projet recent (index valide comme
+   * `new-tab`) ou du pane focalise ; jamais une chaine libre du client.
+   */
+  app.post<{ Body: Partial<KovaSplitRequest> }>(ROUTE_PATTERNS.kovaSplit, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'launch')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many launches');
+    }
+    const body = req.body ?? {};
+    const tabId = typeof body.tabId === 'number' ? body.tabId : -1;
+    const tab = services.panes.allTabs().find((t) => t.id === tabId);
+    if (!tab) {
+      audit({ deviceId, action: 'kova.split', result: 'denied', detail: `tab=${tabId} inconnu` });
+      return fail(reply, 404, 'PANE_NOT_FOUND', 'unknown tab');
+    }
+    const members = services.panes.all().filter((p) => p.tabId === tab.id);
+    const anchor = members.find((p) => p.id === tab.focused_pane_id) ?? members[0];
+    if (!anchor) {
+      audit({ deviceId, action: 'kova.split', result: 'denied', detail: `tab=${tabId} sans pane` });
+      return fail(reply, 404, 'PANE_NOT_FOUND', 'tab has no pane');
+    }
+    let cwd: string | null = anchor.cwd;
+    if (typeof body.recentProjectIndex === 'number') {
+      cwd = typeof body.path === 'string' ? resolveRecentProject(body.recentProjectIndex, body.path) : null;
+      if (cwd === null) {
+        audit({ deviceId, action: 'kova.split', result: 'denied', detail: `index=${body.recentProjectIndex}` });
+        return fail(reply, 400, 'BAD_REQUEST', 'unknown recent project, the list may have changed');
+      }
+    }
+    let data: { pane_id?: unknown };
+    try {
+      const focus = await services.ipc.request({ cmd: 'focus-pane', pane_id: anchor.id });
+      if (!focus.ok) throw new Error(focus.error ?? 'focus-pane refuse');
+      const res = await services.ipc.request({ cmd: 'split', cwd, command: NEW_TAB_COMMAND });
+      if (!res.ok) throw new Error(res.error ?? 'erreur IPC');
+      data = (res.data ?? {}) as { pane_id?: unknown };
+    } catch (e) {
+      audit({ deviceId, action: 'kova.split', path: cwd, result: 'error', detail: (e as Error).message });
+      const code: ErrorCode = e instanceof IpcError ? e.code : 'KOVA_DOWN';
+      return fail(reply, 502, code, `split failed: ${(e as Error).message}`);
+    }
+    const paneId = typeof data.pane_id === 'number' ? data.pane_id : -1;
+    audit({ deviceId, action: 'kova.split', paneId, path: cwd, result: 'ok', detail: `tab=${tab.id} anchor=${anchor.id}` });
+    logger.info('pane ajoute dans un onglet depuis l app', { deviceId, cwd, tabId: tab.id, paneId });
+    const launched = await launchInFreshPane(services, paneId, deviceId);
+    const out: KovaSplitResponse = { tabId: tab.id, paneId, cwd, launched };
+    return out;
   });
 
   /**

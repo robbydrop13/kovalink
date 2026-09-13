@@ -2,7 +2,7 @@
 // ou reprise d'une session fermee (`claude --resume <id>`, PRD 3.4). La commande est
 // TOUJOURS construite ici : le client ne fournit qu'un index ou un identifiant, valides.
 import { statSync } from 'node:fs';
-import type { ErrorCode, KovaResumeResponse } from '@kovalink/protocol';
+import { isPaneContentError, type ErrorCode, type KovaResumeResponse, type PaneContent } from '@kovalink/protocol';
 import { audit } from '../audit.js';
 import { logger } from '../logger.js';
 import type { Services } from '../server/services.js';
@@ -13,6 +13,10 @@ import { findSession, isSessionId } from './sessions.js';
 export const NEW_TAB_COMMAND = 'claude';
 /** Delai d'apparition du nouveau pane dans le store, par l'evenement `pane-open`. */
 const NEW_TAB_PANE_WAIT_MS = 3_000;
+/** Cadence de lecture de l'ecran en attendant la commande tapee. */
+const TYPED_POLL_MS = 150;
+/** Delai apres l'Entree avant de verifier que la commande a ete executee. */
+const LAUNCH_SETTLE_MS = 1_200;
 
 /** Ce dont ces deux operations ont besoin : une vue etroite des services, facile a simuler. */
 export type LaunchServices = Pick<Services, 'ipc' | 'panes' | 'keygate'>;
@@ -32,12 +36,61 @@ export async function launchInFreshPane(
   while (!services.panes.get(paneId) && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 100));
   }
+  // Mesure sur `split` (13 septembre 2026) : le pane existe avant que le shell n'ait lu la
+  // commande tapee par Kova. Une Entree envoyee a ce moment la produit un prompt vide, et
+  // `claude` reste tape sans etre execute. On attend donc de VOIR la commande a l'ecran,
+  // puis on verifie qu'elle a bien ete consommee, avec une seconde Entree sinon.
+  await waitForTypedCommand(services, paneId, deadline);
   try {
-    return (await services.keygate.emitLaunch(paneId, deviceId)).applied;
+    const first = await services.keygate.emitLaunch(paneId, deviceId);
+    if (!first.applied) return false;
   } catch (e) {
     logger.warn('lancement de claude dans le nouvel onglet refuse', { paneId, err: (e as Error).message });
     return false;
   }
+  if (await commandStillTyped(services, paneId)) {
+    logger.info('commande toujours tapee apres l Entree, seconde Entree', { paneId });
+    try {
+      return (await services.keygate.emitLaunch(paneId, deviceId)).applied;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Texte visible du pane, `null` si l'IPC ne le donne pas (ou n'est pas simule en test). */
+async function screenOf(services: LaunchServices, paneId: number): Promise<string | null> {
+  const ipc = services.ipc as { getPaneContent?: (ids: number[]) => Promise<PaneContent[]> };
+  if (typeof ipc.getPaneContent !== 'function') return null;
+  try {
+    const [content] = await ipc.getPaneContent([paneId]);
+    return content && !isPaneContentError(content) ? content.text : null;
+  } catch {
+    return null;
+  }
+}
+
+/** La commande est visible a l'ecran : le shell l'a lue, l'Entree peut partir. */
+async function waitForTypedCommand(services: LaunchServices, paneId: number, deadline: number): Promise<void> {
+  while (Date.now() < deadline) {
+    const text = await screenOf(services, paneId);
+    if (text === null || text.includes(NEW_TAB_COMMAND)) return;
+    await new Promise((r) => setTimeout(r, TYPED_POLL_MS));
+  }
+}
+
+/**
+ * Apres l'Entree : la derniere ligne non vide porte encore la commande, sans banniere de
+ * Claude Code au dessus. Le shell ne l'a donc pas executee.
+ */
+async function commandStillTyped(services: LaunchServices, paneId: number): Promise<boolean> {
+  await new Promise((r) => setTimeout(r, LAUNCH_SETTLE_MS));
+  const text = await screenOf(services, paneId);
+  if (text === null || text.includes('Claude Code')) return false;
+  const lines = text.split('\n').filter((l) => l.trim().length > 0);
+  const last = lines[lines.length - 1] ?? '';
+  return last.includes(NEW_TAB_COMMAND);
 }
 
 export type ResumeOutcome =

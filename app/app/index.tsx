@@ -12,7 +12,7 @@
 // carte EN ATTENTE comme sur la ligne TRAVAILLE : c'est le geste sûr, on le rend le plus
 // facile possible, et le scénario S3 décrit un pane qui travaille.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { ActionSheetIOS, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -37,7 +37,7 @@ import { isDegraded, useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { isAging, usePrompts } from '@/store/prompts';
 import { forceReconnect } from '@/net/connection';
-import { fetchPanes, fetchSessions, postKovaLaunch } from '@/net/http';
+import { fetchPanes, fetchSessions, postKovaLaunch, postSplit } from '@/net/http';
 import { clockTime } from '@/utils/time';
 import { retryBoot, useBootError, useBootState } from '@/boot';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
@@ -119,6 +119,35 @@ export default function SessionsScreen() {
   };
   const relaunch = (pane: Pane) =>
     router.push({ pathname: '/new-session', params: { cwd: pane.cwd } });
+  /**
+   * Le `+` d'un onglet : un pane de plus dedans, avec Claude. Deux choix, le dossier de
+   * l'onglet (le cas courant) ou un projet récent via la palette, en mode « Add to ».
+   */
+  const addPane = (group: TabGroup) => {
+    if (group.tabId === null || degraded) return;
+    const tabId = group.tabId;
+    const folder = group.panes[0]?.projectName ?? group.title;
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: t.tabAddPaneTitle(group.title),
+        options: [t.tabAddPaneSameFolder(folder), t.tabAddPanePick, t.actionCancel],
+        cancelButtonIndex: 2,
+        userInterfaceStyle: 'dark',
+      },
+      (index) => {
+        if (index === 1) {
+          router.push({ pathname: '/new-session', params: { splitTabId: String(tabId), splitTabTitle: group.title } });
+          return;
+        }
+        if (index !== 0) return;
+        impact(ImpactStyle.Medium);
+        postSplit(tabId, null).then(
+          (res) => router.push(res.launched ? `/session/${res.paneId}` : `/session/${res.paneId}?view=term`),
+          (e: unknown) => setToast(t.projectsSplitFailed(e instanceof Error ? e.message : String(e))),
+        );
+      },
+    );
+  };
   // Balayage : les mêmes gestes que sur le Mac. Fermer est confirmé avec l'état réel.
   const swipeFor = (pane: Pane, group: TabGroup): SwipeActions => {
     const sessionId = pane.agent_session_id ?? pane.claude_session_id;
@@ -289,6 +318,7 @@ export default function SessionsScreen() {
                   onOpen={open}
                   onRelaunch={relaunch}
                   onHeaderPress={() => router.push('/panes')}
+                  onAddPane={() => addPane(group)}
                   swipeFor={swipeFor}
                   isUnread={unreadOf}
                   onInterrupt={(id) => void interrupt(id)}

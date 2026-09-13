@@ -13,7 +13,7 @@ import { colors } from '@/theme';
 import { Banner } from '@/ui/States';
 import { Palette, type PaletteRow } from '@/ui/Palette';
 import { matchesQuery } from '@/utils/search';
-import { fetchRecentProjects, fetchSessions, postNewTab } from '@/net/http';
+import { fetchRecentProjects, fetchSessions, postNewTab, postSplit } from '@/net/http';
 import { closedOfProject } from '@/features/sessions/closedSessions';
 import { askResume, readSession, sessionAge } from '@/features/sessions/resume';
 import { isDegraded, useConnection } from '@/store/connection';
@@ -25,8 +25,11 @@ const CLOSED_PREFIX = 'closed:';
 
 export default function NewSessionScreen() {
   /** `cwd` : relance d'une session périmée, le projet du pane est mis en avant. */
-  const params = useLocalSearchParams<{ cwd?: string }>();
+  const params = useLocalSearchParams<{ cwd?: string; splitTabId?: string; splitTabTitle?: string }>();
   const wantedCwd = typeof params.cwd === 'string' && params.cwd.length > 0 ? params.cwd : null;
+  /** Mode « Add to <tab> » : le projet choisi devient un pane DANS cet onglet, pas un onglet neuf. */
+  const splitTabId = typeof params.splitTabId === 'string' && params.splitTabId.length > 0 ? Number(params.splitTabId) : null;
+  const splitTabTitle = typeof params.splitTabTitle === 'string' ? params.splitTabTitle : '';
   const link = useConnection((s) => s.link);
   const kova = useConnection((s) => s.kova);
   const degraded = isDegraded(link);
@@ -121,26 +124,29 @@ export default function NewSessionScreen() {
       setError(null);
       impact(ImpactStyle.Medium);
       try {
-        const res = await postNewTab(project);
+        const res = splitTabId !== null ? await postSplit(splitTabId, project) : await postNewTab(project);
         // `replace` : le retour depuis la session ramène à la liste, pas à cette palette. Sans
         // `launched`, la commande attend dans le shell du nouveau pane : la vue Term le montre.
         router.replace(res.launched ? `/session/${res.paneId}` : `/session/${res.paneId}?view=term`);
       } catch (e) {
-        setError(t.projectsCreateFailed(e instanceof Error ? e.message : String(e)));
+        const cause = e instanceof Error ? e.message : String(e);
+        setError(splitTabId !== null ? t.projectsSplitFailed(cause) : t.projectsCreateFailed(cause));
         setLaunching(null);
       }
     },
-    [shown, launching, closedOf],
+    [shown, launching, closedOf, splitTabId],
   );
 
   return (
     <Palette
-      title={t.projectsTitle}
+      title={splitTabId !== null ? t.projectsSplitTitle(splitTabTitle) : t.projectsTitle}
       placeholder={t.projectsPlaceholder}
       hint={
-        wantedCwd && !wantedMissing
-          ? t.projectsHintRelaunch
-          : t.projectsHint
+        splitTabId !== null
+          ? t.projectsSplitHint
+          : wantedCwd && !wantedMissing
+            ? t.projectsHintRelaunch
+            : t.projectsHint
       }
       rows={rows}
       query={query}

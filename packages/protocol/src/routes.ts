@@ -53,6 +53,7 @@ export const ROUTES = {
    */
   kovaRecentProjects: '/v1/kova/recent-projects',
   kovaNewTab: '/v1/kova/new-tab',
+  kovaSplit: '/v1/kova/split',
   /**
    * Sessions ouvertes ET fermees, comme les palettes de Kova (PRD 3.4, design 4.11), et
    * la reprise d'une session fermee : `new-tab` avec `claude --resume <id>`, identifiant
@@ -101,6 +102,7 @@ export const ROUTE_PATTERNS = {
   kovaLaunch: '/v1/kova/launch',
   kovaRecentProjects: '/v1/kova/recent-projects',
   kovaNewTab: '/v1/kova/new-tab',
+  kovaSplit: '/v1/kova/split',
   kovaSessions: '/v1/kova/sessions',
   kovaResume: '/v1/kova/resume',
   ws: '/ws',
@@ -196,6 +198,26 @@ export interface KovaNewTabRequest {
  * pas execute) ; sinon la commande attend dans le shell du nouveau pane.
  */
 export interface KovaNewTabResponse {
+  tabId: number;
+  paneId: number;
+  cwd: string;
+  launched: boolean;
+}
+
+/**
+ * Corps de `POST /v1/kova/split` : un pane de plus DANS un onglet existant, avec `claude`
+ * lance dedans. Le dossier est celui du projet recent designe (comme `new-tab`), sinon
+ * celui du pane focalise de l'onglet : jamais une chaine libre du client. Le daemon
+ * focalise un pane de l'onglet puis demande `split` a Kova, qui coupe le pane focalise.
+ */
+export interface KovaSplitRequest {
+  tabId: number;
+  recentProjectIndex?: number;
+  path?: string;
+}
+
+/** Reponse de `POST /v1/kova/split` : le pane cree, meme forme que `new-tab`. */
+export interface KovaSplitResponse {
   tabId: number;
   paneId: number;
   cwd: string;
