@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { basename } from 'node:path';
 import type { Pane, Tab } from '@kovalink/protocol';
 import { hasTranscript, sessionMeta } from '../transcript/session.js';
+import { liveSessionOf } from './liveSession.js';
 import { colorOf } from './tabColors.js';
 
 function str(v: unknown, fallback = ''): string {
@@ -21,8 +22,22 @@ function bool(v: unknown): boolean {
 /** Mappe un pane brut de Kova vers le type partage, champs calcules compris. */
 export function toPane(raw: Record<string, unknown>): Pane {
   const cwd = str(raw['cwd']);
-  const sessionId = strOrNull(raw['agent_session_id']) ?? strOrNull(raw['claude_session_id']);
-  const agent = strOrNull(raw['agent']);
+  const children = Array.isArray(raw['child_processes'])
+    ? (raw['child_processes'] as Record<string, unknown>[]).map((c) => ({
+        name: str(c['name']),
+        pid: num(c['pid']),
+        version: strOrNull(c['version']),
+      }))
+    : [];
+  // Repli : Kova rend `agent: null` sur une session Claude dont `startedAt` est trop
+  // loin du demarrage du processus (voir `liveSession.ts`). Un enfant `claude` avec un
+  // fichier de session vivant EST une session Claude.
+  const live =
+    strOrNull(raw['agent']) === null && children.some((c) => c.name === 'claude')
+      ? liveSessionOf(children.filter((c) => c.name === 'claude').map((c) => c.pid))
+      : null;
+  const sessionId = strOrNull(raw['agent_session_id']) ?? strOrNull(raw['claude_session_id']) ?? live?.id ?? null;
+  const agent = strOrNull(raw['agent']) ?? (live ? 'claude' : null);
   const transcript = hasTranscript(cwd, sessionId);
   const meta = sessionId ? sessionMeta(cwd, sessionId) : { permissionMode: null, title: null };
   const awaiting = bool(raw['awaiting']);
@@ -39,13 +54,7 @@ export function toPane(raw: Record<string, unknown>): Pane {
     title: strOrNull(raw['title']),
     focused: bool(raw['focused']),
     pid: num(raw['pid']),
-    child_processes: Array.isArray(raw['child_processes'])
-      ? (raw['child_processes'] as Record<string, unknown>[]).map((c) => ({
-          name: str(c['name']),
-          pid: num(c['pid']),
-          version: strOrNull(c['version']),
-        }))
-      : [],
+    child_processes: children,
     is_idle: bool(raw['is_idle']),
     working,
     awaiting,
@@ -53,10 +62,10 @@ export function toPane(raw: Record<string, unknown>): Pane {
     awaiting_seen: bool(raw['awaiting_seen']),
     minimized: bool(raw['minimized']),
     agent,
-    agent_session_id: strOrNull(raw['agent_session_id']),
-    agent_session_name: strOrNull(raw['agent_session_name']),
-    claude_session_id: strOrNull(raw['claude_session_id']),
-    claude_session_name: strOrNull(raw['claude_session_name']),
+    agent_session_id: strOrNull(raw['agent_session_id']) ?? live?.id ?? null,
+    agent_session_name: strOrNull(raw['agent_session_name']) ?? live?.name ?? null,
+    claude_session_id: strOrNull(raw['claude_session_id']) ?? live?.id ?? null,
+    claude_session_name: strOrNull(raw['claude_session_name']) ?? live?.name ?? null,
     projectName: basename(cwd) || cwd,
     hasTranscript: transcript,
     // Une session claude fraiche a un identifiant mais pas encore de JSONL (cree au
