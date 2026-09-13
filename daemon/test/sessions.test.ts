@@ -28,7 +28,7 @@ const GONE_DIR = 'b7a7b664-3240-4f2f-8f31-000000000003';
 
 function pane(id: number, tab: number, cwd: string, sessionId: string | null): Pane {
   return {
-    id, window: 0, tab, tabId: null, cwd, title: 'claude', focused: false, pid: 1, child_processes: [], is_idle: false,
+    id, window: 0, tab, tabId: null, launching: false, cwd, title: 'claude', focused: false, pid: 1, child_processes: [], is_idle: false,
     working: false, awaiting: false, awaiting_since: null, awaiting_seen: false, minimized: false,
     agent: sessionId ? 'claude' : null, agent_session_id: sessionId, agent_session_name: null,
     claude_session_id: null, claude_session_name: null, projectName: cwd.split('/').pop() ?? cwd,

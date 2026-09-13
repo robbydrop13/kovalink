@@ -93,6 +93,7 @@ import { shortAgeMs, truncatePath } from '@/utils/time';
 import { useClock } from '@/utils/useClock';
 import { bootWarn } from '@/env';
 import { useOutboxNotices } from '@/store/outboxNotices';
+import { useToast } from '@/store/toast';
 import { t } from '@/i18n/en';
 
 type ViewMode = 'chat' | 'term';
@@ -313,6 +314,15 @@ export default function SessionScreen() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Toasts levés hors de l'écran (« Copied » depuis une bulle) : affichés ici, puis effacés.
+  const globalToast = useToast((s) => s.text);
+  const globalToastSeq = useToast((s) => s.seq);
+  useEffect(() => {
+    if (!globalToast) return;
+    setToast(globalToast);
+    useToast.getState().clear();
+  }, [globalToast, globalToastSeq]);
+
   // Filet contre l'écran vide. Un lien profond vers un pane fermé entre temps laissait
   // `pane` indéfini et la session en `idle` : la condition de squelette restait vraie
   // pour toujours, et l'écran affichait des rectangles gris sans fin ni explication.
@@ -345,6 +355,8 @@ export default function SessionScreen() {
   const awaiting = pane?.awaiting === true;
   const chatCapable = pane?.chatCapable !== false;
   const hasAgentSession = agentSessionId !== null;
+  /** Le daemon vient de lancer `claude` ici : « démarre », pas « sans agent ». */
+  const launching = pane?.launching === true && !hasAgentSession;
 
   // Les trois derniers échanges d'abord ; l'historique au dessus sur demande. Le plancher
   // est posé au premier rendu de la session et ne remonte jamais : un nouvel envoi ajoute
@@ -438,6 +450,11 @@ export default function SessionScreen() {
   const onSend = useCallback(
     async (text: string, attachments: Attachment[] = []): Promise<boolean> => {
       if (text.length === 0 && attachments.length === 0) return false;
+      // Claude n'a pas encore pris le clavier : le texte irait au shell. Il reste dans le champ.
+      if (launching) {
+        setToast(t.sessionStartingWait);
+        return false;
+      }
       let pieces: Pieces | null = null;
       if (attachments.length > 0) {
         if (!agentSessionId) {
@@ -528,7 +545,7 @@ export default function SessionScreen() {
       scrollRef.current?.scrollToEnd({ animated: true });
       return true;
     },
-    [paneId, prompt, agentSessionId, arrivedAt, markActed],
+    [paneId, prompt, agentSessionId, launching, arrivedAt, markActed],
   );
 
   /**
@@ -708,6 +725,7 @@ export default function SessionScreen() {
         <AgentStatus
           degraded={degraded}
           closed={closed}
+          launching={launching}
           awaiting={awaiting}
           working={working}
           workingSince={workingSince}
@@ -743,7 +761,7 @@ export default function SessionScreen() {
         // Ouverture depuis le cache, liaison vivante : le Mac réconcilie (design 4.2).
         <Banner tone="working" text={t.sessionCacheUpdating} />
       ) : null}
-      {!chatCapable ? (
+      {!chatCapable && !launching ? (
         <Banner
           text={t.sessionChatUnavailable}
           actionLabel={t.actionOpenTerminal}
@@ -838,8 +856,8 @@ export default function SessionScreen() {
 
           {session.status === 'ready' && session.turns.length === 0 ? (
             <EmptyState
-              title={t.sessionNothingTitle}
-              body={hasAgentSession ? t.sessionNothingBodyAgent : t.sessionNothingBodyNoAgent}
+              title={launching ? t.sessionStartingTitle : t.sessionNothingTitle}
+              body={launching ? t.sessionStartingBody : hasAgentSession ? t.sessionNothingBodyAgent : t.sessionNothingBodyNoAgent}
             >
               <Button label={t.actionOpenTerminal} kind="secondary" onPress={() => setView('term')} />
             </EmptyState>
@@ -968,7 +986,7 @@ export default function SessionScreen() {
           prompt={prompt}
           working={working}
           degraded={degraded}
-          disabled={closed || !hasAgentSession}
+          disabled={closed || (!hasAgentSession && !launching)}
           disabledPlaceholder={
             closed ? t.sessionGoneShort : t.sessionNoAgentSession
           }

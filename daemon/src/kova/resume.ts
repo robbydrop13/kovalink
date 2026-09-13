@@ -44,6 +44,8 @@ export async function launchInFreshPane(
   try {
     const first = await services.keygate.emitLaunch(paneId, deviceId);
     if (!first.applied) return false;
+    // Des l'Entree partie, le pane est « en demarrage » pour l'app, pas « sans agent ».
+    if (typeof services.panes.markLaunching === 'function') services.panes.markLaunching(paneId);
   } catch (e) {
     logger.warn('lancement de claude dans le nouvel onglet refuse', { paneId, err: (e as Error).message });
     return false;

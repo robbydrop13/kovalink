@@ -17,7 +17,7 @@ export function AgentStatus(props: AgentStatusInput & { onStop?: () => void }) {
 
   const { kind, label } = agentStatus(props, now);
   const color =
-    kind === 'working'
+    kind === 'working' || kind === 'starting'
       ? colors.status.working
       : kind === 'awaiting'
         ? colors.status.awaiting
@@ -27,7 +27,7 @@ export function AgentStatus(props: AgentStatusInput & { onStop?: () => void }) {
             ? colors.status.closed
             : colors.text.secondary;
   const glyph =
-    kind === 'working' ? 'working' : kind === 'awaiting' ? 'awaiting' : kind === 'closed' ? 'closed' : 'idle';
+    kind === 'working' || kind === 'starting' ? 'working' : kind === 'awaiting' ? 'awaiting' : kind === 'closed' ? 'closed' : 'idle';
 
   return (
     <View

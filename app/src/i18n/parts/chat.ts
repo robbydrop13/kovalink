@@ -31,6 +31,7 @@ export const chat = {
   statusWorkingFor: (elapsed: string) => `Working · ${elapsed}`,
   statusDoneAgo: (age: string) => `Done ${age} ago`,
   statusIdle: 'Idle',
+  statusStarting: 'Starting Claude',
   /** Durée compacte du bandeau : `1m 12s`, `45s`. */
   statusElapsed: (minutes: number, seconds: number) => (minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`),
 
@@ -69,12 +70,16 @@ export const chat = {
   bubbleResend: 'resend',
   bubbleResendA11y: 'Failed, resend',
   bubbleThinking: 'Thinking',
+  bubbleCopy: 'Copy',
+  bubbleShare: 'Share',
+  bubbleCopied: 'Copied',
+  bubbleLongPressHint: 'Long press to copy or share',
   bubbleStreamingA11y: 'the agent is typing',
 
   // Rendu Markdown.
   markdownCodeLang: 'code',
-  markdownShare: 'Share',
-  markdownShareA11y: 'Share this code block',
+  markdownCopy: 'Copy',
+  markdownCopyA11y: 'Copy this code block',
 
   // Zone de saisie (`Composer`).
   composerPlaceholder: 'Send message',

@@ -35,6 +35,7 @@ function pane(id: number, tab: number, extra: Partial<Pane> = {}): Pane {
     window: 0,
     tab,
     tabId: null,
+    launching: false,
     cwd: '/Users/robin/dev/link',
     title: 'claude',
     focused: false,

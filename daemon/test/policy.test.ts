@@ -50,6 +50,7 @@ const pane: Pane = {
   color: null,
   liveState: 'idle',
   tabId: null,
+  launching: false,
 };
 
 const turnEnd: Prompt = {

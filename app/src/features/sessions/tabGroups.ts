@@ -100,7 +100,8 @@ export function groupByTab(panes: Pane[], tabs: Tab[]): TabGroup[] {
  * propose de relancer Claude dans ce dossier.
  */
 export function isStaleSession(pane: Pane): boolean {
-  return pane.agent === null && pane.child_processes.some((c) => c.name === 'claude');
+  // Un `claude` que le daemon vient de lancer n'est pas périmé : il démarre.
+  return !pane.launching && pane.agent === null && pane.child_processes.some((c) => c.name === 'claude');
 }
 
 /** Ce sur quoi la recherche porte pour un pane : titre, projet, dossier, agent, session. */

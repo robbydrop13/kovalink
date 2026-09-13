@@ -554,3 +554,33 @@ describe('Hub : refus explicites', () => {
     assert.equal((u as { code: string }).code, 'BAD_REQUEST');
   });
 });
+
+describe('fenetre de demarrage apres un lancement de claude', () => {
+  it('launching tant que l agent manque, retombe quand il apparait ou a l echeance', async () => {
+    const { LAUNCH_GRACE_MS } = await import('../src/kova/panes.js');
+    let clock = 1_000_000;
+    const panes = new PaneStore(() => clock);
+    const raw = { id: 90, window: 0, tab: 2, cwd: CWD, title: 'claude', agent: null, child_processes: [] };
+    panes.upsertRaw(raw);
+    assert.equal(panes.get(90)?.launching, false);
+    const events: Array<[number, boolean]> = [];
+    panes.on('launching', (id: number, on: boolean) => events.push([id, on]));
+    panes.markLaunching(90);
+    assert.equal(panes.get(90)?.launching, true);
+    // Un instantane de Kova sans agent ne l'efface pas.
+    panes.upsertRaw(raw);
+    assert.equal(panes.get(90)?.launching, true);
+    // L'agent apparait : fini, et un nouvel instantane ne le remet pas.
+    panes.upsertRaw({ ...raw, agent: 'claude', agent_session_id: 'abc' });
+    assert.equal(panes.get(90)?.launching, false);
+    panes.upsertRaw(raw);
+    assert.equal(panes.get(90)?.launching, false);
+    // Echeance sans agent.
+    panes.markLaunching(90);
+    clock += LAUNCH_GRACE_MS;
+    panes.upsertRaw(raw);
+    assert.equal(panes.get(90)?.launching, false);
+    assert.deepEqual(events, [[90, true], [90, true]]);
+    panes.remove(90, null, null);
+  });
+});

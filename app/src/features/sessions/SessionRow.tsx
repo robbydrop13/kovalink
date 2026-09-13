@@ -36,6 +36,7 @@ interface Props {
 export function paneBadge(pane: Pane, prompt: Prompt | undefined, now = Date.now()): string {
   if (pane.awaiting) return t.paneBadgeWaiting;
   if (pane.working) return t.paneBadgeWorking;
+  if (pane.launching) return t.paneBadgeStarting;
   if (isStaleSession(pane)) return t.paneBadgeStale;
   if (prompt?.state === 'turn_end') return t.paneBadgeDone(shortAge(prompt.endedAt, now));
   return pane.agent ? t.paneBadgeIdle : t.paneBadgeShell;
@@ -63,6 +64,7 @@ export function SessionRow({
   interruptLabel = t.interruptLabel,
 }: Props) {
   const working = pane.working;
+  const starting = pane.launching;
   const stale = isStaleSession(pane);
   const badge = paneBadge(pane, prompt);
   const subtitle = pane.agent && pane.agent !== pane.title ? `${pane.projectName} · ${pane.agent}` : pane.projectName;
@@ -74,18 +76,18 @@ export function SessionRow({
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
       <View style={styles.glyph}>
-        <StatusGlyph state={working ? 'working' : 'idle'} />
+        <StatusGlyph state={working || starting ? 'working' : 'idle'} />
       </View>
       <View style={styles.body}>
         <View style={styles.line}>
           <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.title}>
             {paneLabel(pane)}
           </Txt>
-          <View style={[styles.badge, working && styles.badgeWorking, stale && styles.badgeStale, unread && styles.badgeUnread]}>
+          <View style={[styles.badge, (working || starting) && styles.badgeWorking, stale && styles.badgeStale, unread && styles.badgeUnread]}>
             {unread ? <View style={styles.unreadDot} /> : null}
             <Txt
               variant="caption"
-              color={unread ? colors.accent.primary : working ? colors.status.working : stale ? colors.status.awaiting : colors.text.tertiary}
+              color={unread ? colors.accent.primary : working || starting ? colors.status.working : stale ? colors.status.awaiting : colors.text.tertiary}
             >
               {badge}
             </Txt>

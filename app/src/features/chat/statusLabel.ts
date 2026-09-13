@@ -1,13 +1,15 @@
 // Choix de l'état affiché par le bandeau de session. Pur, testé sous Node : l'ordre de
-// priorité (fermée, hors ligne, attend, travaille, terminé, inactif) est le contrat.
+// priorité (fermée, hors ligne, démarre, attend, travaille, terminé, inactif) est le contrat.
 import { t } from '@/i18n/en';
 import { shortAgeMs } from '@/utils/time';
 
-export type AgentStatusKind = 'offline' | 'closed' | 'awaiting' | 'working' | 'done' | 'idle';
+export type AgentStatusKind = 'offline' | 'closed' | 'starting' | 'awaiting' | 'working' | 'done' | 'idle';
 
 export interface AgentStatusInput {
   degraded: boolean;
   closed: boolean;
+  /** Le daemon vient de lancer `claude` ici et Kova ne voit pas encore l'agent. */
+  launching?: boolean;
   awaiting: boolean;
   working: boolean;
   /** Début du travail en cours, en ms epoch, connu par le store des panes. */
@@ -26,6 +28,7 @@ function elapsed(ms: number): string {
 export function agentStatus(input: AgentStatusInput, now = Date.now()): { kind: AgentStatusKind; label: string } {
   if (input.closed) return { kind: 'closed', label: t.statusClosed };
   if (input.degraded) return { kind: 'offline', label: t.statusOffline };
+  if (input.launching) return { kind: 'starting', label: t.statusStarting };
   if (input.awaiting) return { kind: 'awaiting', label: t.statusAwaiting };
   if (input.working) {
     const since = input.workingSince;

@@ -31,6 +31,7 @@ function pane(partial: Partial<Pane> & { id: number; tab: number }): Pane {
     permissionMode: null,
     color: null,
     tabId: null,
+    launching: false,
     liveState: 'idle',
     ...partial,
   };
@@ -213,4 +214,12 @@ it('la jointure suit l identifiant de l onglet, pas son index, apres un reordonn
   const stale = groupByTab([pane({ id: 71, tab: 1, tabId: null })], tabs);
   assert.equal(stale[0]?.title, 'Perso');
   assert.equal(stale[0]?.key, 't27');
+});
+
+describe('isStaleSession et demarrage', () => {
+  it('un claude que le daemon vient de lancer n est pas perime', () => {
+    const p = pane({ id: 80, tab: 0, agent: null, child_processes: [{ name: 'claude', pid: 1, version: null }] });
+    assert.equal(isStaleSession(p), true);
+    assert.equal(isStaleSession({ ...p, launching: true }), false);
+  });
 });

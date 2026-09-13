@@ -4,10 +4,12 @@
 // cellules 15 pt qui vont à la ligne, alignement respecté. Un tableau à deux colonnes
 // tient en largeur ; au delà, ou si le contenu est long, il vit dans un conteneur à
 // défilement horizontal, comme les blocs de code, jamais compressé jusqu'à l'illisible.
-// Blocs de code : monospace, langage, bouton `Partager` (aucun module presse-papiers
-// natif dans ce build : la feuille de partage d'iOS offre `Copier`). Liens : Safari.
+// Blocs de code : monospace, langage, bouton `Copier` (presse-papiers de base de React
+// Native, `utils/clipboard`). Liens : Safari.
 import { Fragment, type ReactNode } from 'react';
-import { Linking, Pressable, ScrollView, Share, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useToast } from '@/store/toast';
+import { copyOrShare } from '@/utils/clipboard';
 import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
@@ -79,12 +81,14 @@ function CodeBlock({ block }: { block: Extract<MdBlock, { type: 'code' }> }) {
         </Txt>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t.markdownShareA11y}
+          accessibilityLabel={t.markdownCopyA11y}
           hitSlop={8}
-          onPress={() => void Share.share({ message: block.code }).catch(() => undefined)}
+          onPress={() => {
+            if (copyOrShare(block.code)) useToast.getState().show(t.bubbleCopied);
+          }}
         >
           <Txt variant="caption" color={colors.accent.primary}>
-            {t.markdownShare}
+            {t.markdownCopy}
           </Txt>
         </Pressable>
       </View>

@@ -12,8 +12,15 @@
 // Résultats d'outils : le daemon les émet dans des tours séparés (kind `tool_result`), une
 // ligne `user` du JSONL chacun. Ils ne sont JAMAIS dans les blocs du tour assistant. La
 // jointure par `toolUseId` (`indexToolResults`, protocole) est faite une fois par l'écran.
+//
+// Copier un message (13 septembre) : un appui long sur la bulle de Robin ou sur le texte
+// de l'assistant ouvre `Copier / Partager`, comme dans l'app Claude. Le texte copié est
+// celui du tour entier (blocs texte joints), jamais les appels d'outils.
 import { useEffect, useState } from 'react';
-import { Animated, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActionSheetIOS, Animated, Pressable, Share, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useToast } from '@/store/toast';
+import { copyOrShare } from '@/utils/clipboard';
+import { ImpactStyle, impact } from '@/utils/haptics';
 import type { ToolResultBlock, Turn } from '@/protocol';
 import { t } from '@/i18n/en';
 import { colors, layout, motion, radius, space } from '@/theme';
@@ -27,6 +34,19 @@ import { segmentBlocks } from './segments';
 import { ToolGroup } from './ToolGroup';
 
 export type SendState = 'queued' | 'sent' | 'failed';
+
+/** Appui long sur un message : `Copier`, `Partager`, ou rien. */
+export function messageActions(text: string): void {
+  if (text.length === 0) return;
+  impact(ImpactStyle.Medium);
+  ActionSheetIOS.showActionSheetWithOptions(
+    { options: [t.bubbleCopy, t.bubbleShare, t.actionCancel], cancelButtonIndex: 2 },
+    (index) => {
+      if (index === 0 && copyOrShare(text)) useToast.getState().show(t.bubbleCopied);
+      else if (index === 1) void Share.share({ message: text }).catch(() => undefined);
+    },
+  );
+}
 
 /**
  * Bulle de Robin. Les pièces jointes (docs/15) s'y montrent en vignettes, le chemin est
@@ -61,11 +81,15 @@ export function UserBubble({
   return (
     <View style={styles.userWrap}>
       {text.length > 0 ? (
-        <View style={[styles.userBubble, { maxWidth: width * layout.bubbleMaxWidthRatio }]}>
+        <Pressable
+          accessibilityHint={t.bubbleLongPressHint}
+          onLongPress={() => messageActions(text)}
+          style={({ pressed }) => [styles.userBubble, { maxWidth: width * layout.bubbleMaxWidthRatio }, pressed && styles.held]}
+        >
           <Txt variant="body" color={colors.text.primary}>
             {text}
           </Txt>
-        </View>
+        </Pressable>
       ) : null}
       {hasPieces ? (
         <View style={{ maxWidth: width * layout.bubbleMaxWidthRatio }}>
@@ -174,15 +198,21 @@ export function AssistantTurn({
 }) {
   const segments = segmentBlocks(turn.blocks);
   const lastIndex = segments.length - 1;
+  const whole = textOf(turn.blocks);
   return (
     <View style={styles.assistantWrap}>
       {segments.map((seg, i) => {
         if (seg.kind === 'text') {
           return (
-            <View key={i} style={styles.textBlock}>
+            <Pressable
+              key={i}
+              accessibilityHint={t.bubbleLongPressHint}
+              onLongPress={() => messageActions(whole)}
+              style={({ pressed }) => [styles.textBlock, pressed && styles.held]}
+            >
               <Markdown text={seg.text} />
               {streaming && i === lastIndex ? <StreamDot /> : null}
-            </View>
+            </Pressable>
           );
         }
         if (seg.kind === 'tools') {
@@ -251,6 +281,7 @@ export function StreamDot() {
 
 const styles = StyleSheet.create({
   userWrap: { alignSelf: 'flex-end', alignItems: 'flex-end', gap: space[2], marginVertical: space[4] },
+  held: { opacity: 0.7 },
   userBubble: {
     backgroundColor: colors.accent.subtleBg,
     borderRadius: radius.lg,

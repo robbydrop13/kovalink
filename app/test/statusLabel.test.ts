@@ -23,3 +23,14 @@ describe('agentStatus', () => {
     assert.equal(agentStatus({ ...base, closed: true, degraded: true }, now).kind, 'closed');
   });
 });
+
+describe('agentStatus, demarrage', () => {
+  it('« Starting Claude » prime sur inactif et attend, jamais sur fermee ni hors ligne', () => {
+    const base = { degraded: false, closed: false, awaiting: false, working: false, workingSince: null, finishedAt: null };
+    assert.equal(agentStatus({ ...base, launching: true }).kind, 'starting');
+    assert.equal(agentStatus({ ...base, launching: true, awaiting: true }).kind, 'starting');
+    assert.equal(agentStatus({ ...base, launching: true, degraded: true }).kind, 'offline');
+    assert.equal(agentStatus({ ...base, launching: true, closed: true }).kind, 'closed');
+    assert.equal(agentStatus(base).kind, 'idle');
+  });
+});

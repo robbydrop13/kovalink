@@ -65,6 +65,14 @@ export interface Pane {
    * l'onglet « Link » « Perso » apres un reordonnancement sur le Mac.
    */
   tabId: number | null;
+  /**
+   * `claude` vient d'etre lance dans ce pane par le daemon (nouvel onglet, pane ajoute,
+   * relance) et Kova ne voit pas encore l'agent : Claude Code met quelques secondes a
+   * ecrire sa session, plus si l'ecran de confiance du dossier attend. Pendant cette
+   * fenetre (`LAUNCH_GRACE_MS` cote daemon) l'app montre « Claude demarre », jamais
+   * « session perimee ». Retombe a `false` des que l'agent apparait ou a l'echeance.
+   */
+  launching: boolean;
   /** 3 etats exclusifs, `awaiting` l'emporte sur `working` (PRD A2). */
   liveState: 'awaiting' | 'working' | 'idle';
 }

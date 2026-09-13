@@ -296,6 +296,9 @@ async function run(): Promise<void> {
     })();
   });
 
+  // Debut ou fin de la fenetre de demarrage d'un pane : l'app doit le voir tout de suite.
+  panes.on('launching', () => hub.pushPanesSnapshot());
+
   panes.on('close', (paneId: number) => {
     const pane = panes.get(paneId);
     const sessionId = pane?.agent_session_id ?? null;

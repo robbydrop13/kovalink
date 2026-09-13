@@ -75,6 +75,8 @@ export function toPane(raw: Record<string, unknown>): Pane {
     color: colorOf(window, tabIndex),
     // Resolu par le `PaneStore` a partir de `list-tabs`, jamais par Kova.
     tabId: null,
+    // Pose par le `PaneStore` (`markLaunching`), jamais par Kova.
+    launching: false,
     // 3 etats exclusifs : `awaiting` l'emporte sur `working` (PRD A2).
     liveState: awaiting ? 'awaiting' : working ? 'working' : 'idle',
   };
@@ -113,9 +115,19 @@ export interface WorkingTransition {
  * machine `pane-status` ne se declenche jamais et `awaiting` reste `false` partout,
  * il n'est donc jamais utilise comme declencheur.
  */
+/**
+ * Fenetre pendant laquelle un pane ou le daemon vient de lancer `claude` est « en
+ * demarrage » plutot que « sans agent ». Mesure du 13 septembre 2026 : Claude Code met
+ * 3 a 10 s a ecrire sa session, et l'ecran de confiance d'un dossier neuf attend Robin.
+ */
+export const LAUNCH_GRACE_MS = 90_000;
+
 export class PaneStore extends EventEmitter {
   private readonly panes = new Map<number, Pane>();
   private tabs: Tab[] = [];
+  /** Panes ou le daemon a lance `claude`, et quand. Vide des que l'agent apparait. */
+  private readonly launchedAt = new Map<number, number>();
+  private readonly launchTimers = new Map<number, NodeJS.Timeout>();
   private readonly workingSince = new Map<number, number>();
   /**
    * Panes dont `awaiting` est SYNTHETISE par le daemon (`PromptDetector`), pas par Kova.
@@ -197,9 +209,47 @@ export class PaneStore extends EventEmitter {
     return pane;
   }
 
+  /**
+   * Le daemon vient d'envoyer l'Entree qui lance `claude` dans ce pane : il est « en
+   * demarrage » jusqu'a ce que Kova voie l'agent, ou pendant `LAUNCH_GRACE_MS` au plus.
+   */
+  markLaunching(paneId: number): void {
+    this.launchedAt.set(paneId, this.now());
+    const old = this.launchTimers.get(paneId);
+    if (old) clearTimeout(old);
+    const timer = setTimeout(() => {
+      this.launchTimers.delete(paneId);
+      this.refreshLaunching(paneId);
+    }, LAUNCH_GRACE_MS);
+    timer.unref();
+    this.launchTimers.set(paneId, timer);
+    this.refreshLaunching(paneId);
+  }
+
+  private launchingOf(pane: Pane): boolean {
+    const at = this.launchedAt.get(pane.id);
+    if (at === undefined) return false;
+    if (pane.agent !== null || this.now() - at >= LAUNCH_GRACE_MS) {
+      this.launchedAt.delete(pane.id);
+      return false;
+    }
+    return true;
+  }
+
+  private refreshLaunching(paneId: number): void {
+    const pane = this.panes.get(paneId);
+    if (!pane) return;
+    const launching = this.launchingOf(pane);
+    if (launching === pane.launching) return;
+    this.panes.set(paneId, { ...pane, launching });
+    this.bumpEtag();
+    this.emit('launching', paneId, launching);
+  }
+
   private applyPane(incoming: Pane): void {
     const previous = this.panes.get(incoming.id);
     let pane: Pane = { ...incoming, tabId: this.tabIdOf(incoming.window, incoming.tab) };
+    pane = { ...pane, launching: this.launchingOf(pane) };
     // Kova sait : son etat reel prend le pas sur notre synthese.
     if (incoming.awaiting) this.syntheticAwaiting.delete(incoming.id);
     if (previous && !incoming.awaiting && this.syntheticAwaiting.has(incoming.id)) {
@@ -223,6 +273,10 @@ export class PaneStore extends EventEmitter {
     this.panes.delete(paneId);
     this.workingSince.delete(paneId);
     this.syntheticAwaiting.delete(paneId);
+    this.launchedAt.delete(paneId);
+    const timer = this.launchTimers.get(paneId);
+    if (timer) clearTimeout(timer);
+    this.launchTimers.delete(paneId);
     this.bumpEtag();
     if (pane) this.emit('close', paneId, window ?? pane.window, tab ?? pane.tab);
   }
