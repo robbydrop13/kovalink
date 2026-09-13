@@ -66,4 +66,11 @@ export interface Services {
   rate: RateLimiter;
   authFailures: AuthFailures;
   nonces: NonceStore;
+  /**
+   * Relecture immediate de la mise en page (`list-tabs` + `list-panes`) puis diffusion,
+   * la meme que le sondage de 5 s. Une route qui vient de reordonner l'appelle pour que
+   * l'app voie le nouvel ordre dans la seconde. Pose par `main.ts` apres le hub, d'ou
+   * l'optionnel : les harnais de test n'en ont pas.
+   */
+  refreshLayout?: (reason: string) => Promise<void>;
 }

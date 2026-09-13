@@ -22,6 +22,12 @@ export class FakeKova extends EventEmitter {
   idleClosures = 0;
   /** Toutes les commandes recues hors `subscribe`, dans l'ordre. */
   received: Record<string, unknown>[] = [];
+  /**
+   * Reponse sur mesure a une commande, `null` pour la reponse par defaut (`ok`, tableau
+   * vide). Sert a jouer un Kova trop vieux (`unknown command: move-tab`) ou un
+   * `swap-pane` refuse, sans toucher au vrai `KovaIpc` qui parle au faux.
+   */
+  respond: ((msg: Record<string, unknown>) => { ok: boolean; data?: unknown; error?: string } | null) | null = null;
 
   start(): Promise<void> {
     return new Promise((resolve) => {
@@ -51,7 +57,8 @@ export class FakeKova extends EventEmitter {
             }
             this.received.push(msg);
             this.emit('command', msg);
-            sock.write(`${JSON.stringify({ ok: true, data: [] })}\n`);
+            const custom = this.respond?.(msg) ?? null;
+            sock.write(`${JSON.stringify(custom ?? { ok: true, data: [] })}\n`);
             armIdle();
           }
         });

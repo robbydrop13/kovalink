@@ -5,9 +5,16 @@ export const ERROR_CODES = [
   'BAD_REQUEST',
   'KOVA_DOWN',
   'PANE_NOT_FOUND',
+  // 404 sur `POST /v1/kova/tabs/:tabId/reorder` : l'onglet n'est pas dans l'index du daemon.
+  'TAB_NOT_FOUND',
   'SESSION_NOT_FOUND',
   'IPC_TIMEOUT',
   'IPC_UNSUPPORTED',
+  // 501 : le Kova installe sur le Mac ne connait pas la commande (`move-tab` est arrivee
+  // apres la 1.11.0). Le message dit quoi faire : mettre Kova a jour.
+  'KOVA_TOO_OLD',
+  // 502 : Kova a refuse une commande de controle, son message est relaye mot pour mot.
+  'KOVA_ERROR',
   'FORBIDDEN_ACTION',
   'FORBIDDEN_KEY',
   // 409 sur `POST /v1/panes/:id/answer` : le hash ou l'`awaitingSince` ne correspond

@@ -175,6 +175,7 @@ async function run(): Promise<void> {
   };
   const layoutTimer = setInterval(() => void refreshLayout('sondage'), LAYOUT_POLL_MS);
   layoutTimer.unref?.();
+  services.refreshLayout = refreshLayout;
 
   /** Relecture complete de `list-panes`, puis diffusion. Jamais sur le chemin d'une requete. */
   const refreshPanes = async (reason: string): Promise<void> => {

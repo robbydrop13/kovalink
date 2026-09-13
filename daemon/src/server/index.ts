@@ -23,6 +23,7 @@ import {
   type KovaBookmarkResponse,
   type PaneTitleRequest,
   type PaneTitleResponse,
+  type ReorderRequest,
   type PaneSessionNameRequest,
   type PaneSessionNameResponse,
   type PaneCommandsResponse,
@@ -56,6 +57,7 @@ import { listCommands } from '../claude/commands.js';
 import { findSession, listSessions } from '../kova/sessions.js';
 import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession, startClaudeInPane } from '../kova/resume.js';
 import { ManageError, closePane, renameCommand, renameTab, sanitizeSessionName, setBookmark } from '../kova/manage.js';
+import { reorderPane, reorderTab } from '../kova/reorder.js';
 import { TranscriptionError, transcribe } from '../voice/gladia.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { Hub, type Socket } from './hub.js';
@@ -360,6 +362,32 @@ export async function createHttpServer(
       if (e instanceof ManageError) return fail(reply, e.code === 'PANE_NOT_FOUND' ? 404 : 400, e.code, e.message);
       throw e;
     }
+  });
+
+  /**
+   * Reordonner un onglet parmi ceux de sa fenetre (`move-tab`). Meme seau que le
+   * renommage : c'est une retouche de mise en page, pas un lancement. Un Kova sans la
+   * commande rend 501 `KOVA_TOO_OLD` ; la relecture immediate de la mise en page suit.
+   */
+  app.post<{ Params: { tabId: string }; Body: Partial<ReorderRequest> }>(ROUTE_PATTERNS.tabReorder, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'text')) return fail(reply, 429, 'RATE_LIMITED', 'too many reorders');
+    const out = await reorderTab(services, Number(req.params.tabId), req.body?.index, deviceId);
+    if (!out.ok) return fail(reply, out.status, out.code, out.message);
+    return out.response;
+  });
+
+  /**
+   * Reordonner un pane parmi ceux de son onglet : une chaine de `swap-pane` voisins, dans
+   * l'ordre de `list-panes`. Le pane ne change jamais d'onglet. Une chaine interrompue
+   * rend 502 avec le nombre d'echanges appliques.
+   */
+  app.post<{ Params: { paneId: string }; Body: Partial<ReorderRequest> }>(ROUTE_PATTERNS.paneReorder, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'text')) return fail(reply, 429, 'RATE_LIMITED', 'too many reorders');
+    const out = await reorderPane(services, Number(req.params.paneId), req.body?.index, deviceId);
+    if (!out.ok) return fail(reply, out.status, out.code, out.message);
+    return out.response;
   });
 
   /**

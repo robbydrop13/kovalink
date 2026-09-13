@@ -33,6 +33,15 @@ export const ROUTES = {
   paneSessionName: (paneId: number): string => `/v1/panes/${paneId}/session-name`,
   kovaBookmark: '/v1/kova/bookmark',
   /**
+   * Reordonner depuis l'app, comme un glisser sur le Mac. Un onglet se deplace parmi
+   * les onglets de sa fenetre (`move-tab`, Kova posterieur a la 1.11.0, sinon 501
+   * `KOVA_TOO_OLD`). Un pane se deplace parmi les panes de son onglet, par une chaine de
+   * `swap-pane` voisins, et ne change jamais d'onglet. L'index est celui de l'ordre de
+   * `list-panes` (l'ordre des feuilles de Kova), borne au dernier rang.
+   */
+  tabReorder: (tabId: number): string => `/v1/kova/tabs/${tabId}/reorder`,
+  paneReorder: (paneId: number): string => `/v1/panes/${paneId}/reorder`,
+  /**
    * Mode vocal : l'app envoie l'audio (m4a, 10 Mo max) au daemon, qui appelle Gladia
    * avec la cle lue sur le Mac. La cle ne quitte jamais le Mac, l'audio n'y reste pas.
    */
@@ -104,6 +113,8 @@ export const ROUTE_PATTERNS = {
   paneTitle: '/v1/panes/:paneId/title',
   paneSessionName: '/v1/panes/:paneId/session-name',
   kovaBookmark: '/v1/kova/bookmark',
+  tabReorder: '/v1/kova/tabs/:tabId/reorder',
+  paneReorder: '/v1/panes/:paneId/reorder',
   /**
    * Mode vocal : l'app envoie l'audio (m4a, 10 Mo max) au daemon, qui appelle Gladia
    * avec la cle lue sur le Mac. La cle ne quitte jamais le Mac, l'audio n'y reste pas.
@@ -333,6 +344,27 @@ export interface PaneSessionNameRequest {
 }
 
 export type PaneSessionNameResponse = ActionResponse & { name: string };
+
+/**
+ * Corps de `POST /v1/kova/tabs/:tabId/reorder` et de `POST /v1/panes/:paneId/reorder` : le
+ * rang vise, entier positif ou nul, borne par le daemon au dernier rang.
+ */
+export interface ReorderRequest {
+  index: number;
+}
+
+export interface TabReorderResponse {
+  moved: boolean;
+}
+
+/**
+ * `swaps` : le nombre de `swap-pane` appliques. Une chaine interrompue rend 502 avec ce
+ * compte dans le message ; l'instantane suivant montre l'ordre reel.
+ */
+export interface PaneReorderResponse {
+  moved: boolean;
+  swaps: number;
+}
 
 /** Plafond d'un enregistrement vocal envoye au daemon. */
 export const TRANSCRIBE_MAX_BYTES = 10 * 1024 * 1024;

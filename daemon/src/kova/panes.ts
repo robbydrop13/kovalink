@@ -172,6 +172,15 @@ export class PaneStore extends EventEmitter {
     return this.tabs;
   }
 
+  /**
+   * Les panes d'un onglet dans l'ORDRE DE KOVA (celui de `list-panes`, ses feuilles de
+   * gauche a droite puis de haut en bas), pas dans l'ordre d'affichage de `all()`. C'est
+   * l'ordre que `swap-pane` manipule : un deplacement de pane se calcule dessus.
+   */
+  inTab(window: number, tab: number): Pane[] {
+    return [...this.panes.values()].filter((p) => p.window === window && p.tab === tab);
+  }
+
   setTabs(raw: Record<string, unknown>[]): void {
     this.tabs = raw.map(toTab);
     // Les onglets ont pu etre deplaces : chaque pane reprend l'identifiant de l'onglet
@@ -198,6 +207,19 @@ export class PaneStore extends EventEmitter {
     }
     for (const id of [...this.panes.keys()]) {
       if (!seen.has(id)) this.remove(id, null, null);
+    }
+    // Un `Map` garde le rang de la premiere insertion : apres un `swap-pane` sur le Mac,
+    // Kova liste les panes dans un autre ordre et le notre restait fige. On realigne le
+    // rang d'iteration sur celui de `list-panes`, dont `inTab` depend.
+    const order = [...seen];
+    const keys = [...this.panes.keys()];
+    if (order.some((id, i) => keys[i] !== id)) {
+      const current = new Map(this.panes);
+      this.panes.clear();
+      for (const id of order) {
+        const pane = current.get(id);
+        if (pane) this.panes.set(id, pane);
+      }
     }
     this.bumpEtag();
   }
