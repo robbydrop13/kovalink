@@ -54,6 +54,24 @@ export function PermissionNote({ mode }: { mode: PermissionMode | null }) {
   );
 }
 
+/**
+ * Pastille de l'onglet Kova : point de couleur, nom de l'onglet en couleur sur un fond
+ * teinté. Dans l'en-tête d'une session, c'est ce qui dit « où je suis » d'un coup d'œil,
+ * comme la couleur de l'onglet sur le Mac. Sans couleur (onglet sans couleur ou onglet
+ * inconnu), gris neutre.
+ */
+export function TabChip({ title, color }: { title: string; color: number | null }) {
+  const tint = color === null ? colors.tabNone : (colors.tab[color] ?? colors.tabNone);
+  return (
+    <View style={[styles.chip, { backgroundColor: `${tint}22`, borderColor: `${tint}55` }]}>
+      <View style={[styles.dot, { backgroundColor: tint }]} />
+      <Txt variant="calloutStrong" color={tint} numberOfLines={1} style={styles.chipText}>
+        {title}
+      </Txt>
+    </View>
+  );
+}
+
 export function PaneTitle({ pane }: { pane: Pane }) {
   return (
     <View style={styles.row}>
@@ -69,6 +87,18 @@ export function PaneTitle({ pane }: { pane: Pane }) {
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space[3], flexShrink: 1 },
   dot: { width: 8, height: 8, borderRadius: 4 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    paddingLeft: space[2],
+    paddingRight: space[3],
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    flexShrink: 1,
+  },
+  chipText: { flexShrink: 1 },
   title: { flexShrink: 1 },
   badge: {
     paddingHorizontal: 6,

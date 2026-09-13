@@ -63,6 +63,8 @@ import {
 import { fetchTurns } from '@/net/http';
 import { LINK_LABEL, isDegraded, useConnection } from '@/store/connection';
 import { paneById, usePanes } from '@/store/panes';
+import { groupByTab } from '@/features/sessions/tabGroups';
+import { TabChip } from '@/features/sessions/PaneIdentity';
 import { usePrompts } from '@/store/prompts';
 import { useScreens } from '@/store/screen';
 import {
@@ -132,6 +134,8 @@ export default function SessionScreen() {
 
   const pane = usePanes((s) => paneById(s.panes, paneId));
   const allPanes = usePanes((s) => s.panes);
+  const tabs = usePanes((s) => s.tabs);
+  const tabGroup = useMemo(() => groupByTab(allPanes, tabs).find((g) => g.panes.some((p) => p.id === paneId)), [allPanes, tabs, paneId]);
   const workingSince = usePanes((s) => s.workingSince[paneId] ?? null);
   const prompt = usePrompts((s) => s.byPane[paneId]);
   const phase = usePrompts((s) => s.phase[paneId] ?? 'hidden');
@@ -689,12 +693,15 @@ export default function SessionScreen() {
     >
       <View style={{ paddingTop: insets.top }}>
         <NavBar view={view} onView={setView} title={t.sessionsTitle} onMenu={openMenu} />
+        {/* Où je suis : la pastille de l'onglet Kova (couleur + nom), puis le nom de la
+            session, puis le dossier en retrait. La couleur est le repère le plus rapide. */}
         <View style={[styles.subtitle, arrivalFlash && styles.subtitleArrived]}>
-          <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1}>
-            {pane ? `${pane.projectName} · ${paneLabel(pane)}` : t.sessionFallbackTitle}
+          {tabGroup ? <TabChip title={tabGroup.title} color={tabGroup.color} /> : null}
+          <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.subtitleLabel}>
+            {pane ? paneLabel(pane) : t.sessionFallbackTitle}
           </Txt>
           <View style={styles.grow} />
-          <Txt variant="monoPath" color={colors.text.tertiary} numberOfLines={1}>
+          <Txt variant="monoPath" color={colors.text.tertiary} numberOfLines={1} style={styles.subtitlePath}>
             {pane ? truncatePath(pane.cwd) : ''}
           </Txt>
         </View>
@@ -1056,8 +1063,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.screenPaddingH,
   },
   menu: { minWidth: layout.touchMin, alignItems: 'center', justifyContent: 'center' },
+  subtitleLabel: { flexShrink: 1 },
+  subtitlePath: { flexShrink: 2, maxWidth: '45%' },
   subtitle: {
-    height: 28,
+    height: 32,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[3],

@@ -331,7 +331,8 @@ export default function SessionsScreen() {
           icon={next.target ? 'skip-forward' : 'check-circle'}
           kind={next.target?.kind === 'unread' ? 'primary' : 'secondary'}
           disabled={degraded || !next.target}
-          badge={next.target?.kind === 'unread' ? next.unreadCount : undefined}
+          badge={next.target?.kind === 'unread' ? next.unreadCount : next.target?.kind === 'idle' ? next.idleCount : undefined}
+          badgeTone={next.target?.kind === 'unread' ? 'attention' : 'neutral'}
           label={
             next.target?.kind === 'unread'
               ? `${t.nextUnread} (${next.unreadCount})`

@@ -95,6 +95,7 @@ export function RoundButton({
   disabled = false,
   size = layout.touchPrimary,
   badge,
+  badgeTone = 'attention',
   accessibilityHint,
 }: {
   icon: IconName;
@@ -104,6 +105,8 @@ export function RoundButton({
   disabled?: boolean;
   size?: number;
   badge?: number;
+  /** `attention` : ambre, pour les non lus. `neutral` : gris, un simple compte (les idle). */
+  badgeTone?: 'attention' | 'neutral';
   accessibilityHint?: string;
 }) {
   return (
@@ -125,7 +128,11 @@ export function RoundButton({
     >
       <Icon name={icon} size={20} color={labelColor(kind, disabled)} />
       {badge !== undefined && badge > 0 ? (
-        <Txt variant="caption" color={colors.bg.base} style={styles.badge}>
+        <Txt
+          variant="caption"
+          color={badgeTone === 'attention' ? colors.bg.base : colors.text.primary}
+          style={[styles.badge, badgeTone === 'neutral' && styles.badgeNeutral]}
+        >
           {badge > 99 ? '99+' : String(badge)}
         </Txt>
       ) : null}
@@ -189,6 +196,7 @@ const styles = StyleSheet.create({
     borderColor: colors.bg.base,
     fontWeight: '700',
   },
+  badgeNeutral: { backgroundColor: colors.bg.pressed },
   base: {
     borderRadius: radius.md,
     flexDirection: 'row',
