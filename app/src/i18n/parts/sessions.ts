@@ -114,6 +114,7 @@ export const sessions = {
   // Écran Sessions
   sessionsTitle: 'Sessions',
   sessionsNavFiles: 'Files',
+  sessionsNavBrowser: 'Browser',
   sessionsNavSettings: 'Settings',
   sessionsBootFailedTitle: 'Could not start',
   sessionsBootFailedHint: 'Local storage did not respond. Retry, then relaunch the app if the error persists.',

@@ -92,6 +92,9 @@ export default function RootLayout() {
           <Stack.Screen name="files/index" />
           <Stack.Screen name="files/preview" options={{ presentation: 'modal' }} />
           <Stack.Screen name="share" options={{ presentation: 'modal' }} />
+          {/* Navigateur : le miroir de Mira, pour finir un flux web depuis le téléphone. */}
+          <Stack.Screen name="browser/index" />
+          <Stack.Screen name="browser/[tabId]" />
           <Stack.Screen name="activity" />
         </Stack>
       </SafeAreaProvider>

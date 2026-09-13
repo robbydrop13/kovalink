@@ -60,6 +60,7 @@ import { ManageError, closePane, renameCommand, renameTab, sanitizeSessionName, 
 import { reorderPane, reorderTab } from '../kova/reorder.js';
 import { TranscriptionError, transcribe } from '../voice/gladia.js';
 import { registerFsRoutes } from './fsRoutes.js';
+import { registerMiraRoutes } from './miraRoutes.js';
 import { Hub, type Socket } from './hub.js';
 import type { Services } from './services.js';
 
@@ -809,6 +810,11 @@ export async function createHttpServer(
   // Sept routes, servies par `fsRoutes.ts`. Elles ne dependent pas de Kova : l'onglet
   // Fichiers reste utilisable quand Kova est quitte (CA-123).
   registerFsRoutes(app, services, uploads);
+
+  // --- Navigateur, le miroir de Mira ---------------------------------------
+  // Trois routes, servies par `miraRoutes.ts`. Elles parlent a la socket de Mira, jamais
+  // a Kova, et n'appellent jamais `focus-app`.
+  registerMiraRoutes(app, services);
 
   // --- WebSocket ---------------------------------------------------------
 

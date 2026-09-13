@@ -5,10 +5,11 @@
 //
 // Les parties sont découpées par écran pour rester lisibles ; `t` est l'objet fusionné,
 // et `scripts/check-i18n.sh` échoue si du français subsiste hors de ce dossier.
+import { browser } from './parts/browser';
 import { chat } from './parts/chat';
 import { files } from './parts/files';
 import { sessions } from './parts/sessions';
 import { system } from './parts/system';
 
-export const t = { ...sessions, ...chat, ...files, ...system } as const;
+export const t = { ...sessions, ...chat, ...files, ...browser, ...system } as const;
 export type Strings = typeof t;

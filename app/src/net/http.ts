@@ -19,6 +19,10 @@ import {
   type KovaResumeRequest,
   type KovaResumeResponse,
   type KovaSessionsResponse,
+  type MiraAction,
+  type MiraActResponse,
+  type MiraFrameResponse,
+  type MiraTabsResponse,
   type Pane,
   type PaneTitleRequest,
   type PaneTitleResponse,
@@ -327,4 +331,24 @@ export function postTabReorder(tabId: number, index: number, timeoutMs = 8000): 
 export function postPaneReorder(paneId: number, index: number, timeoutMs = 8000): Promise<PaneReorderResponse> {
   const body: ReorderRequest = { index };
   return request(ROUTES.paneReorder(paneId), { method: 'POST', body, timeoutMs });
+}
+
+// --- Navigateur, le miroir de Mira ---------------------------------------------
+
+/** Les onglets de Mira, toutes fenêtres confondues. `available: false` : Mira ne tourne pas. */
+export function fetchMiraTabs(timeoutMs = 8000): Promise<MiraTabsResponse> {
+  return request(ROUTES.miraTabs, { timeoutMs });
+}
+
+/**
+ * Une image de l'onglet, en base64 : `fetch` de React Native ne lit pas un corps binaire
+ * sans détour, le JSON est le chemin simple. Le viewport CSS voyage avec, pour les clics.
+ */
+export function fetchMiraFrame(tabId: string, timeoutMs = 10_000): Promise<MiraFrameResponse> {
+  return request(ROUTES.miraFrame(tabId), { timeoutMs });
+}
+
+/** Un geste sur un onglet de Mira : clic, texte, touche, défilement, navigation. */
+export function postMiraAction(tabId: string, action: MiraAction, timeoutMs = 10_000): Promise<MiraActResponse> {
+  return request(ROUTES.miraAct(tabId), { method: 'POST', body: action, timeoutMs });
 }

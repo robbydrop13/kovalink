@@ -97,6 +97,13 @@ export const ROUTES = {
   fsUploadComplete: (uploadId: string): string =>
     `/v1/fs/upload/${encodeURIComponent(uploadId)}/complete`,
   audit: '/v1/audit',
+
+  // --- Navigateur, le miroir de Mira -------------------------------------
+  // Trois routes : la liste des onglets, une image d'un onglet, un geste sur un onglet.
+  // Le daemon parle a la socket de Mira ; il n'appelle jamais `focus-app`.
+  miraTabs: '/v1/mira/tabs',
+  miraFrame: (tabId: string): string => `/v1/mira/tabs/${encodeURIComponent(tabId)}/frame`,
+  miraAct: (tabId: string): string => `/v1/mira/tabs/${encodeURIComponent(tabId)}/act`,
 } as const;
 
 /** Gabarits Fastify correspondants. Ecrits une fois, a cote des chemins clients. */
@@ -139,6 +146,9 @@ export const ROUTE_PATTERNS = {
   fsUpload: '/v1/fs/upload/:uploadId',
   fsUploadComplete: '/v1/fs/upload/:uploadId/complete',
   audit: '/v1/audit',
+  miraTabs: '/v1/mira/tabs',
+  miraFrame: '/v1/mira/tabs/:tabId/frame',
+  miraAct: '/v1/mira/tabs/:tabId/act',
 } as const;
 
 /**

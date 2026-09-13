@@ -1,0 +1,37 @@
+// Chaînes visibles : browser, le miroir de Mira sur l'iPhone. Voir `../en.ts`.
+export const browser = {
+  // Liste des onglets (`app/browser/index.tsx`).
+  browserTitle: 'Browser',
+  browserBack: 'Back',
+  browserUnavailable: 'Mira is not running on the Mac',
+  browserUnavailableBody: 'Open Mira on the Mac, then pull to refresh.',
+  browserTabsEmpty: 'No open tabs',
+  browserTabsEmptyBody: 'Open a page in Mira on the Mac to mirror it here.',
+  browserTabActive: 'active',
+  browserTabAsleep: 'asleep',
+  browserTabA11y: (title: string, host: string) => `${title}, ${host}`,
+  browserLoadFailed: 'Could not list tabs',
+
+  // Miroir (`app/browser/[tabId].tsx`).
+  browserLive: 'Live',
+  browserFrameAge: (s: number) => `${s}s ago`,
+  browserWaitingFrame: 'Waiting for the first frame',
+  browserTabGone: 'This tab was closed on the Mac',
+  browserFaceIdPrompt: 'Unlock the browser mirror',
+  browserActionFailed: 'Action failed, try again',
+  browserNavBack: 'Back',
+  browserNavForward: 'Forward',
+  browserReload: 'Reload',
+  browserUrl: 'URL',
+  browserKeyboard: 'Keyboard',
+  browserGo: 'Go',
+  browserUrlPlaceholder: 'Enter a URL',
+  browserTypePlaceholder: 'Type here, then Send',
+  browserSend: 'Send',
+  browserClose: 'Close',
+  browserKeyEnter: 'Enter',
+  browserKeyTab: 'Tab',
+  browserKeyEscape: 'Esc',
+  browserKeyBackspace: 'Delete',
+  browserTypeHint: 'Tap a field on the page first, then type.',
+} as const;

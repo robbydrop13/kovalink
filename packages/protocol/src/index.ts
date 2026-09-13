@@ -10,6 +10,7 @@ export * from './keys.js';
 export * from './link.js';
 export * from './messages.js';
 export * from './mime.js';
+export * from './mira.js';
 export * from './notifications.js';
 export * from './pairing.js';
 export * from './pane.js';

@@ -15,6 +15,10 @@ const RATE_RULES: Record<string, number> = {
   fsList: 300,
   fsRead: 300,
   audit: 60,
+  // Navigateur : le miroir sonde l'onglet toutes les 700 ms (4 captures/s de marge), et
+  // un formulaire se remplit a coups de taps et de touches (10 gestes/s).
+  miraShot: 240,
+  miraAct: 600,
   health: 60,
   pair: 10,
   authFail: 10,

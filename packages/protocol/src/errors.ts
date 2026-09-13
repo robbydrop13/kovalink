@@ -41,6 +41,11 @@ export const ERROR_CODES = [
   'TRANSCRIPTION_UNAVAILABLE',
   // Mode vocal : Gladia a refuse ou echoue, son message est relaye mot pour mot.
   'TRANSCRIPTION_FAILED',
+  // Navigateur : la socket de Mira est absente (503), l'onglet est inconnu de Mira (404),
+  // ou Mira a refuse la commande, son message est relaye mot pour mot (502).
+  'MIRA_UNAVAILABLE',
+  'MIRA_TAB_NOT_FOUND',
+  'MIRA_ERROR',
   'INTERNAL',
 ] as const;
 

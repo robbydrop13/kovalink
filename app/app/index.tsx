@@ -343,6 +343,7 @@ export default function SessionsScreen() {
         {/* Le bloc C ne dépend pas de Kova : l'accès aux fichiers reste offert même quand
             la liste des sessions est vide parce que Kova est quitté (CA-123). */}
         <LinkAction icon="folder" label={t.sessionsNavFiles} onPress={() => router.push('/files')} />
+        <LinkAction icon="globe" label={t.sessionsNavBrowser} onPress={() => router.push('/browser')} />
         <LinkAction icon="settings" label={t.sessionsNavSettings} onPress={() => router.push('/settings')} />
       </View>
 
