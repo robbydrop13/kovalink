@@ -12,7 +12,7 @@
 // carte EN ATTENTE comme sur la ligne TRAVAILLE : c'est le geste sûr, on le rend le plus
 // facile possible, et le scénario S3 décrit un pane qui travaille.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActionSheetIOS, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { ActionSheetIOS, LayoutAnimation, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,6 +28,7 @@ import { paneHref } from '@/features/sessions/SessionRow';
 import { useNextTarget } from '@/features/sessions/useNextTarget';
 import { isUnread } from '@/features/sessions/unread';
 import { useReads } from '@/store/reads';
+import { useTabCollapse } from '@/store/tabCollapse';
 import { ImpactStyle, impact } from '@/utils/haptics';
 import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
@@ -104,6 +105,8 @@ export default function SessionsScreen() {
   // Cmd+J depuis la liste : l'anneau entier (aucun pane courant), la ligne de résumé.
   const next = useNextTarget(null);
   const marks = useReads((s) => s.byPane);
+  const collapsedTabs = useTabCollapse((s) => s.collapsed);
+  const toggleCollapse = useTabCollapse((s) => s.toggle);
   const unreadOf = (pane: Pane) => isUnread(pane, prompts[pane.id], marks);
   const summary = kovaDown ? null : summaryLine(panes);
   const jumpNext = () => {
@@ -119,6 +122,14 @@ export default function SessionsScreen() {
   };
   const relaunch = (pane: Pane) =>
     router.push({ pathname: '/new-session', params: { cwd: pane.cwd } });
+  // Un tap sur l'en-tête replie ou déplie l'onglet, par identifiant Kova (stable à travers
+  // les réordonnancements). Un onglet sans identifiant (avant `list-tabs`) reste déplié.
+  const toggleTab = (group: TabGroup) => {
+    if (group.tabId === null) return;
+    impact(ImpactStyle.Light);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    toggleCollapse(group.tabId);
+  };
   /**
    * Le `+` d'un onglet : un pane de plus dedans, avec Claude. Deux choix, le dossier de
    * l'onglet (le cas courant) ou un projet récent via la palette, en mode « Add to ».
@@ -317,7 +328,8 @@ export default function SessionsScreen() {
                   aging={aging}
                   onOpen={open}
                   onRelaunch={relaunch}
-                  onHeaderPress={() => router.push('/panes')}
+                  collapsed={group.tabId !== null && collapsedTabs[group.tabId] === true}
+                  onToggle={() => toggleTab(group)}
                   onAddPane={() => addPane(group)}
                   swipeFor={swipeFor}
                   isUnread={unreadOf}

@@ -1,7 +1,9 @@
 // Un onglet Kova et ses panes, comme dans la barre d'onglets du Mac : barre de couleur à
 // gauche (les six couleurs Kova, 0 rouge à 5 violet), nom de l'onglet, marque `actif`
 // pour l'onglet au premier plan, puis les panes dans l'ordre. Un pane qui attend garde sa
-// carte, à sa place dans l'onglet, jamais extrait dans une section à part.
+// carte, à sa place dans l'onglet, jamais extrait dans une section à part. Un tap sur
+// l'en-tête replie ou déplie les panes ; replié, l'en-tête garde un résumé (nombre de
+// panes, point ambre si un pane attend, bleu si un pane travaille).
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { Pane, Prompt } from '@/protocol';
 import { colors, radius, space } from '@/theme';
@@ -10,7 +12,7 @@ import { Txt } from '@/ui/Txt';
 import { AwaitingCard } from './AwaitingCard';
 import { SessionRow } from './SessionRow';
 import { SwipeRow, type SwipeActions } from './SwipeRow';
-import type { TabGroup } from './tabGroups';
+import { collapsedSummary, type TabGroup } from './tabGroups';
 import { t } from '@/i18n/en';
 
 interface Props {
@@ -19,8 +21,10 @@ interface Props {
   aging: (paneId: number) => boolean;
   onOpen: (paneId: number) => void;
   onRelaunch: (pane: Pane) => void;
-  /** Tap sur l'en-tête d'onglet : la palette des panes (Cmd+P). */
-  onHeaderPress: () => void;
+  /** Panes repliés : l'en-tête seul, avec son résumé. */
+  collapsed: boolean;
+  /** Tap sur l'en-tête d'onglet : replier ou déplier ses panes. */
+  onToggle: () => void;
   /** Le `+` de l'en-tête : un pane de plus dans cet onglet. */
   onAddPane: () => void;
   /** Balayage d'une ligne : fermer, favori, renommer. */
@@ -43,7 +47,8 @@ export function TabGroupView({
   aging,
   onOpen,
   onRelaunch,
-  onHeaderPress,
+  collapsed,
+  onToggle,
   onAddPane,
   swipeFor,
   isUnread,
@@ -52,6 +57,7 @@ export function TabGroupView({
   interruptLabel,
 }: Props) {
   const tint = tabTint(group.color);
+  const summary = collapsed ? collapsedSummary(group) : null;
   return (
     <View
       style={[styles.group, { borderLeftColor: tint }]}
@@ -59,14 +65,25 @@ export function TabGroupView({
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={t.tabHeaderAccessibilityLabel(group.title)}
-        onPress={onHeaderPress}
+        accessibilityLabel={t.tabHeaderAccessibilityLabel(group.title, collapsed)}
+        accessibilityState={{ expanded: !collapsed }}
+        onPress={onToggle}
         style={({ pressed }) => [styles.header, pressed && styles.headerPressed]}
       >
         <View style={[styles.dot, { backgroundColor: tint }]} />
         <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.title}>
           {group.title}
         </Txt>
+        <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.text.secondary} />
+        {summary ? (
+          <View style={styles.summary}>
+            {summary.awaiting ? <View style={[styles.stateDot, { backgroundColor: colors.status.awaiting }]} /> : null}
+            {summary.working ? <View style={[styles.stateDot, { backgroundColor: colors.status.working }]} /> : null}
+            <Txt variant="caption" color={colors.text.tertiary}>
+              {t.tabCollapsedCount(summary.count)}
+            </Txt>
+          </View>
+        ) : null}
         {group.active ? (
           <View style={styles.activeChip}>
             <Txt variant="caption" color={colors.text.secondary}>
@@ -85,34 +102,36 @@ export function TabGroupView({
           <Icon name="plus" size={16} color={colors.text.secondary} />
         </Pressable>
       </Pressable>
-      <View style={styles.panes}>
-        {group.panes.map((pane: Pane) => (
-          <SwipeRow key={pane.id} actions={swipeFor(pane, group)}>
-            {pane.awaiting ? (
-              <AwaitingCard
-                pane={pane}
-                prompt={prompts[pane.id]}
-                aging={aging(pane.id)}
-                onOpen={() => onOpen(pane.id)}
-                interruptDisabled={interruptDisabled}
-                interruptLabel={interruptLabel(pane.id)}
-                onInterrupt={() => onInterrupt(pane.id)}
-              />
-            ) : (
-              <SessionRow
-                pane={pane}
-                prompt={prompts[pane.id]}
-                unread={isUnread(pane)}
-                onOpen={() => onOpen(pane.id)}
-                onRelaunch={() => onRelaunch(pane)}
-                interruptDisabled={interruptDisabled}
-                interruptLabel={interruptLabel(pane.id)}
-                onInterrupt={() => onInterrupt(pane.id)}
-              />
-            )}
-          </SwipeRow>
-        ))}
-      </View>
+      {collapsed ? null : (
+        <View style={styles.panes}>
+          {group.panes.map((pane: Pane) => (
+            <SwipeRow key={pane.id} actions={swipeFor(pane, group)}>
+              {pane.awaiting ? (
+                <AwaitingCard
+                  pane={pane}
+                  prompt={prompts[pane.id]}
+                  aging={aging(pane.id)}
+                  onOpen={() => onOpen(pane.id)}
+                  interruptDisabled={interruptDisabled}
+                  interruptLabel={interruptLabel(pane.id)}
+                  onInterrupt={() => onInterrupt(pane.id)}
+                />
+              ) : (
+                <SessionRow
+                  pane={pane}
+                  prompt={prompts[pane.id]}
+                  unread={isUnread(pane)}
+                  onOpen={() => onOpen(pane.id)}
+                  onRelaunch={() => onRelaunch(pane)}
+                  interruptDisabled={interruptDisabled}
+                  interruptLabel={interruptLabel(pane.id)}
+                  onInterrupt={() => onInterrupt(pane.id)}
+                />
+              )}
+            </SwipeRow>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -139,6 +158,8 @@ const styles = StyleSheet.create({
   },
   addPressed: { backgroundColor: colors.bg.pressed },
   title: { flexShrink: 1 },
+  summary: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  stateDot: { width: 6, height: 6, borderRadius: 3 },
   activeChip: {
     paddingHorizontal: 7,
     paddingVertical: 2,

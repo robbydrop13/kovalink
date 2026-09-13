@@ -52,7 +52,9 @@ export const sessions = {
   tabActiveChip: 'active',
   tabGroupAccessibilityLabel: (index: number, title: string, active: boolean, count: number) =>
     `Tab ${index}, ${title}${active ? ', active on the Mac' : ''}, ${count} pane${count > 1 ? 's' : ''}`,
-  tabHeaderAccessibilityLabel: (title: string) => `Tab ${title}, open the panes palette`,
+  tabHeaderAccessibilityLabel: (title: string, collapsed: boolean) =>
+    `Tab ${title}, ${collapsed ? 'collapsed, expand' : 'expanded, collapse'}`,
+  tabCollapsedCount: (count: number) => `${count} pane${count > 1 ? 's' : ''}`,
   summaryWaiting: (count: number) => `${count} waiting`,
   summaryWorking: (count: number) => `${count} working`,
 

@@ -156,6 +156,25 @@ export function summaryLine(panes: Pane[]): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
+/** Ce qu'un onglet replié montre encore : combien de panes, et s'il en attend ou en travaille. */
+export interface CollapsedSummary {
+  count: number;
+  awaiting: boolean;
+  working: boolean;
+}
+
+/**
+ * Résumé d'un onglet replié : rien d'important ne se cache. `awaiting` l'emporte sur
+ * `working` (états exclusifs par pane), mais l'onglet peut porter les deux.
+ */
+export function collapsedSummary(group: TabGroup): CollapsedSummary {
+  return {
+    count: group.panes.length,
+    awaiting: group.panes.some((p) => p.awaiting),
+    working: group.panes.some((p) => !p.awaiting && p.working),
+  };
+}
+
 /** Vrai quand la liste s'étend sur plusieurs fenêtres Kova : un séparateur par fenêtre. */
 export function windowCount(groups: TabGroup[]): number {
   return new Set(groups.map((g) => g.window)).size;

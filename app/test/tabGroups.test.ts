@@ -4,7 +4,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Pane, Tab } from '@/protocol';
-import { filterGroups, groupByTab, isBareShell, isStaleSession, paletteEntries, summaryLine, windowCount } from '@/features/sessions/tabGroups';
+import {
+  collapsedSummary,
+  filterGroups,
+  groupByTab,
+  isBareShell,
+  isStaleSession,
+  paletteEntries,
+  summaryLine,
+  windowCount,
+} from '@/features/sessions/tabGroups';
 
 function pane(partial: Partial<Pane> & { id: number; tab: number }): Pane {
   return {
@@ -232,5 +241,26 @@ describe('isBareShell', () => {
     assert.equal(isBareShell({ ...bare, agent: 'claude' }), false, 'un agent vivant');
     assert.equal(isBareShell({ ...bare, child_processes: [{ name: 'vim', pid: 3, version: null }] }), false, 'un processus en cours');
     assert.equal(isBareShell({ ...bare, child_processes: [{ name: 'claude', pid: 1, version: null }] }), false, 'une session perimee');
+  });
+});
+
+describe('collapsedSummary', () => {
+  it('compte les panes et signale un pane qui attend ou qui travaille', () => {
+    const tabs = [tab({ id: 3, tab_index: 0, title: 'Link' })];
+    const quiet = groupByTab([pane({ id: 1, tab: 0, tabId: 3 }), pane({ id: 2, tab: 0, tabId: 3 })], tabs)[0]!;
+    assert.deepEqual(collapsedSummary(quiet), { count: 2, awaiting: false, working: false });
+
+    const busy = groupByTab(
+      [
+        pane({ id: 1, tab: 0, tabId: 3, awaiting: true, working: true }),
+        pane({ id: 2, tab: 0, tabId: 3, working: true }),
+        pane({ id: 3, tab: 0, tabId: 3 }),
+      ],
+      tabs,
+    )[0]!;
+    assert.deepEqual(collapsedSummary(busy), { count: 3, awaiting: true, working: true });
+
+    const waitingOnly = groupByTab([pane({ id: 1, tab: 0, tabId: 3, awaiting: true, working: true })], tabs)[0]!;
+    assert.deepEqual(collapsedSummary(waitingOnly), { count: 1, awaiting: true, working: false }, 'awaiting l emporte sur working');
   });
 });
