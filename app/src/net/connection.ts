@@ -32,6 +32,26 @@ let visibleSessionId: string | null = null;
 let pushToken: string | null = null;
 /** Vrai quand l'app est à l'écran. En arrière plan, aucun pane n'est « au premier plan ». */
 let appActive = AppState.currentState === 'active';
+/** Passage en arrière plan, pour juger au retour si le socket peut encore être vivant. */
+let backgroundedAt: number | null = null;
+/** Coupure en cours : « Mac injoignable » n'est dit qu'après ce délai sans reconnexion. */
+let unreachableTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Une coupure réseau se reconnecte le plus souvent en moins d'une seconde. Avant ce
+ * délai, la liaison est « connecting » : pas de bandeau, la barre de validation reste.
+ */
+export const UNREACHABLE_AFTER_MS = 8_000;
+/**
+ * Au delà de cette absence, le daemon a certainement fermé le socket (deux pings serveur
+ * sans pong, 40 s) : on rouvre sans attendre de constater sa mort.
+ */
+export const BACKGROUND_RECONNECT_AFTER_MS = 30_000;
+
+function clearUnreachableTimer(): void {
+  if (unreachableTimer) clearTimeout(unreachableTimer);
+  unreachableTimer = null;
+}
 
 /** Signal de premier plan porté par chaque ping (A1, CA-31). */
 function foregroundPaneId(): number | null {
@@ -44,6 +64,7 @@ function handle(msg: S2C): void {
   const conn = useConnection.getState();
   switch (msg.t) {
     case 'hello.ok': {
+      clearUnreachableTimer();
       conn.setDaemonVersion(msg.daemonVersion);
       conn.setKova(msg.kova.status);
       conn.setLink(msg.link.relay ? 'relayed' : 'direct', msg.link.relay);
@@ -56,11 +77,10 @@ function handle(msg: S2C): void {
       void flushOutbox();
       break;
     }
-    case 'pong': {
-      const rtt = Date.now() - Date.parse(msg.serverTime);
-      if (Number.isFinite(rtt)) conn.setLatency(Math.max(0, Math.abs(rtt)));
+    case 'pong':
+      // La latence est mesurée par le socket (aller-retour réel), pas par `serverTime`,
+      // qui ne donne que l'écart d'horloge entre l'iPhone et le Mac.
       break;
-    }
     case 'daemon.status':
       conn.setKova(msg.kova.status);
       conn.setLink(msg.link.relay ? 'relayed' : 'direct', msg.link.relay);
@@ -156,13 +176,22 @@ export async function startConnection(): Promise<void> {
       });
     },
     onMessage: handle,
+    onLatency: (ms) => useConnection.getState().setLatency(ms),
     foregroundPaneId,
     onClose: (reason) => {
       void (async () => {
         const state = useConnection.getState();
         if (!(await online())) state.setLink('offline');
         else if (reason === 'auth') state.setError(t.linkPairingRefused);
-        else state.setLink('macUnreachable');
+        else {
+          // Coupure : on se reconnecte en silence. Le bandeau n'apparaît que si ça dure.
+          state.setLink('connecting');
+          clearUnreachableTimer();
+          unreachableTimer = setTimeout(() => {
+            unreachableTimer = null;
+            if (!socket?.isOpen) useConnection.getState().setLink('macUnreachable');
+          }, UNREACHABLE_AFTER_MS);
+        }
       })();
     },
   });
@@ -191,11 +220,21 @@ export async function startConnection(): Promise<void> {
 
   appSub = AppState.addEventListener('change', (status: AppStateStatus) => {
     appActive = status === 'active';
-    if (status === 'active' && !socket?.isOpen) {
-      useConnection.getState().setLink('connecting');
-      socket?.reconnectNow();
+    if (status === 'active') {
+      const away = backgroundedAt === null ? 0 : Date.now() - backgroundedAt;
+      backgroundedAt = null;
+      // Socket fermé, ou absence assez longue pour que le daemon l'ait tué : on rouvre
+      // tout de suite plutôt que d'attendre deux pongs manqués (16 s d'état figé).
+      if (!socket?.isOpen || away > BACKGROUND_RECONNECT_AFTER_MS) {
+        useConnection.getState().setLink('connecting');
+        socket?.reconnectNow();
+        return;
+      }
+      // Absence courte : un ping vérifie que le socket vit encore, et rétablit le premier plan.
+      socket?.pingNow();
       return;
     }
+    if (backgroundedAt === null) backgroundedAt = Date.now();
     // Téléphone verrouillé ou app quittée : le daemon doit cesser de croire que Robin lit
     // ce pane, sinon la prochaine fin de tour ne vibre pas. Ping immédiat, pane à null.
     socket?.pingNow();
@@ -203,6 +242,7 @@ export async function startConnection(): Promise<void> {
 }
 
 export function stopConnection(): void {
+  clearUnreachableTimer();
   socket?.close();
   socket = null;
   netSub?.remove();
