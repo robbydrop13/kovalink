@@ -584,3 +584,23 @@ describe('fenetre de demarrage apres un lancement de claude', () => {
     panes.remove(90, null, null);
   });
 });
+
+describe('changement de liaison Tailscale', () => {
+  it('daemon.status n est pousse que quand le relais du client change', async () => {
+    const { setKnownPeers } = await import('../src/net/tailscale.js');
+    const h = harness();
+    setKnownPeers([{ addresses: ['100.64.0.2'], curAddr: '', relay: 'par' }]);
+    const sock = h.connect();
+    h.hub.pushDaemonStatus('up', 1);
+    const links = () => sock.sent.filter((m) => m.t === 'daemon.status').map((m) => (m as { link: { relay: string | null } }).link.relay);
+    assert.deepEqual(links(), ['par']);
+    h.hub.pushLinkChanges({ status: 'up', pid: 1 });
+    assert.deepEqual(links(), ['par'], 'rien a annoncer, meme relais');
+    // Tailscale trouve un chemin direct : un seul message, relais null.
+    setKnownPeers([{ addresses: ['100.64.0.2'], curAddr: '[2a01::1]:41641', relay: 'par' }]);
+    h.hub.pushLinkChanges({ status: 'up', pid: 1 });
+    h.hub.pushLinkChanges({ status: 'up', pid: 1 });
+    assert.deepEqual(links(), ['par', null]);
+    setKnownPeers([]);
+  });
+});

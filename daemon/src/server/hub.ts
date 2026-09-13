@@ -8,6 +8,7 @@ import {
   type DevicePrefs,
   type ErrorCode,
   type KovaStatus,
+  type LinkInfo,
   type Prompt,
   type S2C,
   type Turn,
@@ -47,6 +48,8 @@ export interface Client {
   deviceId: string;
   /** Adresse Tailscale du client : sert a dire si SA liaison est directe ou relayee. */
   remoteAddress: string | undefined;
+  /** Relais annonce en dernier a ce client (`null` : direct), pour ne pousser que les changements. */
+  lastLinkRelay: string | null;
   /** Etag annonce par `hello.resume` : evite de renvoyer une liste identique. */
   resumeEtag: string | null;
   /** Sessions attachees, pour ne pousser que ce que l'appareil regarde. */
@@ -118,6 +121,7 @@ export class Hub {
       socket,
       deviceId,
       remoteAddress,
+      lastLinkRelay: null,
       resumeEtag: null,
       sessions: new Set(),
       panesSubscribed: false,
@@ -302,7 +306,7 @@ export class Hub {
           protocol: PROTOCOL_VERSION,
           daemonVersion: this.services.daemonVersion,
           kova: { status: ipc.state, pid: ipc.pid, commands: ipc.commands },
-          link: currentLink(client.remoteAddress),
+          link: this.rememberLink(client),
           serverTime: new Date().toISOString(),
           ...(renewed ? { token: renewed } : {}),
         });
@@ -541,16 +545,40 @@ export class Hub {
     this.broadcast({ t: 'prompt', prompt });
   }
 
+  private rememberLink(client: Client): LinkInfo {
+    const link = currentLink(client.remoteAddress);
+    client.lastLinkRelay = link.relay;
+    return link;
+  }
+
   /** Chaque client recoit l'etat de SA liaison, direct ou relayee (A11). */
   pushDaemonStatus(status: KovaStatus, pid: number | null): void {
     const since = new Date().toISOString();
     for (const client of [...this.clients]) {
+      const link = currentLink(client.remoteAddress);
+      client.lastLinkRelay = link.relay;
       this.send(client, {
         t: 'daemon.status',
         kova: { status, pid },
-        link: currentLink(client.remoteAddress),
+        link,
         since,
       });
+    }
+  }
+
+  /**
+   * La liaison Tailscale d'un client a change depuis la derniere annonce (13 septembre) :
+   * la plupart des connexions commencent par le relais DERP et passent en direct quelques
+   * secondes plus tard, mais l'app ne l'apprenait qu'a la reconnexion suivante et disait
+   * « Relayed » toute la soiree, a la maison, avec un chemin direct sous les pieds.
+   */
+  pushLinkChanges(kova: { status: KovaStatus; pid: number | null }): void {
+    const since = new Date().toISOString();
+    for (const client of [...this.clients]) {
+      const link = currentLink(client.remoteAddress);
+      if (link.relay === client.lastLinkRelay) continue;
+      client.lastLinkRelay = link.relay;
+      this.send(client, { t: 'daemon.status', kova, link, since });
     }
   }
 

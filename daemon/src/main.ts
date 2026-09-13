@@ -356,7 +356,7 @@ async function run(): Promise<void> {
 
   ipc.start();
   // Rafraichissement de fond de l'etat Tailscale : jamais sur le chemin d'une requete.
-  const stopPeerRefresh = startPeerRefresh();
+  const stopPeerRefresh = startPeerRefresh(undefined, () => hub.pushLinkChanges({ status: ipc.state, pid: ipc.pid }));
 
   // --- Ecouteurs HTTPS ---------------------------------------------------
 

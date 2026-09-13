@@ -100,10 +100,17 @@ function refreshPeers(): Promise<PeerLink[]> {
   });
 }
 
-/** Rafraichissement periodique, demarre par le daemon. Rend la fonction d'arret. */
-export function startPeerRefresh(intervalMs = CACHE_MS): () => void {
-  void refreshPeers();
-  const timer = setInterval(() => void refreshPeers(), intervalMs);
+/**
+ * Rafraichissement periodique, demarre par le daemon. Rend la fonction d'arret.
+ * `onRefresh` est appele apres chaque lecture : le hub y compare la liaison de chaque
+ * client a la derniere annoncee, et pousse le changement.
+ */
+export function startPeerRefresh(intervalMs = CACHE_MS, onRefresh?: () => void): () => void {
+  const tick = (): void => {
+    void refreshPeers().then(() => onRefresh?.());
+  };
+  tick();
+  const timer = setInterval(tick, intervalMs);
   timer.unref?.();
   return () => clearInterval(timer);
 }
