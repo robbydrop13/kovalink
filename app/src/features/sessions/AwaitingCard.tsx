@@ -12,6 +12,7 @@ import { StatusGlyph } from '@/ui/StatusGlyph';
 import { Txt } from '@/ui/Txt';
 import { shortAge } from '@/utils/time';
 import { PaneTitle, PermissionNote, bypassAccessibilitySuffix } from './PaneIdentity';
+import { reorderAccessibility, type ReorderActions } from './reorderAccessibility';
 import { t } from '@/i18n/en';
 
 interface Props {
@@ -22,6 +23,8 @@ interface Props {
   interruptDisabled: boolean;
   interruptLabel: string;
   aging: boolean;
+  /** VoiceOver : « Move up » / « Move down », l'équivalent du glisser-déposer. */
+  reorder?: ReorderActions | undefined;
 }
 
 /**
@@ -55,6 +58,7 @@ export function AwaitingCard({
   interruptDisabled,
   interruptLabel,
   aging,
+  reorder,
 }: Props) {
   const { title, detail } = summaryFor(prompt);
   const age = shortAge(pane.awaiting_since);
@@ -62,6 +66,7 @@ export function AwaitingCard({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={t.awaitingCardAccessibilityLabel(pane.projectName, age, bypassAccessibilitySuffix(pane.permissionMode), title)}
+      {...reorderAccessibility(reorder)}
       onPress={onOpen}
       style={styles.card}
     >

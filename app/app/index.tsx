@@ -11,8 +11,13 @@
 // Aucun bouton d'approbation ici (A7, P3). `Interrompre` en revanche est disponible sur la
 // carte EN ATTENTE comme sur la ligne TRAVAILLE : c'est le geste sûr, on le rend le plus
 // facile possible, et le scénario S3 décrit un pane qui travaille.
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActionSheetIOS, LayoutAnimation, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+//
+// Tenir 300 ms puis glisser réordonne : un pane dans son onglet, un onglet dans sa fenêtre
+// (tous les onglets se replient le temps du geste). L'ordre visé s'affiche tout de suite et
+// part au Mac ; sans confirmation il revient, avec un mot. Pendant le geste la liste est
+// figée : les instantanés continuent d'arriver sans la refaire sous le doigt.
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, ActionSheetIOS, LayoutAnimation, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -29,10 +34,13 @@ import { useNextTarget } from '@/features/sessions/useNextTarget';
 import { isUnread } from '@/features/sessions/unread';
 import { useReads } from '@/store/reads';
 import { useTabCollapse } from '@/store/tabCollapse';
-import { ImpactStyle, impact } from '@/utils/haptics';
+import { useReorder, type ReorderFailure } from '@/store/reorder';
+import { ImpactStyle, NotifyType, impact, notify } from '@/utils/haptics';
 import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
-import { groupByTab, summaryLine, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
+import type { ReorderActions } from '@/features/sessions/reorderAccessibility';
+import { DragItem, DragScrollContext, useDragReorder, type DragScroll } from '@/features/sessions/useDragReorder';
+import { applyPendingOrder, groupByTab, summaryLine, tabOrderOf, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { isDegraded, useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
@@ -54,6 +62,11 @@ export default function SessionsScreen() {
   const loading = usePanes((s) => s.loading);
   const fetchedAt = usePanes((s) => s.fetchedAt);
   const applySnapshot = usePanes((s) => s.applySnapshot);
+  const pendingTabs = useReorder((s) => s.tabs);
+  const pendingPanes = useReorder((s) => s.panes);
+  const moveTab = useReorder((s) => s.moveTab);
+  const movePane = useReorder((s) => s.movePane);
+  const reconcile = useReorder((s) => s.reconcile);
   const prompts = usePrompts((s) => s.byPane);
   const link = useConnection((s) => s.link);
   const kova = useConnection((s) => s.kova);
@@ -88,19 +101,24 @@ export default function SessionsScreen() {
     try {
       const snapshot = await fetchPanes();
       applySnapshot(snapshot);
+      reconcile(snapshot.tabs, snapshot.panes);
       loadBookmarks();
     } catch {
       forceReconnect();
     } finally {
       setRefreshing(false);
     }
-  }, [applySnapshot, loadBookmarks]);
+  }, [applySnapshot, reconcile, loadBookmarks]);
 
   // Kova quitté (CA-123) : le daemon a vidé sa liste et l'a annoncé. Ce qui resterait en
   // cache serait des panes fantômes, on ne les montre pas.
   const kovaDown = kova === 'down';
   const groups = useMemo(() => groupByTab(kovaDown ? [] : panes, tabs), [kovaDown, panes, tabs]);
-  const shown = groups;
+  // L'ordre visé par un déplacement encore en attente s'applique par dessus l'instantané.
+  const displayGroups = useMemo(() => applyPendingOrder(groups, pendingTabs, pendingPanes), [groups, pendingTabs, pendingPanes]);
+  /** La liste figée pendant un geste, du levé au lâcher. */
+  const [frozen, setFrozen] = useState<TabGroup[] | null>(null);
+  const shown = frozen ?? displayGroups;
   const windows = windowCount(shown);
   // Cmd+J depuis la liste : l'anneau entier (aucun pane courant), la ligne de résumé.
   const next = useNextTarget(null);
@@ -124,11 +142,103 @@ export default function SessionsScreen() {
     router.push({ pathname: '/new-session', params: { cwd: pane.cwd } });
   // Un tap sur l'en-tête replie ou déplie l'onglet, par identifiant Kova (stable à travers
   // les réordonnancements). Un onglet sans identifiant (avant `list-tabs`) reste déplié.
+  // Pendant un geste, rien : une animation de disposition casserait la géométrie mesurée.
   const toggleTab = (group: TabGroup) => {
-    if (group.tabId === null) return;
+    if (group.tabId === null || frozen) return;
     impact(ImpactStyle.Light);
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     toggleCollapse(group.tabId);
+  };
+
+  // --- Glisser-déposer ------------------------------------------------------------------
+  const scrollRef = useRef<ScrollView>(null);
+  const offsetY = useRef(0);
+  const viewport = useRef({ top: 0, height: 0 });
+  const contentHeight = useRef(0);
+  const [scrollLocked, setScrollLocked] = useState(false);
+  const dragScroll = useMemo<DragScroll>(
+    () => ({ scrollRef, offsetY, viewport, contentHeight, lock: setScrollLocked }),
+    [],
+  );
+  /** Le temps d'un déplacement d'onglet, tous les onglets sont repliés (sans le persister). */
+  const [tabDragging, setTabDragging] = useState(false);
+  /** Miroir de `frozen` lisible depuis un rappel différé (le délai de confirmation). */
+  const dragging = useRef(false);
+  const freeze = () => {
+    dragging.current = true;
+    setFrozen(shown);
+  };
+  const unfreeze = () => {
+    dragging.current = false;
+    setFrozen(null);
+  };
+  // Le Mac n'a pas suivi : la liste revient à son ordre, animée sauf en plein geste (la
+  // liste y est figée, l'animation s'appliquerait au lâcher et casserait la pose).
+  const reportFailure = (kind: ReorderFailure) => {
+    notify(kind === 'unsupported' ? NotifyType.Error : NotifyType.Warning);
+    if (!dragging.current) LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setToast(kind === 'unsupported' ? t.reorderNeedsKovaUpdate : t.reorderNotConfirmed);
+  };
+  const tabKeys = useMemo(() => shown.map((g) => g.key), [shown]);
+  /** Rangs atteignables par un onglet : ceux de sa fenêtre (la liste est triée par fenêtre). */
+  const windowRange = (index: number): [number, number] => {
+    const window = shown[index]?.window;
+    const lo = shown.findIndex((g) => g.window === window);
+    return [lo, lo + shown.filter((g) => g.window === window).length - 1];
+  };
+  const canDragTab = (group: TabGroup, index: number): boolean => {
+    const [lo, hi] = windowRange(index);
+    return !degraded && group.tabId !== null && lo < hi;
+  };
+  /** Un onglet lâché, ou déplacé d'un rang par VoiceOver : l'ordre visé part au Mac. */
+  const dropTab = (from: number, to: number) => {
+    unfreeze();
+    const group = shown[from];
+    const target = shown[to];
+    if (from === to || !group || !target || group.tabId === null || target.tabId === null) return;
+    // Disparu entre le levé et le lâcher : rien à envoyer, l'instantané a déjà raison.
+    if (!tabs.some((tab) => tab.id === group.tabId)) return;
+    const order = tabOrderOf(shown, group.window);
+    void moveTab(group.window, order, order.indexOf(group.tabId), order.indexOf(target.tabId), reportFailure);
+  };
+  const tabDrag = useDragReorder<string>({
+    keys: tabKeys,
+    gap: space[6],
+    enabled: !degraded && !frozen,
+    // L'écran n'est pas sous son propre fournisseur : le défilement est passé en direct.
+    scroll: dragScroll,
+    range: windowRange,
+    onLift: () => {
+      freeze();
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setTabDragging(true);
+    },
+    onDrop: dropTab,
+    onSettled: () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setTabDragging(false);
+    },
+  });
+  const tabReorderFor = (group: TabGroup, index: number): ReorderActions | undefined => {
+    if (!canDragTab(group, index)) return undefined;
+    const [lo, hi] = windowRange(index);
+    return {
+      canUp: index > lo,
+      canDown: index < hi,
+      onMove: (dir) => {
+        dropTab(index, index + dir);
+        AccessibilityInfo.announceForAccessibility(t.reorderMovedTo(index + dir - lo + 1, hi - lo + 1));
+      },
+    };
+  };
+  /** Un pane lâché dans son onglet, ou déplacé d'un rang par VoiceOver. */
+  const dropPane = (group: TabGroup) => (from: number, to: number) => {
+    unfreeze();
+    if (from === to || group.tabId === null) return;
+    const order = group.panes.map((p) => p.id);
+    const paneId = order[from];
+    if (paneId === undefined || !panes.some((p) => p.id === paneId)) return;
+    void movePane(group.tabId, order, from, to, reportFailure);
   };
   /**
    * Le `+` d'un onglet : un pane de plus dedans, avec Claude. Deux choix, le dossier de
@@ -281,7 +391,16 @@ export default function SessionsScreen() {
       ) : null}
 
       <ScrollView
+        ref={scrollRef}
         keyboardShouldPersistTaps="handled"
+        scrollEnabled={!scrollLocked}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          offsetY.current = e.nativeEvent.contentOffset.y;
+        }}
+        onContentSizeChange={(_w, h) => {
+          contentHeight.current = h;
+        }}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + layout.touchPrimary + space[8] }]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.text.secondary} />
@@ -311,36 +430,48 @@ export default function SessionsScreen() {
           <EmptyState title={t.sessionsNoMatchTitle} body={t.sessionsNoMatchBody} />
         ) : null}
 
-        <View style={styles.groups}>
-          {shown.map((group, i) => {
-            const previous = shown[i - 1];
-            const newWindow = windows > 1 && (i === 0 || previous?.window !== group.window);
-            return (
-              <View key={group.key} style={styles.groupSlot}>
-                {newWindow ? (
-                  <Txt variant="caption" color={colors.text.tertiary} style={styles.windowLabel}>
-                    {t.sessionsWindowLabel(group.window + 1)}
-                  </Txt>
-                ) : null}
-                <TabGroupView
-                  group={group}
-                  prompts={prompts}
-                  aging={aging}
-                  onOpen={open}
-                  onRelaunch={relaunch}
-                  collapsed={group.tabId !== null && collapsedTabs[group.tabId] === true}
-                  onToggle={() => toggleTab(group)}
-                  onAddPane={() => addPane(group)}
-                  swipeFor={swipeFor}
-                  isUnread={unreadOf}
-                  onInterrupt={(id) => void interrupt(id)}
-                  interruptDisabled={degraded}
-                  interruptLabel={(id) => labelFor(id, degraded)}
-                />
-              </View>
-            );
-          })}
-        </View>
+        {/* Les libellés de fenêtre sont des frères des groupes, pas dedans : ils restent en
+            place quand un onglet se déplace, et la géométrie mesurée est celle des groupes. */}
+        <DragScrollContext.Provider value={dragScroll}>
+          <View style={styles.groups}>
+            {shown.map((group, i) => {
+              const previous = shown[i - 1];
+              const newWindow = windows > 1 && (i === 0 || previous?.window !== group.window);
+              return (
+                <Fragment key={group.key}>
+                  {newWindow ? (
+                    <Txt variant="caption" color={colors.text.tertiary} style={styles.windowLabel}>
+                      {t.sessionsWindowLabel(group.window + 1)}
+                    </Txt>
+                  ) : null}
+                  <DragItem list={tabDrag} id={group.key}>
+                    <TabGroupView
+                      group={group}
+                      prompts={prompts}
+                      aging={aging}
+                      onOpen={open}
+                      onRelaunch={relaunch}
+                      collapsed={tabDragging || (group.tabId !== null && collapsedTabs[group.tabId] === true)}
+                      onToggle={() => toggleTab(group)}
+                      onAddPane={() => addPane(group)}
+                      swipeFor={swipeFor}
+                      isUnread={unreadOf}
+                      onInterrupt={(id) => void interrupt(id)}
+                      interruptDisabled={degraded}
+                      interruptLabel={(id) => labelFor(id, degraded)}
+                      dragHandle={canDragTab(group, i) ? tabDrag.handlerProps(group.key) : undefined}
+                      tabReorder={tabReorderFor(group, i)}
+                      dragDisabled={degraded}
+                      dragLocked={frozen !== null}
+                      onDragLift={freeze}
+                      onReorderPane={dropPane(group)}
+                    />
+                  </DragItem>
+                </Fragment>
+              );
+            })}
+          </View>
+        </DragScrollContext.Provider>
       </ScrollView>
 
       {/* Barre d'action basse, zone du pouce (design 4.1) : icônes rondes, sans libellé,
@@ -409,8 +540,8 @@ const styles = StyleSheet.create({
   },
   content: { paddingHorizontal: layout.screenPaddingH, paddingTop: space[2] },
   groups: { gap: space[6] },
-  groupSlot: { gap: space[3] },
-  windowLabel: { letterSpacing: 0.6, marginTop: space[2] },
+  // Le libellé garde 8 pt avec son groupe malgré les 20 pt entre frères.
+  windowLabel: { letterSpacing: 0.6, marginTop: space[2], marginBottom: space[3] - space[6] },
   searchRow: { paddingHorizontal: layout.screenPaddingH, paddingVertical: space[3], gap: space[2] },
   search: {
     height: 36,

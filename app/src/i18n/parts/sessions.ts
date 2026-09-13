@@ -58,6 +58,14 @@ export const sessions = {
   summaryWaiting: (count: number) => `${count} waiting`,
   summaryWorking: (count: number) => `${count} working`,
 
+  // Réordonnancement (glisser-déposer)
+  reorderNotConfirmed: 'Could not reorder, the Mac did not confirm',
+  reorderNeedsKovaUpdate: 'Update Kova on the Mac to reorder tabs',
+  reorderMoveUp: 'Move up',
+  reorderMoveDown: 'Move down',
+  reorderMovedTo: (position: number, count: number) => `Moved to position ${position} of ${count}`,
+  reorderDragHint: 'Touch and hold, then drag to reorder',
+
   // Balayage d'une ligne
   swipeBookmark: 'Bookmark',
   swipeUnbookmark: 'Unbookmark',

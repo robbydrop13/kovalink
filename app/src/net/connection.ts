@@ -15,6 +15,7 @@ import { useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { usePrompts } from '@/store/prompts';
 import { useReads } from '@/store/reads';
+import { useReorder } from '@/store/reorder';
 import { staleMarks } from '@/features/sessions/unread';
 import { useSession } from '@/store/session';
 import { useScreens } from '@/store/screen';
@@ -93,6 +94,8 @@ function handle(msg: S2C): void {
         appActive: msg.appActive,
         focusPaneId: msg.focusPaneId,
       });
+      // Un ordre posé par glisser-déposer est retiré dès que le Mac le montre.
+      useReorder.getState().reconcile(msg.tabs, msg.panes);
       // Cmd+J : les marques de lecture et les prompts des panes disparus sont purgés.
       const alive = msg.panes.map((p) => p.id);
       useReads.getState().forget(staleMarks(useReads.getState().byPane, msg.panes));

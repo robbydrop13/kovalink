@@ -14,6 +14,7 @@ import { Txt } from '@/ui/Txt';
 import { shortAge } from '@/utils/time';
 import { PermissionNote, bypassAccessibilitySuffix } from './PaneIdentity';
 import { isStaleSession } from './tabGroups';
+import { reorderAccessibility, type ReorderActions } from './reorderAccessibility';
 import { t } from '@/i18n/en';
 
 interface Props {
@@ -27,6 +28,8 @@ interface Props {
   onInterrupt?: () => void;
   interruptDisabled?: boolean;
   interruptLabel?: string;
+  /** VoiceOver : « Move up » / « Move down », l'équivalent du glisser-déposer. */
+  reorder?: ReorderActions | undefined;
 }
 
 /**
@@ -62,6 +65,7 @@ export function SessionRow({
   onInterrupt,
   interruptDisabled = false,
   interruptLabel = t.interruptLabel,
+  reorder,
 }: Props) {
   const working = pane.working;
   const starting = pane.launching;
@@ -72,6 +76,7 @@ export function SessionRow({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={t.paneRowAccessibilityLabel(paneLabel(pane), pane.projectName, badge, bypassAccessibilitySuffix(pane.permissionMode))}
+      {...reorderAccessibility(reorder)}
       onPress={onOpen}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >

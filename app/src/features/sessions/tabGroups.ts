@@ -180,6 +180,80 @@ export function windowCount(groups: TabGroup[]): number {
   return new Set(groups.map((g) => g.window)).size;
 }
 
+// --- Réordonnancement (glisser-déposer) ---------------------------------------------
+
+/** Ordre en attente d'un déplacement d'onglet : les identifiants Kova d'une fenêtre. */
+export interface PendingTabs {
+  window: number;
+  order: number[];
+  since: number;
+}
+
+/** Ordre en attente d'un déplacement de pane : les identifiants de panes d'un onglet. */
+export interface PendingPanes {
+  tabId: number;
+  order: number[];
+  since: number;
+}
+
+/** Copie de `list` où l'élément `from` est déplacé au rang `to` (borné). */
+export function moveIndex<T>(list: readonly T[], from: number, to: number): T[] {
+  const out = [...list];
+  if (from === to || from < 0 || from >= out.length) return out;
+  const [item] = out.splice(from, 1) as [T];
+  out.splice(Math.max(0, Math.min(to, out.length)), 0, item);
+  return out;
+}
+
+/**
+ * `items` dans l'ordre de `order` (par identifiant) : un identifiant absent de `items`
+ * est ignoré, un élément inconnu de `order` vient à la fin, dans son ordre d'origine.
+ */
+function orderBy<T>(items: T[], idOf: (item: T) => number | null, order: number[]): T[] {
+  const rank = new Map(order.map((id, i) => [id, i]));
+  const known: T[] = [];
+  const unknown: T[] = [];
+  for (const item of items) {
+    const id = idOf(item);
+    if (id !== null && rank.has(id)) known.push(item);
+    else unknown.push(item);
+  }
+  known.sort((a, b) => (rank.get(idOf(a) as number) ?? 0) - (rank.get(idOf(b) as number) ?? 0));
+  return [...known, ...unknown];
+}
+
+/** Identifiants Kova des onglets d'une fenêtre, dans l'ordre affiché. */
+export function tabOrderOf(groups: TabGroup[], window: number): number[] {
+  return groups.filter((g) => g.window === window && g.tabId !== null).map((g) => g.tabId as number);
+}
+
+/**
+ * La liste telle que le Mac la montrera une fois le déplacement confirmé : les ordres en
+ * attente s'appliquent par dessus l'instantané. Seule la liste Sessions s'en sert ;
+ * `groupByTab` reste l'ordre du Mac. Le `tabIndex` est renuméroté dans la fenêtre touchée.
+ */
+export function applyPendingOrder(
+  groups: TabGroup[],
+  tabs: PendingTabs | null,
+  panes: Record<number, PendingPanes>,
+): TabGroup[] {
+  let out = groups.map((g) => {
+    const pending = g.tabId !== null ? panes[g.tabId] : undefined;
+    return pending ? { ...g, panes: orderBy(g.panes, (p) => p.id, pending.order) } : g;
+  });
+  if (tabs) {
+    const inWindow = orderBy(
+      out.filter((g) => g.window === tabs.window),
+      (g) => g.tabId,
+      tabs.order,
+    ).map((g, i) => ({ ...g, tabIndex: i }));
+    out = [...out.filter((g) => g.window !== tabs.window), ...inWindow].sort(
+      (a, b) => a.window - b.window || a.tabIndex - b.tabIndex,
+    );
+  }
+  return out;
+}
+
 /** Un pane de la palette Cmd+P, avec son onglet : l'ordre est celui des onglets puis des panes. */
 export interface PaletteEntry {
   pane: Pane;

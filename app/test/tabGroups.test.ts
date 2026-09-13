@@ -5,13 +5,16 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Pane, Tab } from '@/protocol';
 import {
+  applyPendingOrder,
   collapsedSummary,
   filterGroups,
   groupByTab,
   isBareShell,
   isStaleSession,
+  moveIndex,
   paletteEntries,
   summaryLine,
+  tabOrderOf,
   windowCount,
 } from '@/features/sessions/tabGroups';
 
@@ -262,5 +265,58 @@ describe('collapsedSummary', () => {
 
     const waitingOnly = groupByTab([pane({ id: 1, tab: 0, tabId: 3, awaiting: true, working: true })], tabs)[0]!;
     assert.deepEqual(collapsedSummary(waitingOnly), { count: 1, awaiting: true, working: false }, 'awaiting l emporte sur working');
+  });
+});
+
+describe('réordonnancement (glisser-déposer)', () => {
+  it('moveIndex déplace un élément, borné, sans toucher la liste d origine', () => {
+    const list = ['a', 'b', 'c', 'd'];
+    assert.deepEqual(moveIndex(list, 0, 2), ['b', 'c', 'a', 'd']);
+    assert.deepEqual(moveIndex(list, 3, 1), ['a', 'd', 'b', 'c']);
+    assert.deepEqual(moveIndex(list, 1, 1), list);
+    assert.deepEqual(moveIndex(list, 1, 99), ['a', 'c', 'd', 'b']);
+    assert.deepEqual(moveIndex(list, 2, -5), ['c', 'a', 'b', 'd']);
+    assert.deepEqual(list, ['a', 'b', 'c', 'd']);
+  });
+
+  it('tabOrderOf : les identifiants d une fenêtre, les onglets sans identifiant exclus', () => {
+    const groups = groupByTab([...PANES, pane({ id: 21, tab: 5, projectName: 'tmp' })], TABS);
+    assert.deepEqual(tabOrderOf(groups, 0), [11, 3, 18, 10, 8]);
+    assert.deepEqual(tabOrderOf(groups, 1), []);
+  });
+
+  it('applyPendingOrder permute les onglets d une fenêtre et renumérote tabIndex', () => {
+    const groups = groupByTab(PANES, TABS);
+    const out = applyPendingOrder(groups, { window: 0, order: [3, 11, 18, 10, 8], since: 0 }, {});
+    assert.deepEqual(out.map((g) => [g.title, g.tabIndex]), [['Link', 0], ['Courses', 1], ['QR appairage', 2], ['TrailCoach', 3], ['Dollary', 4]]);
+    assert.equal(out[0]?.active, true, 'la puce active suit son onglet');
+    assert.deepEqual(groups.map((g) => g.title), ['Courses', 'Link', 'QR appairage', 'TrailCoach', 'Dollary'], 'entrée intacte');
+    assert.equal(applyPendingOrder(groups, null, {}).length, groups.length);
+  });
+
+  it('un identifiant absent est ignoré, un onglet inconnu de l ordre vient à la fin', () => {
+    const groups = groupByTab(PANES, TABS);
+    // L onglet 99 a été fermé entre temps ; Dollary (8) n est pas dans l ordre en attente.
+    const out = applyPendingOrder(groups, { window: 0, order: [10, 99, 3, 18, 11], since: 0 }, {});
+    assert.deepEqual(out.map((g) => g.tabId), [10, 3, 18, 11, 8]);
+  });
+
+  it('ne touche pas aux autres fenêtres', () => {
+    const tabs = [...TABS, tab({ id: 30, tab_index: 0, window: 1, title: 'Autre' }), tab({ id: 31, tab_index: 1, window: 1, title: 'Bis' })];
+    const panes = [...PANES, pane({ id: 40, tab: 0, window: 1, tabId: 30 }), pane({ id: 41, tab: 1, window: 1, tabId: 31 })];
+    const groups = groupByTab(panes, tabs);
+    const out = applyPendingOrder(groups, { window: 1, order: [31, 30], since: 0 }, {});
+    assert.deepEqual(out.map((g) => g.tabId), [11, 3, 18, 10, 8, 31, 30]);
+    assert.deepEqual(out.slice(5).map((g) => g.tabIndex), [0, 1]);
+  });
+
+  it('permute les panes d un onglet par identifiant, les autres onglets intacts', () => {
+    const groups = groupByTab(PANES, TABS);
+    const out = applyPendingOrder(groups, null, { 3: { tabId: 3, order: [3, 4], since: 0 } });
+    assert.deepEqual(out.map((g) => g.panes.map((p) => p.id)), [[13], [3, 4], [20], [11], [9]]);
+    // Un pane fermé entre temps disparaît, un pane nouveau vient à la fin.
+    const withNew = groupByTab([...PANES, pane({ id: 5, tab: 1, tabId: 3 })], TABS);
+    const out2 = applyPendingOrder(withNew, null, { 3: { tabId: 3, order: [3, 77, 4], since: 0 } });
+    assert.deepEqual(out2[1]?.panes.map((p) => p.id), [3, 4, 5]);
   });
 });

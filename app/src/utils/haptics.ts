@@ -14,5 +14,10 @@ export function notify(type: Haptics.NotificationFeedbackType): void {
   void Haptics.notificationAsync(type).catch(() => undefined);
 }
 
+/** Un cran franchi (un rang de plus en glissant) : le retour le plus léger. */
+export function selection(): void {
+  void Haptics.selectionAsync().catch(() => undefined);
+}
+
 export const ImpactStyle = Haptics.ImpactFeedbackStyle;
 export const NotifyType = Haptics.NotificationFeedbackType;

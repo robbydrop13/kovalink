@@ -47,7 +47,8 @@ function ActionButton({
   );
 }
 
-export function SwipeRow({ actions, children }: { actions: SwipeActions; children: ReactNode }) {
+/** `enabled` à faux pendant un glisser-déposer : le balayage ne se dispute pas le doigt. */
+export function SwipeRow({ actions, enabled = true, children }: { actions: SwipeActions; enabled?: boolean; children: ReactNode }) {
   const ref = useRef<Swipeable>(null);
   const run = (fn: () => void): void => {
     ref.current?.close();
@@ -56,6 +57,7 @@ export function SwipeRow({ actions, children }: { actions: SwipeActions; childre
   return (
     <Swipeable
       ref={ref}
+      enabled={enabled}
       friction={2}
       overshootLeft={false}
       overshootRight={false}

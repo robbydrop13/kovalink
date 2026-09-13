@@ -25,12 +25,15 @@ import {
   type PaneSessionNameRequest,
   type PaneSessionNameResponse,
   type PaneCommandsResponse,
+  type PaneReorderResponse,
   type PaneStartClaudeResponse,
   type PairClaimRequest,
   type PairClaimResponse,
   type Prompt,
   type RecentProject,
+  type ReorderRequest,
   type Tab,
+  type TabReorderResponse,
   type Turn,
 } from '@/protocol';
 import { loadCredentials, type Credentials } from '@/store/credentials';
@@ -309,4 +312,19 @@ export function postNewTab(project: RecentProject, timeoutMs = 10_000): Promise<
 export function postSplit(tabId: number, project: RecentProject | null, timeoutMs = 10_000): Promise<KovaSplitResponse> {
   const body: KovaSplitRequest = project ? { tabId, recentProjectIndex: project.index, path: project.path } : { tabId };
   return request(ROUTES.kovaSplit, { method: 'POST', body, timeoutMs });
+}
+
+/**
+ * Rang d'un onglet dans sa fenêtre, appliqué sur le Mac par `move-tab`. 501 `KOVA_TOO_OLD`
+ * quand le Kova du Mac ne connaît pas la commande : l'app le dit, elle ne réessaie pas.
+ */
+export function postTabReorder(tabId: number, index: number, timeoutMs = 8000): Promise<TabReorderResponse> {
+  const body: ReorderRequest = { index };
+  return request(ROUTES.tabReorder(tabId), { method: 'POST', body, timeoutMs });
+}
+
+/** Rang d'un pane dans son onglet : une chaîne de `swap-pane` côté daemon. */
+export function postPaneReorder(paneId: number, index: number, timeoutMs = 8000): Promise<PaneReorderResponse> {
+  const body: ReorderRequest = { index };
+  return request(ROUTES.paneReorder(paneId), { method: 'POST', body, timeoutMs });
 }
