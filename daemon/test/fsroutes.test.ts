@@ -231,6 +231,10 @@ describe('projets recents de Kova (Cmd+O depuis l app)', () => {
     assert.match(src, /cmd: 'new-tab', cwd, command: NEW_TAB_COMMAND/);
     const resume = readFileSync(join(SRC_DIR, 'kova', 'resume.ts'), 'utf8');
     assert.match(resume, /const NEW_TAB_COMMAND = 'claude';/);
+    // `start-claude` tape la commande lui-meme : la meme constante, litterale, dans KeyGate.
+    const keygate = readFileSync(join(SRC_DIR, 'kova', 'keygate.ts'), 'utf8');
+    assert.match(keygate, /const LAUNCH_COMMAND = 'claude';/);
+    assert.equal(ROUTES.paneStartClaude(7), '/v1/panes/7/start-claude');
     assert.match(resume, /`\$\{NEW_TAB_COMMAND\} --resume \$\{session\.sessionId\}`/);
   });
 });

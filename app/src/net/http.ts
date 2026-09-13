@@ -25,6 +25,7 @@ import {
   type PaneSessionNameRequest,
   type PaneSessionNameResponse,
   type PaneCommandsResponse,
+  type PaneStartClaudeResponse,
   type PairClaimRequest,
   type PairClaimResponse,
   type Prompt,
@@ -246,6 +247,14 @@ export function postKovaLaunch(timeoutMs = 8000): Promise<KovaLaunchResponse> {
 /** Les commandes `/` de Claude Code visibles depuis le pane, pour l'autocomplétion. */
 export function fetchCommands(paneId: number, timeoutMs = 6000): Promise<PaneCommandsResponse> {
   return request(ROUTES.paneCommands(paneId), { timeoutMs });
+}
+
+/**
+ * Lancer `claude` dans un pane qui n'est qu'un shell. Le daemon tape la commande, toujours
+ * `claude`, et refuse (409 `PANE_BUSY`) un pane qui porte déjà un agent ou un processus.
+ */
+export function startClaude(paneId: number, timeoutMs = 10_000): Promise<PaneStartClaudeResponse> {
+  return request(ROUTES.paneStartClaude(paneId), { method: 'POST', timeoutMs });
 }
 
 /** Projets récents de Kova, pour l'écran « Nouvelle session » (Cmd+O). */

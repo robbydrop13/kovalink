@@ -13,6 +13,9 @@ export const ERROR_CODES = [
   // 409 sur `POST /v1/panes/:id/answer` : le hash ou l'`awaitingSince` ne correspond
   // plus a l'ecran. Rien n'a ete envoye au pane (A6.3, C1).
   'PROMPT_CHANGED',
+  // 409 sur `POST /v1/panes/:id/start-claude` : le pane porte deja un agent, un
+  // processus, ou un `claude` en cours de demarrage. Rien n'a ete tape dedans.
+  'PANE_BUSY',
   'TEXT_TOO_LONG',
   'PATH_DENIED',
   // Bloc C. Chaque refus porte sa cause reelle : « Mac injoignable » pour un chemin

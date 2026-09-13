@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Pane, Tab } from '@/protocol';
-import { filterGroups, groupByTab, isStaleSession, paletteEntries, summaryLine, windowCount } from '@/features/sessions/tabGroups';
+import { filterGroups, groupByTab, isBareShell, isStaleSession, paletteEntries, summaryLine, windowCount } from '@/features/sessions/tabGroups';
 
 function pane(partial: Partial<Pane> & { id: number; tab: number }): Pane {
   return {
@@ -221,5 +221,16 @@ describe('isStaleSession et demarrage', () => {
     const p = pane({ id: 80, tab: 0, agent: null, child_processes: [{ name: 'claude', pid: 1, version: null }] });
     assert.equal(isStaleSession(p), true);
     assert.equal(isStaleSession({ ...p, launching: true }), false);
+  });
+});
+
+describe('isBareShell', () => {
+  it('un shell nu : aucun agent, aucun processus, rien en cours de demarrage', () => {
+    const bare = pane({ id: 81, tab: 0, agent: null, agent_session_id: null, chatCapable: false });
+    assert.equal(isBareShell(bare), true);
+    assert.equal(isBareShell({ ...bare, launching: true }), false, 'claude demarre deja');
+    assert.equal(isBareShell({ ...bare, agent: 'claude' }), false, 'un agent vivant');
+    assert.equal(isBareShell({ ...bare, child_processes: [{ name: 'vim', pid: 3, version: null }] }), false, 'un processus en cours');
+    assert.equal(isBareShell({ ...bare, child_processes: [{ name: 'claude', pid: 1, version: null }] }), false, 'une session perimee');
   });
 });

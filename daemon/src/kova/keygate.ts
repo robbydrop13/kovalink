@@ -16,6 +16,12 @@ import { sendKeys } from './sendKeys.js';
 
 export const MAX_TEXT = 8192;
 
+/**
+ * La SEULE commande que le daemon lance dans un shell : `new-tab` et `split` la donnent a
+ * Kova, `start-claude` la tape lui-meme. Constante, jamais une chaine du client.
+ */
+export const LAUNCH_COMMAND = 'claude';
+
 /** Ctrl-U : Claude Code vide son champ de saisie. Sert a ne jamais laisser un texte orphelin. */
 const CLEAR_LINE = '\u0015';
 /** Cadence et plafond de la lecture d'ecran qui encadre un envoi de texte. */
@@ -297,8 +303,12 @@ export class KeyGate {
    * Mesure sur la machine : le champ `command` de `new-tab` est TAPE dans le shell du
    * nouveau pane, sans etre execute. Ce retour chariot l'execute. Il n'est accepte que
    * sur un pane SANS agent, au repos : sur un agent vivant, il validerait n'importe quoi.
+   *
+   * `typeCommand` : le pane est un shell nu que Kova n'a rien tape dedans (`start-claude`
+   * depuis l'app). Le daemon tape alors `LAUNCH_COMMAND` lui-meme, suivi de l'Entree, en
+   * un seul `send-keys`. La commande est une constante de ce fichier, jamais du client.
    */
-  async emitLaunch(paneId: number, deviceId?: string): Promise<EmitResult> {
+  async emitLaunch(paneId: number, deviceId?: string, typeCommand = false): Promise<EmitResult> {
     const pane = this.panes.get(paneId);
     if (!pane) return { applied: false, reason: 'pane_gone' };
     // Mesure : un shell frais porte un instant des processus enfants (initialisation du
@@ -306,8 +316,8 @@ export class KeyGate {
     if (pane.agent !== null || pane.child_processes.some((c) => c.name === 'claude')) {
       throw new ForbiddenError('FORBIDDEN_ACTION', 'launch refused: this pane already has an agent');
     }
-    await sendKeys(this.ipc, paneId, KEY_TABLE.enter);
-    audit({ deviceId, action: 'pane.launch', paneId, result: 'ok' });
+    await sendKeys(this.ipc, paneId, typeCommand ? `${LAUNCH_COMMAND}${KEY_TABLE.enter}` : KEY_TABLE.enter);
+    audit({ deviceId, action: 'pane.launch', paneId, result: 'ok', detail: typeCommand ? 'typed' : undefined });
     return { applied: true };
   }
 

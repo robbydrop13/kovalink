@@ -60,10 +60,10 @@ import {
   requestScreen,
   setVisiblePane,
 } from '@/net/connection';
-import { fetchTurns } from '@/net/http';
+import { fetchTurns, startClaude } from '@/net/http';
 import { LINK_LABEL, isDegraded, useConnection } from '@/store/connection';
 import { paneById, usePanes } from '@/store/panes';
-import { groupByTab } from '@/features/sessions/tabGroups';
+import { groupByTab, isBareShell } from '@/features/sessions/tabGroups';
 import { TabChip } from '@/features/sessions/PaneIdentity';
 import { usePrompts } from '@/store/prompts';
 import { useScreens } from '@/store/screen';
@@ -113,6 +113,8 @@ const INPUT_GUARD_MS = 400;
 
 /** Guet d'une bulle en file : la vidange a lieu hors de cet écran, à la reconnexion. */
 const QUEUE_POLL_MS = 2_000;
+/** « Start Claude here » : le « démarre » local tombe seul si le Mac ne le confirme pas. */
+const START_REQUEST_TTL_MS = 15_000;
 
 /** Cause lisible d'un `applied: false` du daemon. Toujours une phrase, jamais un code nu. */
 function refusalLabel(reason: string | undefined): string {
@@ -171,6 +173,11 @@ export default function SessionScreen() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   /** Pane dont le délai de résolution est écoulé. On sort du squelette, quoi qu'il arrive. */
   const [timedOutPaneId, setTimedOutPaneId] = useState<number | null>(null);
+  /**
+   * Pane où « Start Claude here » vient d'être demandé : l'écran passe en « démarre »
+   * tout de suite, sans attendre l'instantané du daemon (qui suit en moins d'une seconde).
+   */
+  const [startRequest, setStartRequest] = useState<number | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   /** Collé en bas tant que Robin n'est pas remonté dans l'historique. */
   const stickToBottom = useRef(true);
@@ -356,7 +363,34 @@ export default function SessionScreen() {
   const chatCapable = pane?.chatCapable !== false;
   const hasAgentSession = agentSessionId !== null;
   /** Le daemon vient de lancer `claude` ici : « démarre », pas « sans agent ». */
-  const launching = pane?.launching === true && !hasAgentSession;
+  const startRequested = startRequest === paneId;
+  const launching = (pane?.launching === true || startRequested) && !hasAgentSession;
+  /**
+   * Un shell nu : aucun agent, aucun processus (un pane que Kova a restauré au redémarrage
+   * sans Claude, par exemple). C'est le seul cas où l'app propose d'y lancer Claude.
+   */
+  const bareShell = pane !== undefined && !closed && !hasAgentSession && !launching && isBareShell(pane);
+
+  // Le drapeau local tombe seul au bout de 15 s : d'ici là l'instantané du daemon porte
+  // `launching`, et un « démarre » que le Mac ne confirme jamais ne reste pas figé.
+  useEffect(() => {
+    if (!startRequested) return;
+    const timer = setTimeout(() => setStartRequest(null), START_REQUEST_TTL_MS);
+    return () => clearTimeout(timer);
+  }, [startRequested]);
+
+  const onStartClaude = useCallback(async () => {
+    impact(ImpactStyle.Medium);
+    setStartRequest(paneId);
+    try {
+      const res = await startClaude(paneId);
+      if (!res.launched) throw new Error('not launched');
+    } catch {
+      setStartRequest(null);
+      notify(NotifyType.Error);
+      setToast(t.sessionStartClaudeFailed);
+    }
+  }, [paneId]);
 
   // Les trois derniers échanges d'abord ; l'historique au dessus sur demande. Le plancher
   // est posé au premier rendu de la session et ne remonte jamais : un nouvel envoi ajoute
@@ -761,12 +795,16 @@ export default function SessionScreen() {
         // Ouverture depuis le cache, liaison vivante : le Mac réconcilie (design 4.2).
         <Banner tone="working" text={t.sessionCacheUpdating} />
       ) : null}
-      {!chatCapable && !launching ? (
+      {!chatCapable && !launching && !bareShell ? (
         <Banner
           text={t.sessionChatUnavailable}
           actionLabel={t.actionOpenTerminal}
           onAction={() => setView('term')}
         />
+      ) : null}
+      {bareShell && view === 'term' ? (
+        // Le shell nu vu depuis Term : le même geste que l'état vide du chat, en bandeau.
+        <Banner text={t.sessionNoAgentTitle} actionLabel={t.sessionStartClaude} onAction={() => void onStartClaude()} />
       ) : null}
       {session.status === 'error' ? (
         <Banner
@@ -854,7 +892,13 @@ export default function SessionScreen() {
             </EmptyState>
           ) : null}
 
-          {session.status === 'ready' && session.turns.length === 0 ? (
+          {bareShell ? (
+            // Aucune session à afficher : le pane n'est qu'un shell. Lancer Claude ici, ou Term.
+            <EmptyState icon="terminal" title={t.sessionNoAgentTitle} body={t.sessionNoAgentBody}>
+              <Button label={t.sessionStartClaude} onPress={() => void onStartClaude()} />
+              <Button label={t.actionOpenTerminal} kind="secondary" onPress={() => setView('term')} />
+            </EmptyState>
+          ) : (session.status === 'ready' && session.turns.length === 0) || (session.status === 'idle' && launching) ? (
             <EmptyState
               title={launching ? t.sessionStartingTitle : t.sessionNothingTitle}
               body={launching ? t.sessionStartingBody : hasAgentSession ? t.sessionNothingBodyAgent : t.sessionNothingBodyNoAgent}

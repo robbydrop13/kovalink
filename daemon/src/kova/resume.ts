@@ -2,14 +2,17 @@
 // ou reprise d'une session fermee (`claude --resume <id>`, PRD 3.4). La commande est
 // TOUJOURS construite ici : le client ne fournit qu'un index ou un identifiant, valides.
 import { statSync } from 'node:fs';
-import { isPaneContentError, type ErrorCode, type KovaResumeResponse, type PaneContent } from '@kovalink/protocol';
+import { isPaneContentError, type ErrorCode, type KovaResumeResponse, type PaneContent, type PaneStartClaudeResponse } from '@kovalink/protocol';
 import { audit } from '../audit.js';
 import { logger } from '../logger.js';
 import type { Services } from '../server/services.js';
 import { IpcError } from './ipc.js';
 import { findSession, isSessionId } from './sessions.js';
 
-/** La SEULE commande que `new-tab` lance. Constante, jamais une chaine du client. */
+/**
+ * La SEULE commande que `new-tab` lance. Constante, jamais une chaine du client. La meme
+ * que `KeyGate.LAUNCH_COMMAND`, tapee par le daemon sur un pane nu (`start-claude`).
+ */
 export const NEW_TAB_COMMAND = 'claude';
 /** Delai d'apparition du nouveau pane dans le store, par l'evenement `pane-open`. */
 const NEW_TAB_PANE_WAIT_MS = 3_000;
@@ -41,13 +44,53 @@ export async function launchInFreshPane(
   // `claude` reste tape sans etre execute. On attend donc de VOIR la commande a l'ecran,
   // puis on verifie qu'elle a bien ete consommee, avec une seconde Entree sinon.
   await waitForTypedCommand(services, paneId, deadline);
+  return pressLaunch(services, paneId, deviceId, false);
+}
+
+/**
+ * `Start Claude here` depuis l'app, sur un pane qui n'est qu'un shell (par exemple un
+ * pane que Kova a restaure au redemarrage, sans Claude). Personne n'a tape la commande :
+ * KeyGate la tape avec l'Entree, puis le meme suivi que `new-tab`. Le refus d'un pane
+ * occupe est decide ICI, avant toute touche : un agent, un processus enfant (un `vim`,
+ * un serveur) ou un lancement deja en cours rendent 409, rien n'est envoye.
+ */
+export async function startClaudeInPane(
+  services: LaunchServices,
+  paneId: number,
+  deviceId: string,
+): Promise<StartClaudeOutcome> {
+  const pane = services.panes.get(paneId);
+  if (!pane) {
+    audit({ deviceId, action: 'pane.start-claude', paneId, result: 'denied', detail: 'pane_gone' });
+    return { ok: false, status: 404, code: 'PANE_NOT_FOUND', message: 'unknown pane' };
+  }
+  const busy = pane.agent !== null ? 'agent' : pane.launching ? 'launching' : pane.child_processes.length > 0 ? 'child' : null;
+  if (busy !== null) {
+    audit({ deviceId, action: 'pane.start-claude', paneId, result: 'denied', detail: busy });
+    return { ok: false, status: 409, code: 'PANE_BUSY', message: `this pane is not a bare shell (${busy})` };
+  }
+  const launched = await pressLaunch(services, paneId, deviceId, true);
+  audit({ deviceId, action: 'pane.start-claude', paneId, path: pane.cwd, result: launched ? 'ok' : 'error' });
+  logger.info('claude lance dans un pane nu depuis l app', { deviceId, paneId, cwd: pane.cwd, launched });
+  return { ok: true, response: { launched } };
+}
+
+export type StartClaudeOutcome =
+  | { ok: true; response: PaneStartClaudeResponse }
+  | { ok: false; status: number; code: ErrorCode; message: string };
+
+/**
+ * L'Entree qui execute `claude` (tapee aussi par le daemon si `typeCommand`), le pane
+ * marque « en demarrage », puis une seconde Entree si la commande est encore a l'ecran.
+ */
+async function pressLaunch(services: LaunchServices, paneId: number, deviceId: string, typeCommand: boolean): Promise<boolean> {
   try {
-    const first = await services.keygate.emitLaunch(paneId, deviceId);
+    const first = await services.keygate.emitLaunch(paneId, deviceId, typeCommand);
     if (!first.applied) return false;
     // Des l'Entree partie, le pane est « en demarrage » pour l'app, pas « sans agent ».
     if (typeof services.panes.markLaunching === 'function') services.panes.markLaunching(paneId);
   } catch (e) {
-    logger.warn('lancement de claude dans le nouvel onglet refuse', { paneId, err: (e as Error).message });
+    logger.warn('lancement de claude refuse', { paneId, err: (e as Error).message });
     return false;
   }
   if (await commandStillTyped(services, paneId)) {

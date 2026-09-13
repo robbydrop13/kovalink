@@ -44,6 +44,12 @@ export const ROUTES = {
    * l'autocompletion de la barre de message, comme le menu du terminal.
    */
   paneCommands: (paneId: number): string => `/v1/panes/${paneId}/commands`,
+  /**
+   * Lancer `claude` dans un pane qui n'est qu'un shell (par exemple un pane restaure par
+   * Kova au redemarrage, sans Claude). Le daemon tape la commande, toujours `claude`,
+   * jamais une chaine du client, puis le pane passe « en demarrage » comme apres `new-tab`.
+   */
+  paneStartClaude: (paneId: number): string => `/v1/panes/${paneId}/start-claude`,
   sessionTurns: (sessionId: string): string =>
     `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
   /**
@@ -105,6 +111,7 @@ export const ROUTE_PATTERNS = {
   transcribe: '/v1/transcribe',
   paneScreen: '/v1/panes/:paneId/screen',
   paneCommands: '/v1/panes/:paneId/commands',
+  paneStartClaude: '/v1/panes/:paneId/start-claude',
   sessionTurns: '/v1/sessions/:sessionId/turns',
   kovaLaunch: '/v1/kova/launch',
   kovaRecentProjects: '/v1/kova/recent-projects',
@@ -244,6 +251,14 @@ export interface SlashCommand {
 /** Reponse de `GET /v1/panes/:paneId/commands`. */
 export interface PaneCommandsResponse {
   commands: SlashCommand[];
+}
+
+/**
+ * Reponse de `POST /v1/panes/:paneId/start-claude`. `launched` dit si l'Entree qui
+ * execute `claude` est partie ; sinon la commande attend dans le shell du pane.
+ */
+export interface PaneStartClaudeResponse {
+  launched: boolean;
 }
 
 /** Une session Claude Code, ouverte dans un pane ou fermee (transcript sur disque). */

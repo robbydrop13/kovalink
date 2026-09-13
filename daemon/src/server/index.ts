@@ -54,7 +54,7 @@ import type { UploadStore } from '../fs/uploads.js';
 import { listRecentProjects, resolveRecentProject } from '../fs/quickdests.js';
 import { listCommands } from '../claude/commands.js';
 import { findSession, listSessions } from '../kova/sessions.js';
-import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession } from '../kova/resume.js';
+import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession, startClaudeInPane } from '../kova/resume.js';
 import { ManageError, closePane, renameCommand, renameTab, sanitizeSessionName, setBookmark } from '../kova/manage.js';
 import { TranscriptionError, transcribe } from '../voice/gladia.js';
 import { registerFsRoutes } from './fsRoutes.js';
@@ -493,6 +493,21 @@ export async function createHttpServer(
     if (!pane) return fail(reply, 404, 'PANE_NOT_FOUND', 'unknown pane');
     const res: PaneCommandsResponse = { commands: listCommands(pane.cwd) };
     return res;
+  });
+
+  /**
+   * `Start Claude here` sur un pane qui n'est qu'un shell. Meme seau que `new-tab` et
+   * `split` : c'est un lancement. Le refus d'un pane occupe (409 `PANE_BUSY`) est decide
+   * dans `startClaudeInPane`, avant toute touche.
+   */
+  app.post<{ Params: { paneId: string } }>(ROUTE_PATTERNS.paneStartClaude, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'launch')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many launches');
+    }
+    const out = await startClaudeInPane(services, Number(req.params.paneId), deviceId);
+    if (!out.ok) return fail(reply, out.status, out.code, out.message);
+    return out.response;
   });
 
   /** Repli monospace (~30 lignes), lot 1. Pas de xterm.js, pas de flux d'octets. */

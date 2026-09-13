@@ -104,6 +104,15 @@ export function isStaleSession(pane: Pane): boolean {
   return !pane.launching && pane.agent === null && pane.child_processes.some((c) => c.name === 'claude');
 }
 
+/**
+ * Un shell nu : aucun agent, aucun processus, rien en cours de démarrage (un pane que
+ * Kova a restauré au redémarrage sans Claude, par exemple). Le seul pane où l'app
+ * propose « Start Claude here » ; le daemon refuse les autres (409).
+ */
+export function isBareShell(pane: Pane): boolean {
+  return !pane.launching && pane.agent === null && pane.child_processes.length === 0;
+}
+
 /** Ce sur quoi la recherche porte pour un pane : titre, projet, dossier, agent, session. */
 function paneHaystack(p: Pane): string {
   return fold(
