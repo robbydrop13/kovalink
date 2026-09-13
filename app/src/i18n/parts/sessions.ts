@@ -123,6 +123,7 @@ export const sessions = {
   renameSessionSent: (name: string) => `Session renamed to ${name}`,
   renameTabDone: (title: string | null) => (title === null ? 'Tab title reset' : `Tab renamed to ${title}`),
   renameFailed: (cause: string) => `Rename failed. ${cause}`,
+  renameOffline: 'Mac unreachable: renaming needs a live link',
   nextUnread: 'Next unread',
   nextIdle: 'Next idle',
   allCaughtUp: 'All caught up',

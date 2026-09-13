@@ -1,13 +1,14 @@
-// La barre de message, refonte du 12 septembre : le modèle de Claude, ChatGPT et WhatsApp.
+// La barre de message, refonte du 13 septembre : la disposition de l'app Claude sur iOS.
 //
-// UNE pilule (fond `bg.overlay`, rayon 22, bordure fine, marges 16, 44 pt au repos) qui
-// s'étire de une à cinq lignes puis défile ; dedans, les vignettes de pièces au dessus du
-// texte, un bouton fantôme `plus` à gauche, le champ au centre sans fond propre, et UN
-// bouton rond de 32 pt à droite dont le contenu suit `barAction` : `mic` au repos,
-// `arrow-up` sur rond accent avec du texte, `square` sur rond rouge quand l'agent travaille.
-// Jamais deux boutons, jamais un mot. Maintenir `mic` transforme la pilule en barre
-// d'enregistrement ; le texte transcrit remplace le contenu du champ. Verrouillée par un
-// prompt parsé, la pilule reste la même, grisée, l'explication à la place du placeholder.
+// UNE carte (fond `bg.overlay`, rayon 24, bordure fine, marges 16) sur DEUX étages :
+// en haut le champ de texte sur toute la largeur, qui s'étire de une à six lignes puis
+// défile ; en bas la rangée d'outils, `plus` fantôme à gauche, puis à droite le micro
+// (rond discret) et LE bouton d'action, rond de 36 pt, dont le contenu suit `barAction` :
+// `arrow-up` grisé sans texte, sur rond accent avec du texte, `square` sur rond rouge
+// quand l'agent travaille. Les vignettes de pièces s'affichent au dessus du champ.
+// Jamais un mot dans la barre. Maintenir `mic` transforme la carte en barre
+// d'enregistrement ; le texte transcrit s'ajoute au champ. Verrouillée par un prompt
+// parsé, la carte reste la même, grisée, l'explication à la place du placeholder.
 //
 // La barre mesure sa hauteur et la donne au parent (`onHeight`) : le fil garde un padding
 // bas égal, et rien ne la chevauche jamais.
@@ -43,10 +44,10 @@ export interface MessageBarProps {
   onHeight?: (height: number) => void;
 }
 
-const PILL_RADIUS = 22;
-const ACTION_SIZE = 32;
+const CARD_RADIUS = 24;
+const ACTION_SIZE = 36;
 const LINE_HEIGHT = 22;
-const MAX_LINES = 5;
+const MAX_LINES = 6;
 const SWAP_MS = 150;
 const CANCEL_DX = -90;
 const MIN_RECORD_MS = 600;
@@ -68,11 +69,12 @@ function ActionButton({ action, onSend, onStop }: { action: BarAction; onSend: (
   }, [kind, opacity]);
   const shown = action;
 
-  if (shown.kind === 'none') return null;
-  const fill = shown.kind === 'send' && shown.enabled ? colors.accent.primary : shown.kind === 'stop' ? colors.action.reject.bg : 'transparent';
+  // Au repos (`none`) le bouton reste visible, grisé : la place est stable, comme dans
+  // l'app Claude, et l'œil sait où l'envoi se fera.
+  const fill = shown.kind === 'send' && shown.enabled ? colors.accent.primary : shown.kind === 'stop' ? colors.action.reject.bg : colors.bg.pressed;
   const tint = shown.kind === 'send' && shown.enabled ? colors.text.onFill : shown.kind === 'stop' ? colors.action.reject.text : colors.text.disabled;
-  const name = shown.kind === 'send' ? 'arrow-up' : shown.kind === 'stop' ? 'square' : 'loader';
-  const label = shown.kind === 'send' ? t.actionSend : shown.kind === 'stop' ? t.composerInterrupt : t.composerSending;
+  const name = shown.kind === 'stop' ? 'square' : shown.kind === 'busy' ? 'loader' : 'arrow-up';
+  const label = shown.kind === 'stop' ? t.composerInterrupt : shown.kind === 'busy' ? t.composerSending : t.actionSend;
   const enabled = shown.kind === 'stop' || (shown.kind === 'send' && shown.enabled);
   return (
     <Animated.View style={[styles.actionSlot, { opacity }]}>
@@ -273,11 +275,11 @@ export function MessageBar({
       <Pressable
         onPress={locked ? onLockedTap : undefined}
         pointerEvents={locked ? 'box-only' : 'auto'}
-        style={[styles.pill, locked && styles.pillLocked, recording && styles.pillRecording, cancelArmed && styles.pillCancel]}
+        style={[styles.card, locked && styles.cardLocked, recording && styles.cardRecording, cancelArmed && styles.cardCancel]}
       >
         {recording ? (
           <View style={styles.recordRow}>
-            <Icon name={cancelArmed ? 'x' : 'mic'} size={20} color={cancelArmed ? colors.status.error : colors.status.error} />
+            <Icon name={cancelArmed ? 'x' : 'mic'} size={20} color={colors.status.error} />
             <Txt variant="callout" color={colors.text.primary} style={styles.clock}>
               {clock}
             </Txt>
@@ -288,62 +290,66 @@ export function MessageBar({
               {cancelArmed ? t.voiceCancelled : t.voiceSlideToCancel}
             </Txt>
           </View>
-        ) : null}
+        ) : (
+          <>
+            {attachments.length > 0 ? (
+              <View style={styles.strip}>
+                <AttachmentStrip
+                  items={attachments}
+                  sending={sending}
+                  onRemove={(id) => setAttachments((list) => list.filter((a) => a.id !== id))}
+                />
+              </View>
+            ) : null}
 
-        {!recording && attachments.length > 0 ? (
-          <View style={styles.strip}>
-            <AttachmentStrip
-              items={attachments}
-              sending={sending}
-              onRemove={(id) => setAttachments((list) => list.filter((a) => a.id !== id))}
+            {/* Étage 1 : le texte, toute la largeur. */}
+            <TextInput
+              style={[styles.field, locked && styles.fieldLocked]}
+              value={value}
+              onChangeText={setValue}
+              editable={editable}
+              placeholder={placeholder}
+              placeholderTextColor={colors.text.tertiary}
+              multiline
+              scrollEnabled
+              keyboardType="default"
+              keyboardAppearance="dark"
+              accessibilityLabel={t.composerFieldA11y}
             />
-          </View>
-        ) : null}
 
-        <View style={[styles.row, recording && styles.rowHidden]}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t.attachmentAdd}
-            accessibilityState={{ disabled: !canAttach }}
-            disabled={!canAttach}
-            hitSlop={6}
-            onPress={() => askAttachmentSource((picked) => setAttachments((list) => [...list, ...picked]), onNotice)}
-            style={styles.ghost}
-          >
-            <Icon name="plus" size={20} color={canAttach ? colors.text.secondary : colors.text.disabled} />
-          </Pressable>
-          {/* Micro fantôme permanent : maintenir pour dicter, glisser à gauche pour annuler. */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t.voiceButton}
-            accessibilityState={{ disabled: !mic.enabled }}
-            disabled={!mic.enabled}
-            hitSlop={6}
-            pressRetentionOffset={{ left: 400, right: 400, top: 120, bottom: 120 }}
-            onPressIn={(e) => void micIn(e.nativeEvent.pageX)}
-            onTouchMove={(e) => micMove(e.nativeEvent.pageX)}
-            onPressOut={() => void micOut()}
-            style={styles.ghost}
-          >
-            <Icon name="mic" size={20} color={!mic.enabled ? colors.text.disabled : mic.dimmed ? colors.text.tertiary : colors.text.secondary} />
-          </Pressable>
-
-          <TextInput
-            style={[styles.field, locked && styles.fieldLocked]}
-            value={value}
-            onChangeText={setValue}
-            editable={editable}
-            placeholder={placeholder}
-            placeholderTextColor={colors.text.tertiary}
-            multiline
-            scrollEnabled
-            keyboardType="default"
-            keyboardAppearance="dark"
-            accessibilityLabel={t.composerFieldA11y}
-          />
-
-          <ActionButton action={action} onSend={() => void send()} onStop={onInterrupt} />
-        </View>
+            {/* Étage 2 : les outils. Plus à gauche ; micro et action à droite. */}
+            <View style={styles.tools}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t.attachmentAdd}
+                accessibilityState={{ disabled: !canAttach }}
+                disabled={!canAttach}
+                hitSlop={6}
+                onPress={() => askAttachmentSource((picked) => setAttachments((list) => [...list, ...picked]), onNotice)}
+                style={({ pressed }) => [styles.tool, pressed && styles.toolPressed]}
+              >
+                <Icon name="plus" size={20} color={canAttach ? colors.text.secondary : colors.text.disabled} />
+              </Pressable>
+              <View style={styles.grow} />
+              {/* Micro permanent : maintenir pour dicter, glisser à gauche pour annuler. */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t.voiceButton}
+                accessibilityState={{ disabled: !mic.enabled }}
+                disabled={!mic.enabled}
+                hitSlop={6}
+                pressRetentionOffset={{ left: 400, right: 400, top: 120, bottom: 120 }}
+                onPressIn={(e) => void micIn(e.nativeEvent.pageX)}
+                onTouchMove={(e) => micMove(e.nativeEvent.pageX)}
+                onPressOut={() => void micOut()}
+                style={({ pressed }) => [styles.tool, styles.micTool, pressed && styles.toolPressed]}
+              >
+                <Icon name="mic" size={20} color={!mic.enabled ? colors.text.disabled : mic.dimmed ? colors.text.tertiary : colors.text.secondary} />
+              </Pressable>
+              <ActionButton action={action} onSend={() => void send()} onStop={onInterrupt} />
+            </View>
+          </>
+        )}
       </Pressable>
     </View>
   );
@@ -354,45 +360,45 @@ const styles = StyleSheet.create({
   fade: { position: 'absolute', left: 0, right: 0, top: -12, height: 12, flexDirection: 'column' },
   fadeStep: { flex: 1, backgroundColor: colors.bg.base },
   queue: { paddingBottom: space[2] },
-  pill: {
-    minHeight: layout.touchMin,
-    borderRadius: PILL_RADIUS,
+  card: {
+    borderRadius: CARD_RADIUS,
     backgroundColor: colors.bg.overlay,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border.strong,
-    paddingHorizontal: space[2],
+    paddingHorizontal: space[3],
+    paddingTop: space[2],
+    paddingBottom: space[2],
   },
-  pillLocked: { opacity: 0.55 },
-  pillRecording: { borderColor: colors.status.error },
-  pillCancel: { backgroundColor: '#2B1416' },
-  strip: { paddingTop: space[2], paddingLeft: space[2] },
-  row: { flexDirection: 'row', alignItems: 'flex-end', minHeight: layout.touchMin },
-  rowHidden: { height: 0, minHeight: 0, opacity: 0, overflow: 'hidden' },
-  ghost: {
-    width: ACTION_SIZE,
-    height: ACTION_SIZE,
-    marginVertical: (layout.touchMin - ACTION_SIZE) / 2,
-    marginLeft: space[1],
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: ACTION_SIZE / 2,
-  },
+  cardLocked: { opacity: 0.55 },
+  cardRecording: { borderColor: colors.status.error },
+  cardCancel: { backgroundColor: '#2B1416' },
+  strip: { paddingTop: space[1], paddingLeft: space[1], paddingBottom: space[2] },
   field: {
-    flex: 1,
-    minHeight: layout.touchMin,
+    minHeight: LINE_HEIGHT + space[3] * 2,
     maxHeight: LINE_HEIGHT * MAX_LINES + space[3] * 2,
     color: colors.text.primary,
     fontSize: 17,
     lineHeight: LINE_HEIGHT,
-    paddingHorizontal: space[3],
-    paddingTop: (layout.touchMin - LINE_HEIGHT) / 2,
-    paddingBottom: (layout.touchMin - LINE_HEIGHT) / 2,
+    paddingHorizontal: space[2],
+    paddingTop: space[3],
+    paddingBottom: space[3],
   },
   fieldLocked: { color: colors.text.disabled },
-  actionSlot: { width: ACTION_SIZE, height: ACTION_SIZE, marginVertical: (layout.touchMin - ACTION_SIZE) / 2, marginRight: space[1] },
+  tools: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingTop: space[1] },
+  tool: {
+    width: ACTION_SIZE,
+    height: ACTION_SIZE,
+    borderRadius: ACTION_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micTool: { backgroundColor: colors.bg.pressed },
+  toolPressed: { opacity: 0.7 },
+  grow: { flex: 1 },
+  actionSlot: { width: ACTION_SIZE, height: ACTION_SIZE },
   action: { width: ACTION_SIZE, height: ACTION_SIZE, borderRadius: ACTION_SIZE / 2, alignItems: 'center', justifyContent: 'center' },
   actionPressed: { opacity: 0.8 },
-  recordRow: { flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: layout.touchMin, paddingHorizontal: space[3] },
+  recordRow: { flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: layout.touchMin, paddingHorizontal: space[2] },
   clock: { minWidth: 40 },
   levelTrack: { flex: 1, height: 4, borderRadius: 2, backgroundColor: colors.bg.pressed, overflow: 'hidden' },
   levelFill: { height: 4, borderRadius: 2, backgroundColor: colors.status.error },

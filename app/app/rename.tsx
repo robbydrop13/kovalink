@@ -14,6 +14,7 @@ import { Banner } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
 import { groupByTab } from '@/features/sessions/tabGroups';
 import { postSessionName, postTitle } from '@/net/http';
+import { isDegraded, useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { ImpactStyle, impact } from '@/utils/haptics';
 
@@ -29,6 +30,9 @@ export default function RenameScreen() {
   const [tabTitle, setTabTitle] = useState(group?.tabId !== null && group?.tabId !== undefined ? group.title : '');
   const [sessionName, setSessionName] = useState(pane?.agent_session_name ?? '');
   const [busy, setBusy] = useState<'tab' | 'session' | null>(null);
+  // Le renommage est une requête directe au Mac : sans liaison, rien ne part. On le dit
+  // avant que Robin ne tape, plutôt qu'une erreur réseau après.
+  const degraded = isDegraded(useConnection((s) => s.link));
   const [notice, setNotice] = useState<{ tone: 'info' | 'error'; text: string } | null>(null);
 
   const renameTab = async () => {
@@ -37,6 +41,7 @@ export default function RenameScreen() {
       const res = await postTitle(paneId, tabTitle.trim().length === 0 ? null : tabTitle.trim());
       impact(ImpactStyle.Light);
       setNotice({ tone: 'info', text: t.renameTabDone(res.title) });
+      setTimeout(() => router.back(), 700);
     } catch (e) {
       setNotice({ tone: 'error', text: t.renameFailed(e instanceof Error ? e.message : String(e)) });
     } finally {
@@ -58,6 +63,7 @@ export default function RenameScreen() {
       }
       impact(ImpactStyle.Light);
       setNotice({ tone: 'info', text: t.renameSessionSent(res.name) });
+      setTimeout(() => router.back(), 700);
     } catch (e) {
       setNotice({ tone: 'error', text: t.renameFailed(e instanceof Error ? e.message : String(e)) });
     } finally {
@@ -74,6 +80,7 @@ export default function RenameScreen() {
         <View style={styles.grow} />
         <LinkAction icon="x" label={t.actionClose} onPress={() => router.back()} />
       </View>
+      {degraded ? <Banner tone="warn" text={t.renameOffline} /> : null}
       {notice ? <Banner tone={notice.tone} text={notice.text} /> : null}
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + space[8] }]}>
         {pane ? (
@@ -102,7 +109,7 @@ export default function RenameScreen() {
           <Txt variant="caption" color={colors.text.tertiary}>
             {t.renameTabHint}
           </Txt>
-          <Button icon="edit-2" kind="secondary" height={48} label={t.renameTabButton} disabled={busy !== null} onPress={() => void renameTab()} />
+          <Button icon="edit-2" kind="secondary" height={48} label={t.renameTabButton} disabled={busy !== null || degraded} onPress={() => void renameTab()} />
         </View>
 
         <View style={styles.field}>
@@ -129,7 +136,7 @@ export default function RenameScreen() {
             icon="edit-2"
             height={48}
             label={t.renameSessionButton}
-            disabled={busy !== null || pane?.agent !== 'claude' || sessionName.trim().length === 0}
+            disabled={busy !== null || degraded || pane?.agent !== 'claude' || sessionName.trim().length === 0}
             onPress={() => void renameSession()}
           />
         </View>
