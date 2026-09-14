@@ -1,15 +1,18 @@
 // Chaînes visibles : chat, actions, transferts. Voir `../en.ts`.
 export const chat = {
   // Actions partagées entre écrans.
-  voiceButton: 'Hold to talk',
+  voiceButton: 'Dictate',
   voiceRecording: 'Recording…',
-  voiceSlideToCancel: 'Slide left to cancel',
   voiceCancelled: 'Recording cancelled',
+  voiceCancelA11y: 'Cancel recording',
+  voiceStopA11y: 'Stop recording',
+  voiceSendA11y: 'Send recording',
+  voiceRecordingA11y: (seconds: number) => `Recording, ${seconds} ${seconds === 1 ? 'second' : 'seconds'}`,
   voiceTranscribing: 'Transcribing…',
   voiceNeedsBuild: 'Voice input arrives with the next app build (microphone module missing in this one)',
   voicePermissionDenied: 'Microphone access refused. Enable it in Settings for KovaLink.',
   voiceTooLong: 'Recording too long (over 10 MB). Keep it under a couple of minutes.',
-  voiceTooShort: 'Too short, hold the button while you talk',
+  voiceTooShort: 'Too short, talk a little longer before stopping',
   voiceEmpty: 'Nothing was recognized',
   voiceFailed: (cause: string) => `Transcription failed. ${cause}`,
   chatThinking: 'Thinking…',

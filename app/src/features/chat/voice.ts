@@ -29,6 +29,13 @@ export async function loadAudio(): Promise<AudioModuleShape | null> {
   return audioModule;
 }
 
+/**
+ * Durée maximale d'un enregistrement : au-delà, la barre l'arrête d'elle-même comme un
+ * appui sur Stop. Le préréglage HIGH_QUALITY (128 kbit/s) tient 10 Mo en dix minutes
+ * environ : cinq minutes laissent de la marge sous `TRANSCRIBE_MAX_BYTES`.
+ */
+export const MAX_RECORD_MS = 5 * 60_000;
+
 export type RecorderHandle = {
   /** Niveau sonore, dB négatifs (0 = plein), `null` si inconnu. */
   level: () => number | null;
