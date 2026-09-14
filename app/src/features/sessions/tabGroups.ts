@@ -175,6 +175,28 @@ export function collapsedSummary(group: TabGroup): CollapsedSummary {
   };
 }
 
+/** `kova` : l'ordre de la barre d'onglets du Mac. `activity` : ce qui bouge d'abord. */
+export type TabSortMode = 'kova' | 'activity';
+
+/** Rang d'un onglet par activité : 0 s'il travaille, 1 s'il attend, 2 sinon. */
+function activityRank(group: TabGroup): number {
+  const s = collapsedSummary(group);
+  return s.working ? 0 : s.awaiting ? 1 : 2;
+}
+
+/**
+ * La liste dans l'ordre demandé. `kova` la rend telle quelle. `activity` met d'abord les
+ * onglets où un pane travaille, puis ceux où un pane attend, puis les autres, chaque
+ * paquet gardant l'ordre de Kova (tri stable), toutes fenêtres confondues.
+ */
+export function sortGroups(groups: TabGroup[], mode: TabSortMode): TabGroup[] {
+  if (mode === 'kova') return groups;
+  return groups
+    .map((group, index) => ({ group, index, rank: activityRank(group) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((x) => x.group);
+}
+
 /** Vrai quand la liste s'étend sur plusieurs fenêtres Kova : un séparateur par fenêtre. */
 export function windowCount(groups: TabGroup[]): number {
   return new Set(groups.map((g) => g.window)).size;

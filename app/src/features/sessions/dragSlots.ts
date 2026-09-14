@@ -70,6 +70,21 @@ export function settleOffset(slots: Slot[], from: number, to: number): number {
   return to > from ? target.y + target.h - held.h - held.y : target.y - held.y;
 }
 
+/**
+ * Où se pose le squelette qui marque la place visée, dans le conteneur de la liste : la
+ * place laissée par les lignes écartées. En descendant, la ligne `to` est remontée de
+ * `H = h[from] + gap` et le squelette prend la place sous son nouveau bas ; en remontant,
+ * elle est descendue de `H` et le squelette prend son ancienne place. À `to = from`, la
+ * place d'origine.
+ */
+export function placeholderY(slots: Slot[], from: number, to: number, gap: number): number {
+  const held = slots[from];
+  const target = slots[to];
+  if (!held || !target || to === from) return held?.y ?? 0;
+  const H = held.h + gap;
+  return to > from ? target.y + target.h - H + gap : target.y;
+}
+
 /** Course autorisée de la carte tenue : du haut de la première ligne au bas de la dernière. */
 export function bounds(slots: Slot[], from: number, range: [number, number]): { minDy: number; maxDy: number } {
   const held = slots[from];

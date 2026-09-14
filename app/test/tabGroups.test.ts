@@ -13,6 +13,7 @@ import {
   isStaleSession,
   moveIndex,
   paletteEntries,
+  sortGroups,
   summaryLine,
   tabOrderOf,
   windowCount,
@@ -318,5 +319,36 @@ describe('réordonnancement (glisser-déposer)', () => {
     const withNew = groupByTab([...PANES, pane({ id: 5, tab: 1, tabId: 3 })], TABS);
     const out2 = applyPendingOrder(withNew, null, { 3: { tabId: 3, order: [3, 77, 4], since: 0 } });
     assert.deepEqual(out2[1]?.panes.map((p) => p.id), [3, 4, 5]);
+  });
+});
+
+describe('sortGroups', () => {
+  // Courses (13 travaille), Link (3 attend), QR appairage (rien), TrailCoach (11 travaille), Dollary (rien).
+  const groups = groupByTab(PANES, TABS);
+
+  it('`kova` rend la liste telle quelle', () => {
+    assert.equal(sortGroups(groups, 'kova'), groups);
+  });
+
+  it('`activity` : ceux qui travaillent, puis ceux qui attendent, puis les autres, stable dans chaque paquet', () => {
+    assert.deepEqual(
+      sortGroups(groups, 'activity').map((g) => g.title),
+      ['Courses', 'TrailCoach', 'Link', 'QR appairage', 'Dollary'],
+    );
+    // La liste d origine n est pas touchee.
+    assert.deepEqual(groups.map((g) => g.title), ['Courses', 'Link', 'QR appairage', 'TrailCoach', 'Dollary']);
+  });
+
+  it('un onglet qui travaille ET attend compte comme travaille ; un pane qui attend n est pas « travaille »', () => {
+    const both = groupByTab(
+      [
+        pane({ id: 1, tab: 0, working: true, awaiting: true }),
+        pane({ id: 2, tab: 0, working: true }),
+        pane({ id: 3, tab: 1, working: true, awaiting: true }),
+        pane({ id: 4, tab: 2, working: true }),
+      ],
+      [tab({ id: 1, tab_index: 0, title: 'A' }), tab({ id: 2, tab_index: 1, title: 'B' }), tab({ id: 3, tab_index: 2, title: 'C' })],
+    );
+    assert.deepEqual(sortGroups(both, 'activity').map((g) => g.title), ['A', 'C', 'B']);
   });
 });

@@ -1,7 +1,16 @@
 // Glisser-déposer d'une liste verticale, sans reanimated : un `PanGestureHandler` par
 // ligne qui s'active après 300 ms sans bouger, un seul `Animated.Value` natif pour la
 // translation du doigt, et une valeur par ligne pour l'écart que les autres ouvrent. Les
-// transformations restent sur le pilote natif ; le JS ne calcule que le rang visé.
+// transformations restent sur le pilote natif ; le JS ne fait que rejouer la machine de
+// `dragMachine.ts` (rang visé, écarts, place du squelette).
+//
+// La ligne tenue ne change PAS d'apparence pendant le geste, hors son opacité : sur iOS avec
+// Fabric, un `zIndex` posé en plein geste réordonne les vues natives (retrait puis
+// réinsertion de la ligne), UIKit annule alors le toucher et le geste est CANCELLED avant
+// le premier déplacement. La carte qui flotte est donc une COPIE visuelle (`ghost`), montée
+// en dernier enfant du conteneur, donc peinte au dessus des autres ; la vraie ligne reste en
+// place, invisible, et garde le doigt. Un squelette en pointillé, premier enfant du
+// conteneur, marque la place où la carte se posera.
 //
 // La liste rendue pendant le geste est figée par l'écran (les instantanés continuent
 // d'arriver) : les clés sont stables, la géométrie vient de `onLayout` et se remet à jour
@@ -15,9 +24,10 @@ import {
   type PanGestureHandlerGestureEvent,
   type PanGestureHandlerProps,
 } from 'react-native-gesture-handler';
-import { colors, motion, radius } from '@/theme';
+import { colors, motion } from '@/theme';
 import { ImpactStyle, NotifyType, impact, notify, selection } from '@/utils/haptics';
-import { bounds as boundsOf, displacements, nextSlot, settleOffset, type Slot } from './dragSlots';
+import { reduce, type DragFrame, type DragState } from './dragMachine';
+import type { Slot } from './dragSlots';
 
 /** Ce que l'écran prête à la liste pour faire défiler pendant le geste. */
 export interface DragScroll {
@@ -41,19 +51,33 @@ const STEP_MAX = 10;
 const RUBBER_IN = 200;
 const RUBBER_OUT = 48;
 const SETTLE_MS = 180;
+/**
+ * Un CANCELLED dans les 150 ms qui suivent l'activation n'est pas un geste de l'utilisateur :
+ * c'est le système qui a repris le toucher (défilement, remontage). On remet en place sans
+ * bruit, aucun retour haptique de pose.
+ */
+const STEAL_MS = 150;
 
 export interface DragList<K extends string | number> {
   active: K | null;
   handlerProps: (key: K) => PanGestureHandlerProps;
   itemStyle: (key: K) => Animated.WithAnimatedValue<ViewStyle>;
   onItemLayout: (key: K) => (e: LayoutChangeEvent) => void;
+  /** Le squelette de la place visée : à rendre PREMIER enfant du conteneur. */
+  placeholder: ReactNode;
+  /** La copie qui flotte sous le doigt : à rendre DERNIER enfant du conteneur. */
+  ghost: ReactNode;
 }
 
 interface Options<K> {
   keys: K[];
   /** Espace entre deux lignes (le `gap` du conteneur). */
   gap: number;
+  /** Rayon des lignes, repris par le squelette et la copie. */
+  radius: number;
   enabled: boolean;
+  /** Le rendu visuel d'une ligne, sans ses gestes : ce que la copie flottante montre. */
+  ghost: (key: K) => ReactNode;
   /** Le défilement de l'écran ; par défaut celui du `DragScrollContext` englobant. */
   scroll?: DragScroll | undefined;
   /** Rangs atteignables depuis `from` (inclusifs) ; toute la liste par défaut. */
@@ -65,20 +89,20 @@ interface Options<K> {
   onSettled?: () => void;
 }
 
-interface Bounds {
-  minDy: number;
-  maxDy: number;
+/** La ligne tenue, côté React : de quoi rendre la copie et le squelette. */
+interface Lifted<K> {
+  key: K;
+  y: number;
+  h: number;
+  bounds: DragState['bounds'];
 }
 
 /** L'état d'un geste en cours, hors React : lu et écrit par les événements natifs seulement. */
 interface Drag<K> {
   keys: K[];
-  slots: Slot[];
-  from: number;
-  to: number;
-  range: [number, number];
-  gap: number;
-  bounds: Bounds;
+  state: DragState;
+  /** Dernières mesures reçues, relues d'un bloc quand les lignes changent de taille. */
+  measured: Slot[];
   /** Translation du doigt, dernière valeur reçue. */
   translationY: number;
   /** Défilement automatique cumulé pendant le geste, en pt de contenu. */
@@ -87,9 +111,8 @@ interface Drag<K> {
   rafId: number | null;
   /** Une relecture de la géométrie est programmée (les lignes ont changé de taille). */
   relayoutId: number | null;
+  liftedAt: number;
 }
-
-const sameBounds = (a: Bounds, b: Bounds): boolean => a.minDy === b.minDy && a.maxDy === b.maxDy;
 
 function stopAutoScroll<K>(d: Drag<K>): void {
   if (d.rafId !== null) cancelAnimationFrame(d.rafId);
@@ -116,12 +139,13 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
   const [scrollShift] = useState(() => new Animated.Value(0));
   const [scale] = useState(() => new Animated.Value(1));
   const [opacity] = useState(() => new Animated.Value(1));
-  const [active, setActive] = useState<K | null>(null);
-  const [bounds, setBounds] = useState<Bounds | null>(null);
+  const [placeholderY] = useState(() => new Animated.Value(0));
+  const [lifted, setLifted] = useState<Lifted<K> | null>(null);
   /** Les écarts des autres lignes : un jeu neuf à chaque lâcher, remis à zéro par le rendu. */
   const [generation, setGeneration] = useState(0);
   const slots = useRef(new Map<K, Slot>());
   const drag = useRef<Drag<K> | null>(null);
+  const active = lifted?.key ?? null;
 
   const { keys } = opts;
   const offsets = useMemo(() => {
@@ -129,49 +153,50 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     return new Map(keys.map((k) => [k, new Animated.Value(0)] as const));
   }, [keys, generation]);
 
-  // Les valeurs du doigt ne sont remises à zéro qu'une fois la carte détachée d'elles (après
-  // le rendu du nouvel ordre) : les remettre avant ferait sauter la carte à son ancienne place.
+  // Les valeurs du doigt ne sont remises à zéro qu'une fois la copie démontée (après le
+  // rendu du nouvel ordre) : les remettre avant ferait sauter la carte à son ancienne place.
   useEffect(() => {
-    if (active !== null) return;
+    if (lifted !== null) return;
     dragY.setValue(0);
     scrollShift.setValue(0);
-  }, [active, dragY, scrollShift]);
+  }, [lifted, dragY, scrollShift]);
 
-  // La carte tenue suit le doigt plus le défilement, bornée à sa plage avec un élastique.
+  // La copie suit le doigt plus le défilement, bornée à sa plage avec un élastique.
   const translate = useMemo(() => {
-    if (!bounds) return null;
-    const { minDy, maxDy } = bounds;
+    if (!lifted) return null;
+    const { minDy, maxDy } = lifted.bounds;
     return Animated.add(dragY, scrollShift).interpolate({
       inputRange: [minDy - RUBBER_IN, minDy, maxDy, maxDy + RUBBER_IN],
       outputRange: [minDy - RUBBER_OUT, minDy, maxDy, maxDy + RUBBER_OUT],
       extrapolate: 'clamp',
     });
-  }, [bounds, dragY, scrollShift]);
+  }, [lifted, dragY, scrollShift]);
 
-  const shiftRows = useCallback(
-    (d: Drag<K>) => {
-      const moves = displacements(d.slots, d.from, d.to, d.gap);
-      Animated.parallel(
-        d.keys.flatMap((k, i) => {
+  /** Une image de la machine à l'écran : les écarts des autres lignes et le squelette. */
+  const applyFrame = useCallback(
+    (d: Drag<K>, frame: DragFrame) => {
+      const timing = (value: Animated.Value, toValue: number) =>
+        Animated.timing(value, { toValue, duration: motion.fast, easing: Easing.out(Easing.quad), useNativeDriver: true });
+      Animated.parallel([
+        timing(placeholderY, frame.placeholderY),
+        ...d.keys.flatMap((k, i) => {
           const value = offsets.get(k);
-          return value && i !== d.from
-            ? [Animated.timing(value, { toValue: moves[i] ?? 0, duration: motion.fast, easing: Easing.out(Easing.quad), useNativeDriver: true })]
-            : [];
+          return value && i !== d.state.from ? [timing(value, frame.moves[i] ?? 0)] : [];
         }),
-      ).start();
+      ]).start();
     },
-    [offsets],
+    [offsets, placeholderY],
   );
 
   const retarget = useCallback(
     (d: Drag<K>) => {
-      const next = nextSlot(d.slots, d.from, d.to, d.translationY + d.shift, d.gap, d.range);
-      if (next === d.to) return;
-      d.to = next;
+      const step = reduce(d.state, { type: 'move', dy: d.translationY + d.shift });
+      if (!step.state || !step.frame) return;
+      d.state = step.state;
       selection();
-      shiftRows(d);
+      applyFrame(d, step.frame);
     },
-    [shiftRows],
+    [applyFrame],
   );
 
   // Une boucle d'images tant que le doigt reste près d'un bord : la liste défile, et la
@@ -234,14 +259,23 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     if (drag.current || !opts.enabled) return;
     const from = keys.indexOf(key);
     if (from < 0) return;
-    const range = rangeOf(from);
-    const measured = keys.map((k) => slots.current.get(k));
-    if (range[0] >= range[1] || measured.some((s, i) => !s && i >= range[0] && i <= range[1])) return;
-    const list = measured.map((s) => s ?? { y: 0, h: 0 });
-    const b = boundsOf(list, from, range);
-    drag.current = { keys: [...keys], slots: list, from, to: from, range, gap: opts.gap, bounds: b, translationY: 0, shift: 0, absoluteY: 0, rafId: null, relayoutId: null };
-    setBounds(b);
-    setActive(key);
+    const step = reduce(null, { type: 'lift', index: from, slots: keys.map((k) => slots.current.get(k)), range: rangeOf(from), gap: opts.gap });
+    if (!step.state || !step.frame) return;
+    const held = step.state.slots[from] as Slot;
+    // Le squelette naît à la place d'origine, avant son premier rendu.
+    placeholderY.setValue(step.frame.placeholderY);
+    drag.current = {
+      keys: [...keys],
+      state: step.state,
+      measured: [...step.state.slots],
+      translationY: 0,
+      shift: 0,
+      absoluteY: 0,
+      rafId: null,
+      relayoutId: null,
+      liftedAt: Date.now(),
+    };
+    setLifted({ key, y: held.y, h: held.h, bounds: step.state.bounds });
     if (scroll) {
       scroll.lock(true);
       scroll.scrollRef.current?.getNativeScrollRef()?.measureInWindow((_x, y, _w, h) => {
@@ -256,30 +290,29 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     opts.onLift?.();
   };
 
-  const finish = (cancelled: boolean) => {
+  /** `silent` : le système a repris le toucher, on remet en place sans retour haptique. */
+  const finish = (cancelled: boolean, silent = false) => {
     const d = drag.current;
     if (!d) return;
     stopAutoScroll(d);
-    if (cancelled && d.to !== d.from) {
-      d.to = d.from;
-      shiftRows(d);
-    }
-    const { from, to } = d;
+    const step = reduce(d.state, { type: cancelled ? 'cancel' : 'release' });
+    if (!step.drop) return;
+    if (step.frame) applyFrame(d, step.frame);
+    const { from, to, settle } = step.drop;
     Animated.parallel([
-      Animated.timing(dragY, { toValue: settleOffset(d.slots, from, to) - d.shift, duration: SETTLE_MS, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(dragY, { toValue: settle - d.shift, duration: SETTLE_MS, easing: Easing.out(Easing.quad), useNativeDriver: true }),
       Animated.timing(scale, { toValue: 1, duration: SETTLE_MS, useNativeDriver: true }),
       Animated.timing(opacity, { toValue: 1, duration: SETTLE_MS, useNativeDriver: true }),
     ]).start(() => {
       if (drag.current !== d) return;
       drag.current = null;
       // Le même tour : les transformations disparaissent avec le rendu du nouvel ordre (un
-      // jeu d'écarts neuf, la carte rendue sans son interpolation).
+      // jeu d'écarts neuf, la copie démontée, la vraie ligne de nouveau visible).
       setGeneration((g) => g + 1);
-      setBounds(null);
-      setActive(null);
+      setLifted(null);
       scroll?.lock(false);
       if (to !== from) notify(NotifyType.Success);
-      else impact(ImpactStyle.Light);
+      else if (!silent) impact(ImpactStyle.Light);
       opts.onDrop(from, to);
       if (opts.onSettled) setTimeout(opts.onSettled, 0);
     });
@@ -289,7 +322,10 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     const { state } = e.nativeEvent;
     if (state === State.ACTIVE) start(key);
     else if (state === State.END) finish(false);
-    else if (state === State.CANCELLED || state === State.FAILED) finish(true);
+    else if (state === State.CANCELLED || state === State.FAILED) {
+      const d = drag.current;
+      finish(true, d !== null && Date.now() - d.liftedAt < STEAL_MS);
+    }
   };
 
   const handlerProps = (key: K): PanGestureHandlerProps => {
@@ -306,10 +342,10 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     };
   };
 
+  // La ligne tenue reste en place, invisible : la copie la remplace à l'écran. Aucune autre
+  // propriété ne change sur elle pendant le geste (voir l'en-tête du fichier).
   const itemStyle = (key: K): Animated.WithAnimatedValue<ViewStyle> => {
-    if (active === key && translate) {
-      return { ...styles.lifted, transform: [{ translateY: translate }, { scale }], opacity };
-    }
+    if (active === key) return styles.hidden;
     const offset = offsets.get(key);
     return offset ? { transform: [{ translateY: offset }] } : {};
   };
@@ -324,24 +360,48 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     // suit, une fois toutes les mesures du même rendu arrivées (une par ligne).
     const i = d.keys.indexOf(key);
     if (i < 0) return;
-    d.slots[i] = slot;
+    d.measured[i] = slot;
     if (d.relayoutId !== null) return;
     d.relayoutId = requestAnimationFrame(() => {
       d.relayoutId = null;
       if (drag.current !== d) return;
-      const b = boundsOf(d.slots, d.from, d.range);
-      if (!sameBounds(b, d.bounds)) {
-        d.bounds = b;
-        setBounds(b);
+      const relaid = reduce(d.state, { type: 'relayout', slots: [...d.measured] });
+      if (!relaid.state || !relaid.frame) return;
+      d.state = relaid.state;
+      const held = relaid.state.slots[relaid.state.from] as Slot;
+      setLifted((prev) => (prev ? { ...prev, y: held.y, h: held.h, bounds: relaid.state?.bounds ?? prev.bounds } : prev));
+      // Le rang visé peut changer avec la nouvelle géométrie : une seule image, la dernière.
+      const moved = reduce(d.state, { type: 'move', dy: d.translationY + d.shift });
+      if (moved.state && moved.frame) {
+        d.state = moved.state;
+        applyFrame(d, moved.frame);
+      } else {
+        applyFrame(d, relaid.frame);
       }
-      retarget(d);
     });
   };
 
-  return { active, handlerProps, itemStyle, onItemLayout };
+  const placeholder = lifted ? (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.placeholder, { height: lifted.h, borderRadius: opts.radius, transform: [{ translateY: placeholderY }] }]}
+    />
+  ) : null;
+
+  const ghost =
+    lifted && translate ? (
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.ghost, { top: lifted.y, borderRadius: opts.radius, transform: [{ translateY: translate }, { scale }], opacity }]}
+      >
+        {opts.ghost(lifted.key)}
+      </Animated.View>
+    ) : null;
+
+  return { active, handlerProps, itemStyle, onItemLayout, placeholder, ghost };
 }
 
-/** Une ligne de la liste : reçoit son écart, et l'allure « soulevée » quand elle est tenue. */
+/** Une ligne de la liste : reçoit son écart, et s'efface quand elle est tenue (la copie flotte). */
 export function DragItem<K extends string | number>({
   list,
   id,
@@ -361,13 +421,26 @@ export function DragItem<K extends string | number>({
 }
 
 const styles = {
-  lifted: {
-    zIndex: 10,
+  hidden: { opacity: 0 } satisfies ViewStyle,
+  ghost: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     shadowColor: '#000',
     shadowOpacity: 0.35,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     backgroundColor: colors.bg.raised,
-    borderRadius: radius.md,
+  } satisfies ViewStyle,
+  placeholder: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border.strong,
+    backgroundColor: colors.bg.raised,
+    opacity: 0.6,
   } satisfies ViewStyle,
 };

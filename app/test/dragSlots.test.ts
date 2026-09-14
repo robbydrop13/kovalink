@@ -1,7 +1,7 @@
 // Géométrie du glisser-déposer : lignes de hauteurs inégales, espace uniforme de 8 pt.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { bounds, displacements, nextSlot, settleOffset, type Slot } from '@/features/sessions/dragSlots';
+import { bounds, displacements, nextSlot, placeholderY, settleOffset, type Slot } from '@/features/sessions/dragSlots';
 
 const GAP = 8;
 
@@ -101,5 +101,29 @@ describe('bounds', () => {
     assert.deepEqual(bounds(EQUAL, 2, [2, 3]), { minDy: 0, maxDy: 72 });
     const mixed = stack([64, 220, 64]);
     assert.deepEqual(bounds(mixed, 0, range(mixed)), { minDy: 0, maxDy: 300 + 64 - 64 });
+  });
+});
+
+describe('placeholderY', () => {
+  it('a l origine tant que rien n est franchi', () => {
+    assert.equal(placeholderY(EQUAL, 0, 0, GAP), 0);
+    assert.equal(placeholderY(EQUAL, 2, 2, GAP), 144);
+  });
+
+  it('prend la place libérée par les lignes écartées : la position de pose de la carte', () => {
+    // Le squelette est exactement là où la carte se posera (origine plus `settleOffset`).
+    for (const slots of [EQUAL, stack([72, 88, 210]), stack([210, 72, 88, 72])]) {
+      for (let from = 0; from < slots.length; from += 1) {
+        for (let to = 0; to < slots.length; to += 1) {
+          assert.equal(placeholderY(slots, from, to, GAP), (slots[from] as Slot).y + settleOffset(slots, from, to));
+        }
+      }
+    }
+    // Lignes 72, 88, 210 : la ligne 0 descend sous la 1, remontée de 80 (72 + 8) : la ligne 1
+    // occupe 0..88, le squelette commence 8 pt plus bas, à 96.
+    const rows = stack([72, 88, 210]);
+    assert.equal(placeholderY(rows, 0, 1, GAP), 96);
+    // La carte de 210 remonte en tête : la place de la ligne 0.
+    assert.equal(placeholderY(rows, 2, 0, GAP), 0);
   });
 });

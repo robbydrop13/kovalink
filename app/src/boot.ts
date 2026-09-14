@@ -18,6 +18,7 @@ import { usePanes } from '@/store/panes';
 import { useDrafts } from '@/store/drafts';
 import { useReads } from '@/store/reads';
 import { useTabCollapse } from '@/store/tabCollapse';
+import { useTabSort } from '@/store/tabSort';
 import { usePrompts } from '@/store/prompts';
 import { usePrefs } from '@/store/prefs';
 import { startConnection } from '@/net/connection';
@@ -103,6 +104,7 @@ export async function runBoot(): Promise<void> {
     await attempt('drafts', () => useDrafts.getState().hydrate());
     await attempt('read marks', () => useReads.getState().hydrate());
     await attempt('collapsed tabs', () => useTabCollapse.getState().hydrate());
+    await attempt('tab sort', () => useTabSort.getState().hydrate());
     await attempt('prompts cache', () => usePrompts.getState().hydrate());
 
     // L'app est affichable ici. Tout ce qui suit est asynchrone et facultatif.

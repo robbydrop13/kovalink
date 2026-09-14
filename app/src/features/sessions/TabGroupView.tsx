@@ -85,13 +85,6 @@ export function TabGroupView({
   const summary = collapsed ? collapsedSummary(group) : null;
   const keys = useMemo(() => group.panes.map((p) => p.id), [group.panes]);
   const canDrag = !dragDisabled && group.tabId !== null && keys.length > 1;
-  const paneDrag = useDragReorder<number>({
-    keys,
-    gap: space[3],
-    enabled: canDrag && !dragLocked,
-    onLift: onDragLift,
-    onDrop: onReorderPane,
-  });
   const paneReorder = (index: number): ReorderActions | undefined =>
     canDrag
       ? {
@@ -103,6 +96,45 @@ export function TabGroupView({
           },
         }
       : undefined;
+  /** Le contenu d'une ligne, sans ses gestes : rendu dans la liste et par la copie flottante. */
+  const row = (pane: Pane, index: number) =>
+    pane.awaiting ? (
+      <AwaitingCard
+        pane={pane}
+        prompt={prompts[pane.id]}
+        aging={aging(pane.id)}
+        onOpen={() => onOpen(pane.id)}
+        interruptDisabled={interruptDisabled}
+        interruptLabel={interruptLabel(pane.id)}
+        onInterrupt={() => onInterrupt(pane.id)}
+        reorder={paneReorder(index)}
+      />
+    ) : (
+      <SessionRow
+        pane={pane}
+        prompt={prompts[pane.id]}
+        unread={isUnread(pane)}
+        onOpen={() => onOpen(pane.id)}
+        onRelaunch={() => onRelaunch(pane)}
+        interruptDisabled={interruptDisabled}
+        interruptLabel={interruptLabel(pane.id)}
+        onInterrupt={() => onInterrupt(pane.id)}
+        reorder={paneReorder(index)}
+      />
+    );
+  const paneDrag = useDragReorder<number>({
+    keys,
+    gap: space[3],
+    radius: radius.md,
+    enabled: canDrag && !dragLocked,
+    ghost: (id) => {
+      const index = keys.indexOf(id);
+      const pane = group.panes[index];
+      return pane ? row(pane, index) : null;
+    },
+    onLift: onDragLift,
+    onDrop: onReorderPane,
+  });
   const header = (
     <>
       <View style={[styles.dot, { backgroundColor: tint }]} />
@@ -163,40 +195,19 @@ export function TabGroupView({
       </Pressable>
       {collapsed ? null : (
         <View style={styles.panes}>
+          {paneDrag.placeholder}
           {group.panes.map((pane: Pane, index: number) => (
             <DragItem key={pane.id} list={paneDrag} id={pane.id}>
               <PanGestureHandler {...paneDrag.handlerProps(pane.id)}>
                 <Animated.View collapsable={false}>
                   <SwipeRow actions={swipeFor(pane, group)} enabled={!dragLocked && paneDrag.active === null}>
-                    {pane.awaiting ? (
-                      <AwaitingCard
-                        pane={pane}
-                        prompt={prompts[pane.id]}
-                        aging={aging(pane.id)}
-                        onOpen={() => onOpen(pane.id)}
-                        interruptDisabled={interruptDisabled}
-                        interruptLabel={interruptLabel(pane.id)}
-                        onInterrupt={() => onInterrupt(pane.id)}
-                        reorder={paneReorder(index)}
-                      />
-                    ) : (
-                      <SessionRow
-                        pane={pane}
-                        prompt={prompts[pane.id]}
-                        unread={isUnread(pane)}
-                        onOpen={() => onOpen(pane.id)}
-                        onRelaunch={() => onRelaunch(pane)}
-                        interruptDisabled={interruptDisabled}
-                        interruptLabel={interruptLabel(pane.id)}
-                        onInterrupt={() => onInterrupt(pane.id)}
-                        reorder={paneReorder(index)}
-                      />
-                    )}
+                    {row(pane, index)}
                   </SwipeRow>
                 </Animated.View>
               </PanGestureHandler>
             </DragItem>
           ))}
+          {paneDrag.ghost}
         </View>
       )}
     </View>

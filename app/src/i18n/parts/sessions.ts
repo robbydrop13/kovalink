@@ -65,6 +65,10 @@ export const sessions = {
   reorderMoveDown: 'Move down',
   reorderMovedTo: (position: number, count: number) => `Moved to position ${position} of ${count}`,
   reorderDragHint: 'Touch and hold, then drag to reorder',
+  sortByKova: 'Tab order',
+  sortByActivity: 'By activity',
+  sortToggleA11y: (mode: 'kova' | 'activity') =>
+    mode === 'activity' ? 'Sorted by activity. Switch to tab order' : 'Tab order. Sort by activity',
 
   // Balayage d'une ligne
   swipeBookmark: 'Bookmark',
