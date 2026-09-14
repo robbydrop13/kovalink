@@ -84,7 +84,9 @@ function CodeBlock({ block }: { block: Extract<MdBlock, { type: 'code' }> }) {
           accessibilityLabel={t.markdownCopyA11y}
           hitSlop={8}
           onPress={() => {
-            if (copyOrShare(block.code)) useToast.getState().show(t.bubbleCopied);
+            void copyOrShare(block.code).then((ok) => {
+              if (ok) useToast.getState().show(t.bubbleCopied);
+            });
           }}
         >
           <Txt variant="caption" color={colors.accent.primary}>

@@ -3,7 +3,7 @@
     "name": "KovaLink",
     "slug": "kovalink",
     "scheme": "kovalink",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0B0D10",
@@ -14,7 +14,7 @@
     },
     "updates": {
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0,
+      "fallbackToCacheTimeout": 3000,
       "url": "https://u.expo.dev/3e16872a-0904-422b-9459-fcb90ed2f95d"
     },
     "assetBundlePatterns": [
@@ -28,6 +28,9 @@
         "aps-environment": "production",
         "keychain-access-groups": [
           "$(AppIdentifierPrefix)io.claap.kovalink"
+        ],
+        "com.apple.security.application-groups": [
+          "group.io.claap.kovalink"
         ]
       },
       "infoPlist": {
@@ -88,7 +91,9 @@
         {
           "microphonePermission": "KovaLink records your voice only while you hold the microphone button, to type your message."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": false
@@ -109,6 +114,9 @@
                   "entitlements": {
                     "keychain-access-groups": [
                       "$(AppIdentifierPrefix)io.claap.kovalink"
+                    ],
+                    "com.apple.security.application-groups": [
+                      "group.io.claap.kovalink"
                     ]
                   }
                 }

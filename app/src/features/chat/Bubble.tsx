@@ -42,8 +42,13 @@ export function messageActions(text: string): void {
   ActionSheetIOS.showActionSheetWithOptions(
     { options: [t.bubbleCopy, t.bubbleShare, t.actionCancel], cancelButtonIndex: 2 },
     (index) => {
-      if (index === 0 && copyOrShare(text)) useToast.getState().show(t.bubbleCopied);
-      else if (index === 1) void Share.share({ message: text }).catch(() => undefined);
+      if (index === 0) {
+        void copyOrShare(text).then((ok) => {
+          if (ok) useToast.getState().show(t.bubbleCopied);
+        });
+      } else if (index === 1) {
+        void Share.share({ message: text }).catch(() => undefined);
+      }
     },
   );
 }
