@@ -65,8 +65,13 @@ export interface DragList<K extends string | number> {
   onItemLayout: (key: K) => (e: LayoutChangeEvent) => void;
   /** Le squelette de la place visée : à rendre PREMIER enfant du conteneur. */
   placeholder: ReactNode;
-  /** La copie qui flotte sous le doigt : à rendre DERNIER enfant du conteneur. */
-  ghost: ReactNode;
+  /**
+   * La copie qui flotte sous le doigt : à appeler DERNIER enfant du conteneur, dans le JSX.
+   * Une fonction, pas un nœud : `opts.ghost` n'est ainsi appelé qu'une fois le rendu de
+   * l'écran écrit en entier, jamais au milieu de ses déclarations (sur Hermes, `const`
+   * devient `var` : une fonction déclarée plus bas y vaudrait encore `undefined`).
+   */
+  ghost: () => ReactNode;
 }
 
 interface Options<K> {
@@ -388,7 +393,7 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     />
   ) : null;
 
-  const ghost =
+  const ghost = () =>
     lifted && translate ? (
       <Animated.View
         pointerEvents="none"

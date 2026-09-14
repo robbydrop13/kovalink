@@ -40,7 +40,7 @@ import { ImpactStyle, NotifyType, impact, notify } from '@/utils/haptics';
 import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
 import type { ReorderActions } from '@/features/sessions/reorderAccessibility';
-import { DragItem, DragScrollContext, useDragReorder, type DragScroll } from '@/features/sessions/useDragReorder';
+import { DragItem, DragScrollContext, useDragReorder, type DragList, type DragScroll } from '@/features/sessions/useDragReorder';
 import { applyPendingOrder, groupByTab, sortGroups, summaryLine, tabOrderOf, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { isDegraded, useConnection } from '@/store/connection';
@@ -158,6 +158,56 @@ export default function SessionsScreen() {
     toggleCollapse(group.tabId);
   };
 
+  /**
+   * Le `+` d'un onglet : un pane de plus dedans, avec Claude. Deux choix, le dossier de
+   * l'onglet (le cas courant) ou un projet récent via la palette, en mode « Add to ».
+   */
+  const addPane = (group: TabGroup) => {
+    if (group.tabId === null || degraded) return;
+    const tabId = group.tabId;
+    const folder = group.panes[0]?.projectName ?? group.title;
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: t.tabAddPaneTitle(group.title),
+        options: [t.tabAddPaneSameFolder(folder), t.tabAddPanePick, t.actionCancel],
+        cancelButtonIndex: 2,
+        userInterfaceStyle: 'dark',
+      },
+      (index) => {
+        if (index === 1) {
+          router.push({ pathname: '/new-session', params: { splitTabId: String(tabId), splitTabTitle: group.title } });
+          return;
+        }
+        if (index !== 0) return;
+        impact(ImpactStyle.Medium);
+        postSplit(tabId, null).then(
+          (res) => router.push(res.launched ? `/session/${res.paneId}` : `/session/${res.paneId}?view=term`),
+          (e: unknown) => setToast(t.projectsSplitFailed(e instanceof Error ? e.message : String(e))),
+        );
+      },
+    );
+  };
+  // Balayage : les mêmes gestes que sur le Mac. Fermer est confirmé avec l'état réel.
+  const swipeFor = (pane: Pane, group: TabGroup): SwipeActions => {
+    const sessionId = pane.agent_session_id ?? pane.claude_session_id;
+    const isBookmarked = sessionId !== null && bookmarked.has(sessionId);
+    return {
+      bookmarked: isBookmarked,
+      onClose: () => confirmClose(pane, group.title, setToast),
+      onBookmark: () =>
+        void toggleBookmark(pane, isBookmarked, setToast).then((next) => {
+          if (next === null || !sessionId) return;
+          setBookmarked((prev) => {
+            const out = new Set(prev);
+            if (next) out.add(sessionId);
+            else out.delete(sessionId);
+            return out;
+          });
+        }),
+      onRename: () => router.push({ pathname: '/rename', params: { paneId: String(pane.id) } }),
+    };
+  };
+  const aging = (paneId: number) => isAging(prompts[paneId]);
   // --- Glisser-déposer ------------------------------------------------------------------
   const scrollRef = useRef<ScrollView>(null);
   const offsetY = useRef(0);
@@ -209,31 +259,6 @@ export default function SessionsScreen() {
     const order = tabOrderOf(shown, group.window);
     void moveTab(group.window, order, order.indexOf(group.tabId), order.indexOf(target.tabId), reportFailure);
   };
-  const tabDrag = useDragReorder<string>({
-    keys: tabKeys,
-    gap: space[6],
-    radius: radius.sm,
-    enabled: !degraded && !byActivity && !frozen,
-    // La copie qui flotte : l'en-tête seul, comme tous les onglets le temps du geste.
-    ghost: (key) => {
-      const index = shown.findIndex((g) => g.key === key);
-      const group = shown[index];
-      return group ? groupView(group, index, true) : null;
-    },
-    // L'écran n'est pas sous son propre fournisseur : le défilement est passé en direct.
-    scroll: dragScroll,
-    range: windowRange,
-    onLift: () => {
-      freeze();
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setTabDragging(true);
-    },
-    onDrop: dropTab,
-    onSettled: () => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setTabDragging(false);
-    },
-  });
   const tabReorderFor = (group: TabGroup, index: number): ReorderActions | undefined => {
     if (!canDragTab(group, index)) return undefined;
     const [lo, hi] = windowRange(index);
@@ -255,8 +280,16 @@ export default function SessionsScreen() {
     if (paneId === undefined || !panes.some((p) => p.id === paneId)) return;
     void movePane(group.tabId, order, from, to, reportFailure);
   };
-  /** Un onglet de la liste ; `ghost` : la copie flottante, repliée et sans aucun geste. */
-  function groupView(group: TabGroup, index: number, ghost: boolean) {
+  /**
+   * Un onglet de la liste ; `list` porte le geste de déplacement d'onglet. Sans liste, c'est
+   * la copie flottante : repliée, sans aucun geste. Tout ce que `groupView` appelle est
+   * déclaré AVANT le `useDragReorder` qui suit, et `groupView` l'est aussi : sur Hermes,
+   * `const` devient `var`, et une fonction déclarée plus bas vaut encore `undefined` au
+   * moment où le rendu passe ici. Le crash « Trying to call a non-function » au premier
+   * levé d'un onglet venait de là (`dropPane` déclaré après le hook).
+   */
+  const groupView = (group: TabGroup, index: number, list: DragList<string> | null) => {
+    const ghost = list === null;
     return (
       <TabGroupView
         group={group}
@@ -272,7 +305,7 @@ export default function SessionsScreen() {
         onInterrupt={(id) => void interrupt(id)}
         interruptDisabled={degraded}
         interruptLabel={(id) => labelFor(id, degraded)}
-        dragHandle={!ghost && canDragTab(group, index) ? tabDrag.handlerProps(group.key) : undefined}
+        dragHandle={list && canDragTab(group, index) ? list.handlerProps(group.key) : undefined}
         tabReorder={ghost ? undefined : tabReorderFor(group, index)}
         dragDisabled={degraded}
         dragLocked={ghost || frozen !== null}
@@ -280,57 +313,32 @@ export default function SessionsScreen() {
         onReorderPane={dropPane(group)}
       />
     );
-  }
-  /**
-   * Le `+` d'un onglet : un pane de plus dedans, avec Claude. Deux choix, le dossier de
-   * l'onglet (le cas courant) ou un projet récent via la palette, en mode « Add to ».
-   */
-  const addPane = (group: TabGroup) => {
-    if (group.tabId === null || degraded) return;
-    const tabId = group.tabId;
-    const folder = group.panes[0]?.projectName ?? group.title;
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: t.tabAddPaneTitle(group.title),
-        options: [t.tabAddPaneSameFolder(folder), t.tabAddPanePick, t.actionCancel],
-        cancelButtonIndex: 2,
-        userInterfaceStyle: 'dark',
-      },
-      (index) => {
-        if (index === 1) {
-          router.push({ pathname: '/new-session', params: { splitTabId: String(tabId), splitTabTitle: group.title } });
-          return;
-        }
-        if (index !== 0) return;
-        impact(ImpactStyle.Medium);
-        postSplit(tabId, null).then(
-          (res) => router.push(res.launched ? `/session/${res.paneId}` : `/session/${res.paneId}?view=term`),
-          (e: unknown) => setToast(t.projectsSplitFailed(e instanceof Error ? e.message : String(e))),
-        );
-      },
-    );
   };
-  // Balayage : les mêmes gestes que sur le Mac. Fermer est confirmé avec l'état réel.
-  const swipeFor = (pane: Pane, group: TabGroup): SwipeActions => {
-    const sessionId = pane.agent_session_id ?? pane.claude_session_id;
-    const isBookmarked = sessionId !== null && bookmarked.has(sessionId);
-    return {
-      bookmarked: isBookmarked,
-      onClose: () => confirmClose(pane, group.title, setToast),
-      onBookmark: () =>
-        void toggleBookmark(pane, isBookmarked, setToast).then((next) => {
-          if (next === null || !sessionId) return;
-          setBookmarked((prev) => {
-            const out = new Set(prev);
-            if (next) out.add(sessionId);
-            else out.delete(sessionId);
-            return out;
-          });
-        }),
-      onRename: () => router.push({ pathname: '/rename', params: { paneId: String(pane.id) } }),
-    };
-  };
-  const aging = (paneId: number) => isAging(prompts[paneId]);
+  const tabDrag = useDragReorder<string>({
+    keys: tabKeys,
+    gap: space[6],
+    radius: radius.sm,
+    enabled: !degraded && !byActivity && !frozen,
+    // La copie qui flotte : l'en-tête seul, comme tous les onglets le temps du geste.
+    ghost: (key) => {
+      const index = shown.findIndex((g) => g.key === key);
+      const group = shown[index];
+      return group ? groupView(group, index, null) : null;
+    },
+    // L'écran n'est pas sous son propre fournisseur : le défilement est passé en direct.
+    scroll: dragScroll,
+    range: windowRange,
+    onLift: () => {
+      freeze();
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setTabDragging(true);
+    },
+    onDrop: dropTab,
+    onSettled: () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setTabDragging(false);
+    },
+  });
 
   /**
    * `Lancer Kova` (design 4.1, CA-123) : `POST /v1/kova/launch`, le daemon fait `open -a
@@ -511,12 +519,12 @@ export default function SessionsScreen() {
                     </Txt>
                   ) : null}
                   <DragItem list={tabDrag} id={group.key}>
-                    {groupView(group, i, false)}
+                    {groupView(group, i, tabDrag)}
                   </DragItem>
                 </Fragment>
               );
             })}
-            {tabDrag.ghost}
+            {tabDrag.ghost()}
           </View>
         </DragScrollContext.Provider>
       </ScrollView>

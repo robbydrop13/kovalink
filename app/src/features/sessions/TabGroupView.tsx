@@ -207,7 +207,7 @@ export function TabGroupView({
               </PanGestureHandler>
             </DragItem>
           ))}
-          {paneDrag.ghost}
+          {paneDrag.ghost()}
         </View>
       )}
     </View>
