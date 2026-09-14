@@ -12,9 +12,6 @@
 // `pane.screen`). La vue `Fichiers` est en lot 3 et n'est pas rendue, plutôt qu'affichée morte.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -91,6 +88,8 @@ import {
 import { needsCellularChoice } from '@/store/transfers';
 import { shortAgeMs, truncatePath } from '@/utils/time';
 import { useClock } from '@/utils/useClock';
+import { keyboardPadding } from '@/utils/keyboard';
+import { useKeyboardHeight } from '@/utils/useKeyboardHeight';
 import { bootWarn } from '@/env';
 import { useOutboxNotices } from '@/store/outboxNotices';
 import { useToast } from '@/store/toast';
@@ -156,7 +155,10 @@ export default function SessionScreen() {
   const next = useNextTarget(paneId);
   const markRead = useReads((s) => s.markRead);
   const draft = useDrafts((s) => draftOf(s.byPane, paneId));
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  // Le clavier : sa hauteur annoncée par iOS, rien d'autre. Le padding bas de l'écran en
+  // découle, moins l'inset déjà réservé sous le composer (voir `utils/keyboard`).
+  const keyboardHeight = useKeyboardHeight();
+  const keyboardOpen = keyboardHeight > 0;
   const [arrivedAt, setArrivedAt] = useState(() => Date.now());
   const [arrivalFlash, setArrivalFlash] = useState(false);
   const [pending, setPending] = useState<PendingMessage[]>([]);
@@ -183,15 +185,6 @@ export default function SessionScreen() {
   const stickToBottom = useRef(true);
 
   const agentSessionId = pane?.agent_session_id ?? null;
-
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardOpen(true));
-    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardOpen(false));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   // Arrivée sur un pane (saut Cmd+J ou ouverture) : garde de saisie de 400 ms et flash de
   // la ligne d'identité, le seul signal visuel qui dit OÙ l'on est.
@@ -738,10 +731,7 @@ export default function SessionScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <View style={[styles.screen, { paddingBottom: keyboardPadding(keyboardHeight, insets.bottom) }]}>
       <View style={{ paddingTop: insets.top }}>
         <NavBar view={view} onView={setView} title={t.sessionsTitle} onMenu={openMenu} />
         {/* Où je suis : la pastille de l'onglet Kova (couleur + nom), puis le nom de la
@@ -1044,7 +1034,7 @@ export default function SessionScreen() {
           onNotice={setToast}
         />
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
