@@ -189,6 +189,27 @@ describe('reorderPane', () => {
     assert.ok(fake.received.every((m) => m['pane_id_b'] !== 1), 'le pane de l onglet 0 n est jamais touche');
   });
 
+  it('l instantane liste les panes dans l ordre de Kova, jamais par etat : le rang de l app est celui de swap-pane', async () => {
+    // Le cas du 14 septembre 2026 : onglet TrailCoach, pane 11 (inactif) puis 12 (travaille)
+    // dans l'ordre de Kova. Trie par etat, l'instantane montrait 12 avant 11 ; l'app, qui
+    // affiche cet ordre, envoyait « 11 au rang 0 » pour un glisser vers le haut, et la
+    // chaine d'echanges (calculee sur l'ordre de Kova, ou 11 est deja premier) etait vide.
+    const { services, panes } = harness();
+    panes.replaceAll([rawPane(1, 0), rawPane(11, 1), rawPane(12, 1, { working: true })]);
+    const shown = panes.all().filter((p) => p.tab === 1).map((p) => p.id);
+    assert.deepEqual(shown, [11, 12]);
+    assert.deepEqual(
+      shown,
+      panes.inTab(0, 1).map((p) => p.id),
+      'l ordre affiche est celui sur lequel reorderPane calcule la chaine',
+    );
+    // Le pane affiche au rang 1 est glisse au rang 0 : un echange, pas zero.
+    const dragged = shown[1] as number;
+    const out = await reorderPane(services, dragged, 0, 'dev');
+    assert.deepEqual(out, { ok: true, response: { moved: true, swaps: 1 } });
+    assert.deepEqual(fake.received, [{ cmd: 'swap-pane', pane_id_a: 12, pane_id_b: 11 }]);
+  });
+
   it('meme rang, ou pane seul dans son onglet : aucun echange, moved sans swap', async () => {
     const { services } = harness();
     assert.deepEqual(await reorderPane(services, 22, 1, 'dev'), { ok: true, response: { moved: true, swaps: 0 } });

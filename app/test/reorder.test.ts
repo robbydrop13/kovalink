@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 import type { Pane, Tab } from '@/protocol';
+import { reduce, type DragDrop, type DragState } from '@/features/sessions/dragMachine';
 import { REORDER_CONFIRM_MS, setReorderTransport, useReorder, type ReorderFailure } from '@/store/reorder';
 
 function pane(id: number, tabId: number): Pane {
@@ -175,6 +176,24 @@ describe('réordonnancement en attente', () => {
     assert.deepEqual(failures, [], 'l échec du premier ne retire pas le second');
     mock.timers.tick(REORDER_CONFIRM_MS);
     assert.deepEqual(failures, ['unconfirmed']);
+  });
+
+  it('le lâcher poste l identifiant du pane TENU et son rang FINAL dans l ordre affiché de l onglet', async () => {
+    // L'onglet TrailCoach (9) tel que le daemon le liste depuis le 14 septembre 2026 : l'ordre
+    // de Kova, 11 puis 12, quel que soit leur état. La machine rapporte (1, 0) pour la
+    // seconde ligne remontée en tête : c'est 12 qui part, au rang 0, et l'instantané qui
+    // montre [12, 11] confirme.
+    const shown = [11, 12];
+    const slots = [{ y: 0, h: 160 }, { y: 168, h: 200 }];
+    let state = reduce(null, { type: 'lift', index: 1, slots, range: [0, 1], gap: 8 }).state as DragState;
+    for (const dy of [-20, -95, -168]) state = reduce(state, { type: 'move', dy }).state as DragState;
+    const drop = reduce(state, { type: 'release' }).drop as DragDrop;
+    assert.deepEqual([drop.from, drop.to], [1, 0]);
+    const calls = network({ tabs: [tab(9, 0)], panes: [pane(12, 9), pane(11, 9)] });
+    await useReorder.getState().movePane(9, shown, drop.from, drop.to, onFailure);
+    assert.deepEqual(calls, [['pane', 12, 0]]);
+    assert.deepEqual(useReorder.getState().panes, {}, 'confirmé par la relecture');
+    assert.deepEqual(failures, []);
   });
 
   it('rien à faire quand le rang ne change pas', async () => {

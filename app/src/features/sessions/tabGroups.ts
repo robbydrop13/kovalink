@@ -42,7 +42,9 @@ const keyOfId = (tabId: number): string => `t${tabId}`;
  * réordonnancement. `(window, tab)` ne sert plus que de repli quand `tabId` vaut
  * `null` (pane reçu par événement avant tout `list-tabs`).
  *
- * L'ordre des panes dans un onglet est celui de `list-panes`. Un pane dont l'onglet
+ * L'ordre des panes dans un onglet est celui de `list-panes`, tel que l'instantané du
+ * daemon le porte (`PaneStore.all()`, depuis le 14 septembre 2026 ; trié par état avant,
+ * ce qui faussait le rang envoyé par un glisser-déposer). Un pane dont l'onglet
  * n'est pas (encore) connu forme son propre groupe à son index. RIEN n'est filtré :
  * tous les onglets, tous les panes, agent ou pas, comme le sélecteur Cmd+P de Kova.
  */

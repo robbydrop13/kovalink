@@ -198,6 +198,34 @@ describe('un geste entier, comme le crochet le rejoue', () => {
   });
 });
 
+describe('l onglet TrailCoach du 14 septembre 2026 : deux lignes de 160 et 200 pt, espace 8', () => {
+  /** Rangs 0..1, y = 0 et 168. */
+  const TWO = stack([160, 200]);
+  const both: [number, number] = [0, 1];
+  const liftTwo = (index: number) => reduce(null, { type: 'lift', index, slots: TWO, range: both, gap: GAP }).state as DragState;
+
+  it('remonter la seconde ligne : la premiere descend de 168 (la hauteur tenue plus l espace), le lacher rapporte (1, 0)', () => {
+    // Le doigt part de y = 168 ; la ligne 0 (milieu 80) est franchie quand le haut passe sous 80.
+    const { state, frames } = drag(liftTwo(1), [-20, -60, -95, -140, -168]);
+    assert.equal(frames, 1);
+    assert.deepEqual(reduce(state, { type: 'relayout', slots: TWO }).frame, { to: 0, moves: [208, 0], placeholderY: 0 });
+    const end = reduce(state, { type: 'release' });
+    assert.deepEqual([end.drop?.from, end.drop?.to, end.drop?.settle], [1, 0, -168]);
+    // Le lacher n emet AUCUNE image : les ecarts restent le temps de la pose, et c est au
+    // crochet de les ramener a 0 par le module anime, dans le tour du rendu du nouvel ordre.
+    assert.equal(end.frame, null);
+  });
+
+  it('l ecart qui restait a l ecran : ligne 0 poussee de la hauteur de la ligne 1 plus l espace', () => {
+    // L ordre affiche etait alors [dev 200, agent 160] : remonter l agent pousse dev de 168.
+    const swapped = stack([200, 160]);
+    const lifted = reduce(null, { type: 'lift', index: 1, slots: swapped, range: both, gap: GAP }).state as DragState;
+    const moved = reduce(lifted, { type: 'move', dy: -120 });
+    assert.deepEqual(moved.frame?.moves, [168, 0]);
+    assert.equal(reduce(moved.state as DragState, { type: 'release' }).frame, null);
+  });
+});
+
 describe('les auto-controles du lacher', () => {
   const held = ROWS[1] as Slot;
 

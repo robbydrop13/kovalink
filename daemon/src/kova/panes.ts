@@ -160,12 +160,17 @@ export class PaneStore extends EventEmitter {
     return this.panes.get(paneId);
   }
 
+  /**
+   * Tous les panes dans l'ORDRE DE KOVA (celui de `list-panes`), le meme que `inTab` : c'est
+   * l'ordre que l'app affiche sous chaque onglet et sur lequel elle calcule le rang d'un
+   * pane deplace (`POST /v1/panes/:id/reorder`). Jusqu'au 14 septembre 2026 la liste etait
+   * triee par etat (attend, travaille, inactif ; PRD A2/S2, d'avant le regroupement par
+   * onglet) : l'app montrait un pane qui travaille AVANT ses voisins, et le rang qu'elle
+   * envoyait ne voulait rien dire pour la chaine de `swap-pane` (`from=0 to=0 swaps=0`).
+   * Les etats sont des badges, pas un tri.
+   */
   all(): Pane[] {
-    // Tri de la liste : awaiting, puis working, puis idle (PRD A2/S2).
-    const rank = { awaiting: 0, working: 1, idle: 2 } as const;
-    return [...this.panes.values()].sort(
-      (a, b) => rank[a.liveState] - rank[b.liveState] || a.id - b.id,
-    );
+    return [...this.panes.values()];
   }
 
   allTabs(): Tab[] {

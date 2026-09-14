@@ -25,6 +25,15 @@
 // La liste rendue pendant le geste est figée par l'écran (les instantanés continuent
 // d'arriver) : les clés sont stables, la géométrie vient de `onLayout` et se remet à jour
 // si les lignes changent de taille (le repli des onglets au levé).
+//
+// Les écarts des autres lignes sont des `Animated.Value` TENUES PAR CLÉ pour toute la vie
+// de la liste, et remises à zéro par `setValue(0)` au lâcher, dans le même tour que le
+// rendu du nouvel ordre. Pas un jeu de valeurs neuves : sur Fabric, une vue dont le
+// `transform` a été piloté par le module animé natif ne le reprend plus jamais de React
+// (`RCTViewComponentView`, `propKeysManagedByAnimated`), et `restoreDefaultValues` y est
+// un no-op (`RCTPropsAnimatedNode`). Une valeur neuve à 0 rendue par React laissait donc
+// la ligne écartée là où le geste l'avait poussée, d'une hauteur de ligne, par dessus
+// l'onglet suivant. Seul le module animé peut ramener ce qu'il a déplacé.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef, type ReactNode, type RefObject } from 'react';
 import { Animated, Easing, type LayoutChangeEvent, type ScrollView, type StyleProp, type ViewStyle } from 'react-native';
 import { Gesture, type PanGesture } from 'react-native-gesture-handler';
@@ -155,17 +164,46 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
   // Le squelette et les écarts des autres lignes : pilote natif, des `timing` lancés du JS.
   const [placeholderY] = useState(() => new Animated.Value(0));
   const [lifted, setLifted] = useState<Lifted<K> | null>(null);
-  /** Les écarts des autres lignes : un jeu neuf à chaque lâcher, remis à zéro par le rendu. */
-  const [generation, setGeneration] = useState(0);
   const slots = useRef(new Map<K, Slot>());
   const drag = useRef<Drag<K> | null>(null);
   const active = lifted?.key ?? null;
 
   const { keys } = opts;
-  const offsets = useMemo(() => {
-    void generation;
-    return new Map(keys.map((k) => [k, new Animated.Value(0)] as const));
-  }, [keys, generation]);
+  /**
+   * Les écarts des autres lignes, une valeur par clé, gardée d'un rendu et d'un instantané
+   * à l'autre (voir l'en-tête : seule la valeur qui a déplacé la vue peut la ramener).
+   */
+  const offsets = useRef(new Map<K, Animated.Value>());
+  /** Un écart ou le squelette a bougé depuis la dernière remise à zéro. */
+  const displaced = useRef(false);
+  const offsetOf = useCallback((key: K): Animated.Value => {
+    let value = offsets.current.get(key);
+    if (!value) {
+      value = new Animated.Value(0);
+      offsets.current.set(key, value);
+    }
+    return value;
+  }, []);
+  /**
+   * Tout revient à 0, par le module animé : les écarts des lignes et le squelette. Appelé
+   * au lâcher et à l'annulation, dans le même tour que le rendu du nouvel ordre, et à
+   * chaque changement de liste hors geste (un écart ne survit jamais à un instantané).
+   */
+  const resetOffsets = useCallback(() => {
+    if (!displaced.current) return;
+    displaced.current = false;
+    for (const value of offsets.current.values()) value.setValue(0);
+    placeholderY.setValue(0);
+  }, [placeholderY]);
+
+  // La liste a changé (instantané, ordre en attente) sans geste en cours : aucun écart ne
+  // doit rester, et les clés parties emportent leur valeur.
+  useEffect(() => {
+    if (drag.current) return;
+    resetOffsets();
+    const present = new Set<K>(keys);
+    for (const key of [...offsets.current.keys()]) if (!present.has(key)) offsets.current.delete(key);
+  }, [keys, resetOffsets]);
 
   // Les valeurs du doigt ne sont remises à zéro qu'une fois la copie vidée (après le rendu
   // du nouvel ordre) : les remettre avant ferait sauter la carte à son ancienne place.
@@ -191,15 +229,13 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     (d: Drag<K>, frame: DragFrame) => {
       const timing = (value: Animated.Value, toValue: number) =>
         Animated.timing(value, { toValue, duration: motion.fast, easing: Easing.out(Easing.quad), useNativeDriver: true });
+      displaced.current = true;
       Animated.parallel([
         timing(placeholderY, frame.placeholderY),
-        ...d.keys.flatMap((k, i) => {
-          const value = offsets.get(k);
-          return value && i !== d.state.from ? [timing(value, frame.moves[i] ?? 0)] : [];
-        }),
+        ...d.keys.flatMap((k, i) => (i !== d.state.from ? [timing(offsetOf(k), frame.moves[i] ?? 0)] : [])),
       ]).start();
     },
-    [offsets, placeholderY],
+    [offsetOf, placeholderY],
   );
 
   const retarget = useCallback(
@@ -275,6 +311,7 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     if (!step.state || !step.frame) return;
     const held = step.state.slots[from] as Slot;
     // Le squelette naît à la place d'origine, avant d'apparaître.
+    displaced.current = true;
     placeholderY.setValue(step.frame.placeholderY);
     drag.current = {
       keys: [...keys],
@@ -330,9 +367,11 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     ]).start(() => {
       if (drag.current !== d) return;
       drag.current = null;
-      // Le même tour : les transformations disparaissent avec le rendu du nouvel ordre (un
-      // jeu d'écarts neuf, la copie vidée, la vraie ligne de nouveau visible).
-      setGeneration((g) => g + 1);
+      // Le même tour : les écarts et le squelette reviennent à 0 par le module animé, la
+      // copie se vide, la vraie ligne redevient visible, et l'ordre visé se rend (`onDrop`).
+      // Le module animé applique ses opérations juste après le montage de ce rendu : la
+      // ligne écartée ne passe par aucune image intermédiaire.
+      resetOffsets();
       setLifted(null);
       scroll?.lock(false);
       if (to !== from) notify(NotifyType.Success);
@@ -366,8 +405,7 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
   // propriété ne change sur elle pendant le geste (voir l'en-tête du fichier).
   const itemStyle = (key: K): Animated.WithAnimatedValue<ViewStyle> => {
     if (active === key) return styles.hidden;
-    const offset = offsets.get(key);
-    return offset ? { transform: [{ translateY: offset }] } : {};
+    return { transform: [{ translateY: offsetOf(key) }] };
   };
 
   const onItemLayout = (key: K) => (e: LayoutChangeEvent) => {
