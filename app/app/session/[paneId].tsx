@@ -17,6 +17,8 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +32,7 @@ import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
 import { Icon } from '@/ui/Icon';
 import { AgentStatus } from '@/features/chat/AgentStatus';
+import { BOTTOM_STICK_PX, isNearBottom } from '@/features/chat/autoScroll';
 import { AssistantTurn, OrphanResults, QuietSystemRow, SystemRow, UserBubble } from '@/features/chat/Bubble';
 import { Shimmer } from '@/features/chat/Shimmer';
 import { feedItems } from '@/features/chat/systemEvents';
@@ -181,8 +184,18 @@ export default function SessionScreen() {
    */
   const [startRequest, setStartRequest] = useState<number | null>(null);
   const scrollRef = useRef<ScrollView>(null);
-  /** Collé en bas tant que Robin n'est pas remonté dans l'historique. */
+  /**
+   * Collé en bas tant que Robin n'est pas remonté dans l'historique. Seul un tirage décolle
+   * (`onScrollBeginDrag`) ; revenir à moins de `BOTTOM_STICK_PX` du bas recolle de soi-même.
+   */
   const stickToBottom = useRef(true);
+  /** Pastille « Latest » : du contenu est arrivé en bas pendant que le fil était décollé. */
+  const [jumpVisible, setJumpVisible] = useState(false);
+  const jumpShown = useRef(false);
+  /** Hauteur du contenu au dernier `onContentSizeChange` : la pastille ne suit qu'une croissance. */
+  const contentHeight = useRef(0);
+  /** Premier `seq` affiché : s'il change, le fil a grandi PAR LE HAUT (historique), pas par la queue. */
+  const firstSeqShown = useRef<number | null>(null);
 
   const agentSessionId = pane?.agent_session_id ?? null;
 
@@ -264,6 +277,33 @@ export default function SessionScreen() {
       scrollRef.current?.scrollToEnd({ animated: true });
     }
   }, [prompt]);
+
+  /** Montre ou cache la pastille « Latest » : un seul rendu, quand ça bascule. */
+  const showJump = useCallback((on: boolean) => {
+    if (jumpShown.current === on) return;
+    jumpShown.current = on;
+    setJumpVisible(on);
+  }, []);
+
+  /**
+   * Recollage : à chaque `onScroll`, fin de tirage ou fin d'inertie, revenir près du bas
+   * recolle et cache la pastille. Jamais l'inverse ici : nos propres `scrollToEnd` émettent
+   * aussi des `onScroll`, et seul un tirage (`onScrollBeginDrag`) doit décoller.
+   */
+  const onScrollMetrics = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!isNearBottom(e.nativeEvent, BOTTOM_STICK_PX)) return;
+      stickToBottom.current = true;
+      showJump(false);
+    },
+    [showJump],
+  );
+
+  const jumpToLatest = useCallback(() => {
+    stickToBottom.current = true;
+    showJump(false);
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }, [showJump]);
 
   const refreshQueue = useCallback(() => {
     void countPending('text').then(setQueued);
@@ -569,10 +609,11 @@ export default function SessionScreen() {
         if (outcome.result.reason === 'became_awaiting') peek(paneId);
       }
       stickToBottom.current = true;
+      showJump(false);
       scrollRef.current?.scrollToEnd({ animated: true });
       return true;
     },
-    [paneId, prompt, agentSessionId, launching, arrivedAt, markActed],
+    [paneId, prompt, agentSessionId, launching, arrivedAt, markActed, showJump],
   );
 
   /**
@@ -863,8 +904,24 @@ export default function SessionScreen() {
           onScrollBeginDrag={() => {
             stickToBottom.current = false;
           }}
-          onContentSizeChange={() => {
-            if (stickToBottom.current) scrollRef.current?.scrollToEnd({ animated: false });
+          onScroll={onScrollMetrics}
+          onScrollEndDrag={onScrollMetrics}
+          onMomentumScrollEnd={onScrollMetrics}
+          scrollEventThrottle={32}
+          onContentSizeChange={(_width, height) => {
+            const grew = height > contentHeight.current;
+            contentHeight.current = height;
+            // L'historique arrive par le haut (premier `seq` changé) : ni saut ni pastille,
+            // `maintainVisibleContentPosition` garde la ligne lue sous le doigt.
+            const firstSeq = turns[0]?.seq ?? null;
+            const prepended = firstSeq !== firstSeqShown.current;
+            firstSeqShown.current = firstSeq;
+            if (stickToBottom.current) {
+              scrollRef.current?.scrollToEnd({ animated: false });
+              showJump(false);
+              return;
+            }
+            if (grew && !prepended && session.status === 'ready') showJump(true);
           }}
         >
           {session.status === 'loading' && !degraded && !resolveTimedOut ? (
@@ -988,6 +1045,9 @@ export default function SessionScreen() {
       )}
 
       <View style={styles.pillSlot} pointerEvents="box-none">
+        {jumpVisible && view === 'chat' ? (
+          <JumpToLatestPill lifted={!pillHidden && !!next.target} onPress={jumpToLatest} />
+        ) : null}
         <NextPill state={next} hidden={pillHidden} onPress={jumpNext} onLongPress={() => router.push('/unread')} />
       </View>
 
@@ -1103,9 +1163,51 @@ function NavBar({
   );
 }
 
+/**
+ * Pastille flottante « Latest » : du contenu est arrivé en bas pendant que Robin lisait plus
+ * haut. Même coin que le bouton Cmd+J ; quand celui-ci est affiché, la pastille monte d'un
+ * cran pour s'empiler au dessus. Un appui ramène en bas et recolle.
+ */
+function JumpToLatestPill({ lifted, onPress }: { lifted: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t.chatJumpLatestA11y}
+      hitSlop={8}
+      onPress={onPress}
+      style={({ pressed }) => [styles.jump, lifted && styles.jumpLifted, pressed && styles.jumpPressed]}
+    >
+      <Icon name="arrow-down" size={16} color={colors.text.primary} />
+      <Txt variant="footnote" color={colors.text.primary}>
+        {t.chatJumpLatest}
+      </Txt>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg.base },
   pillSlot: { height: 0, overflow: 'visible', zIndex: 2 },
+  jump: {
+    position: 'absolute',
+    right: space[5],
+    bottom: space[4],
+    height: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    paddingHorizontal: space[4],
+    borderRadius: radius.full,
+    backgroundColor: colors.bg.overlay,
+    borderWidth: 1,
+    borderColor: colors.border.strong,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  jumpLifted: { bottom: space[4] + NEXT_BUTTON_SPACE },
+  jumpPressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
   subtitleArrived: { backgroundColor: colors.accent.subtleBg },
   nav: {
     height: layout.navBarHeight,

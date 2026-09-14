@@ -21,6 +21,9 @@ export const chat = {
   actionRetry: 'Retry',
   actionSend: 'Send',
   actionDismiss: 'Dismiss',
+  /** Pastille flottante du fil : du nouveau est arrivé en bas pendant que Robin lisait plus haut. */
+  chatJumpLatest: 'Latest',
+  chatJumpLatestA11y: 'Scroll to the latest messages',
 
   // Bandeau d'état de la session (`AgentStatus`, `statusLabel`).
   statusA11y: (label: string) => `Agent status: ${label}`,
