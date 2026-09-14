@@ -98,3 +98,24 @@ export function reduce(state: DragState | null, event: DragEvent): DragStep {
     }
   }
 }
+
+/**
+ * Un CANCELLED dans les 150 ms qui suivent le levé n'est pas un geste de l'utilisateur :
+ * c'est le système qui a repris le toucher (défilement, remontage de la ligne). On remet en
+ * place sans retour haptique, mais on le DIT dans le journal : cette classe de bug a déjà
+ * coûté deux correctifs (le `zIndex` au levé, puis le squelette inséré avant la ligne).
+ */
+export const STEAL_MS = 150;
+
+export function stolen(drop: DragDrop, elapsedMs: number): boolean {
+  return drop.cancelled && elapsedMs < STEAL_MS;
+}
+
+/**
+ * Un lâcher sur place alors que le doigt a parcouru plus que la hauteur de la ligne tenue :
+ * les déplacements n'ont pas atteint la machine (les événements du geste ne remontent pas
+ * au JS). Invisible pour l'utilisateur autrement qu'en « rien ne bouge ».
+ */
+export function deadMove(drop: DragDrop, travel: number, heldHeight: number): boolean {
+  return !drop.cancelled && drop.to === drop.from && travel > heldHeight;
+}

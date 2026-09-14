@@ -305,7 +305,7 @@ export default function SessionsScreen() {
         onInterrupt={(id) => void interrupt(id)}
         interruptDisabled={degraded}
         interruptLabel={(id) => labelFor(id, degraded)}
-        dragHandle={list && canDragTab(group, index) ? list.handlerProps(group.key) : undefined}
+        dragHandle={list && canDragTab(group, index) ? list.gesture(group.key) : undefined}
         tabReorder={ghost ? undefined : tabReorderFor(group, index)}
         dragDisabled={degraded}
         dragLocked={ghost || frozen !== null}

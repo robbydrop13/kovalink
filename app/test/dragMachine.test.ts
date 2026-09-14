@@ -2,7 +2,7 @@
 // 72, 88 et 210 pt (ligne de session, ligne avec sous-titre, carte EN ATTENTE), espace 8.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { liftable, reduce, type DragState, type DragStep } from '@/features/sessions/dragMachine';
+import { STEAL_MS, deadMove, liftable, reduce, stolen, type DragDrop, type DragState, type DragStep } from '@/features/sessions/dragMachine';
 import type { Slot } from '@/features/sessions/dragSlots';
 
 const GAP = 8;
@@ -150,5 +150,86 @@ describe('relayout', () => {
     // Puis le doigt, avec la nouvelle geometrie : ligne 1 (y = 40, milieu 56), haut = 80 + dy.
     const moved = reduce(step.state, { type: 'move', dy: -25 });
     assert.deepEqual(moved.frame, { to: 1, moves: [0, 40, 0], placeholderY: 40 });
+  });
+});
+
+describe('un geste entier, comme le crochet le rejoue', () => {
+  /** Lignes de session réelles : 64 à 90 pt, espace 8 ; rangs 0..3, y = 0, 72, 162, 234. */
+  const LIST = stack([64, 82, 64, 90]);
+  const all: [number, number] = [0, 3];
+
+  /** Le crochet : lever, un `move` par événement du doigt, lâcher, puis `onDrop(from, to)`. */
+  function replay(from: number, dys: number[]): { drop: DragDrop; frames: number; onDrop: [number, number][] } {
+    const onDrop: [number, number][] = [];
+    let state = reduce(null, { type: 'lift', index: from, slots: LIST, range: all, gap: GAP }).state as DragState;
+    let frames = 0;
+    for (const dy of dys) {
+      const step = reduce(state, { type: 'move', dy });
+      if (step.frame) frames += 1;
+      state = step.state as DragState;
+    }
+    const end = reduce(state, { type: 'release' });
+    const drop = end.drop as DragDrop;
+    onDrop.push([drop.from, drop.to]);
+    return { drop, frames, onDrop };
+  }
+
+  it('descendre de deux rangs : le rappel recoit (from, to) avec to different de from', () => {
+    // Bas de la carte = 64 + dy ; milieux : ligne 1 a 113, ligne 2 a 194, ligne 3 a 279.
+    const { drop, frames, onDrop } = replay(0, [4, 12, 25, 41, 58, 75, 96, 118, 131, 140]);
+    assert.deepEqual(onDrop, [[0, 2]]);
+    assert.notEqual(drop.to, drop.from);
+    assert.equal(frames, 2);
+    // La carte se pose sous la ligne 2 remontee : son bas (162 + 64) moins sa hauteur.
+    assert.equal(drop.settle, 162 + 64 - 64);
+  });
+
+  it('remonter du dernier rang au premier, avec un aller-retour au milieu', () => {
+    // Haut de la carte = 234 + dy ; milieux : ligne 2 a 194, ligne 1 a 113, ligne 0 a 32.
+    const { drop, onDrop } = replay(3, [-10, -30, -45, -60, -50, -90, -130, -180, -210, -240]);
+    assert.deepEqual(onDrop, [[3, 0]]);
+    assert.equal(drop.settle, -234);
+  });
+
+  it('un lacher sur place apres un aller-retour rapporte to === from, sans erreur', () => {
+    const { drop } = replay(1, [20, 45, 30, 5, 0]);
+    assert.deepEqual([drop.from, drop.to], [1, 1]);
+    assert.equal(deadMove(drop, 45, 82), false);
+  });
+});
+
+describe('les auto-controles du lacher', () => {
+  const held = ROWS[1] as Slot;
+
+  it('un CANCELLED juste apres le leve est rapporte comme annule ET vole, jamais avale', () => {
+    const lifted = lift(1).state as DragState;
+    const step = reduce(lifted, { type: 'cancel' });
+    const drop = step.drop as DragDrop;
+    assert.equal(drop.cancelled, true);
+    assert.deepEqual([drop.from, drop.to], [1, 1]);
+    assert.equal(stolen(drop, 40), true);
+    assert.equal(stolen(drop, STEAL_MS - 1), true);
+    // Plus tard, c est l utilisateur qui a annule (ou le systeme, mais on ne le sait pas).
+    assert.equal(stolen(drop, STEAL_MS), false);
+    // Un lacher normal n est jamais un vol.
+    const released = reduce(lifted, { type: 'release' }).drop as DragDrop;
+    assert.equal(stolen(released, 40), false);
+  });
+
+  it('un lacher sur place apres avoir parcouru plus que la ligne : les deplacements sont morts', () => {
+    const lifted = lift(1).state as DragState;
+    // Aucun `move` n a atteint la machine, mais le doigt a parcouru 200 pt.
+    const drop = reduce(lifted, { type: 'release' }).drop as DragDrop;
+    assert.equal(deadMove(drop, 200, held.h), true);
+    // Un petit tremblement sous la hauteur de la ligne : rien d anormal.
+    assert.equal(deadMove(drop, held.h, held.h), false);
+    // Une annulation n est pas jugee : le systeme a pu reprendre le toucher.
+    const cancelled = reduce(lifted, { type: 'cancel' }).drop as DragDrop;
+    assert.equal(deadMove(cancelled, 200, held.h), false);
+    // Et quand le rang a change, rien a dire.
+    const moved = reduce(lifted, { type: 'move', dy: 200 }).state as DragState;
+    const landed = reduce(moved, { type: 'release' }).drop as DragDrop;
+    assert.equal(landed.to, 2);
+    assert.equal(deadMove(landed, 200, held.h), false);
   });
 });

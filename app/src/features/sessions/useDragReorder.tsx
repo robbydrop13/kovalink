@@ -1,32 +1,36 @@
-// Glisser-déposer d'une liste verticale, sans reanimated : un `PanGestureHandler` par
-// ligne qui s'active après 300 ms sans bouger, un seul `Animated.Value` natif pour la
-// translation du doigt, et une valeur par ligne pour l'écart que les autres ouvrent. Les
-// transformations restent sur le pilote natif ; le JS ne fait que rejouer la machine de
-// `dragMachine.ts` (rang visé, écarts, place du squelette).
+// Glisser-déposer d'une liste verticale, sans reanimated : un `Gesture.Pan()` par ligne
+// (API moderne de gesture-handler, `GestureDetector`) qui s'active après 300 ms sans
+// bouger. Ses rappels tournent sur le fil JS : à chaque déplacement, le JS pose la
+// translation du doigt sur une `Animated.Value` (pilote JS) qui déplace la copie flottante,
+// et rejoue la machine de `dragMachine.ts` (rang visé, écarts, place du squelette). Les
+// écarts des autres lignes et le squelette restent sur le pilote natif : ce sont des
+// `timing` lancés depuis le JS, jamais des événements.
 //
-// La ligne tenue ne change PAS d'apparence pendant le geste, hors son opacité : sur iOS avec
-// Fabric, un `zIndex` posé en plein geste réordonne les vues natives (retrait puis
-// réinsertion de la ligne), UIKit annule alors le toucher et le geste est CANCELLED avant
-// le premier déplacement. La carte qui flotte est donc une COPIE visuelle (`ghost`), montée
-// en dernier enfant du conteneur, donc peinte au dessus des autres ; la vraie ligne reste en
-// place, invisible, et garde le doigt. Un squelette en pointillé, premier enfant du
-// conteneur, marque la place où la carte se posera.
+// Pourquoi pas `Animated.event(..., { useNativeDriver: true, listener })` sur le
+// `PanGestureHandler` historique : sur Fabric (RN 0.86, gesture-handler 2.32) l'événement
+// `onGestureHandlerEvent` d'un tel handler n'est remis qu'au module animé natif
+// (`RNGestureHandlerManager.mm`, `sendEventForNativeAnimatedEvent` : seulement
+// `notifyObserversOfEvent`, jamais la file JS) ; le `listener` ne tournait jamais, le rang
+// visé ne changeait pas, et au lâcher `to === from` : rien ne partait.
+//
+// La ligne tenue ne change PAS d'apparence pendant le geste, hors son opacité, et la
+// liste des enfants du conteneur ne change pas non plus au levé : sur iOS avec Fabric,
+// tout enfant dont l'index change (un `zIndex`, ou un frère inséré AVANT lui) est retiré
+// puis réinséré dans les vues natives ; quitter la fenêtre annule le toucher, et le geste
+// est CANCELLED avant le premier déplacement. Le squelette (premier enfant) et la copie
+// (dernier enfant) sont donc montés en permanence, vides et invisibles au repos : le levé
+// ne fait que changer leurs propriétés. La vraie ligne reste en place, invisible, et
+// garde le doigt ; la copie flotte au dessus des autres.
 //
 // La liste rendue pendant le geste est figée par l'écran (les instantanés continuent
 // d'arriver) : les clés sont stables, la géométrie vient de `onLayout` et se remet à jour
 // si les lignes changent de taille (le repli des onglets au levé).
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef, type ReactNode, type RefObject } from 'react';
 import { Animated, Easing, type LayoutChangeEvent, type ScrollView, type StyleProp, type ViewStyle } from 'react-native';
-import {
-  State,
-  type HandlerStateChangeEvent,
-  type PanGestureHandlerEventPayload,
-  type PanGestureHandlerGestureEvent,
-  type PanGestureHandlerProps,
-} from 'react-native-gesture-handler';
+import { Gesture, type PanGesture } from 'react-native-gesture-handler';
 import { colors, motion } from '@/theme';
 import { ImpactStyle, NotifyType, impact, notify, selection } from '@/utils/haptics';
-import { reduce, type DragFrame, type DragState } from './dragMachine';
+import { deadMove, reduce, stolen, type DragFrame, type DragState } from './dragMachine';
 import type { Slot } from './dragSlots';
 
 /** Ce que l'écran prête à la liste pour faire défiler pendant le geste. */
@@ -43,6 +47,8 @@ export interface DragScroll {
 
 export const DragScrollContext = createContext<DragScroll | null>(null);
 
+/** Tenir le doigt immobile ce temps soulève la ligne. */
+const LONG_PRESS_MS = 300;
 /** Tenir le doigt à moins de 72 pt d'un bord fait défiler, de 2 à 10 pt par image. */
 const EDGE_PT = 72;
 const STEP_MIN = 2;
@@ -51,25 +57,23 @@ const STEP_MAX = 10;
 const RUBBER_IN = 200;
 const RUBBER_OUT = 48;
 const SETTLE_MS = 180;
-/**
- * Un CANCELLED dans les 150 ms qui suivent l'activation n'est pas un geste de l'utilisateur :
- * c'est le système qui a repris le toucher (défilement, remontage). On remet en place sans
- * bruit, aucun retour haptique de pose.
- */
-const STEAL_MS = 150;
+const PLACEHOLDER_OPACITY = 0.6;
+/** Les diagnostics du geste, dans le journal de l'app (aucun canal persistant à ce jour). */
+const LOG_PREFIX = '[KovaLink drag]';
 
 export interface DragList<K extends string | number> {
   active: K | null;
-  handlerProps: (key: K) => PanGestureHandlerProps;
+  /** Le geste d'une ligne : à donner à un `GestureDetector` autour de sa zone de prise. */
+  gesture: (key: K) => PanGesture;
   itemStyle: (key: K) => Animated.WithAnimatedValue<ViewStyle>;
   onItemLayout: (key: K) => (e: LayoutChangeEvent) => void;
-  /** Le squelette de la place visée : à rendre PREMIER enfant du conteneur. */
+  /** Le squelette de la place visée : à rendre PREMIER enfant du conteneur, toujours. */
   placeholder: ReactNode;
   /**
-   * La copie qui flotte sous le doigt : à appeler DERNIER enfant du conteneur, dans le JSX.
-   * Une fonction, pas un nœud : `opts.ghost` n'est ainsi appelé qu'une fois le rendu de
-   * l'écran écrit en entier, jamais au milieu de ses déclarations (sur Hermes, `const`
-   * devient `var` : une fonction déclarée plus bas y vaudrait encore `undefined`).
+   * La copie qui flotte sous le doigt : à appeler DERNIER enfant du conteneur, dans le JSX,
+   * toujours. Une fonction, pas un nœud : `opts.ghost` n'est ainsi appelé qu'une fois le
+   * rendu de l'écran écrit en entier, jamais au milieu de ses déclarations (sur Hermes,
+   * `const` devient `var` : une fonction déclarée plus bas y vaudrait encore `undefined`).
    */
   ghost: () => ReactNode;
 }
@@ -102,7 +106,7 @@ interface Lifted<K> {
   bounds: DragState['bounds'];
 }
 
-/** L'état d'un geste en cours, hors React : lu et écrit par les événements natifs seulement. */
+/** L'état d'un geste en cours, hors React : lu et écrit par les rappels du geste seulement. */
 interface Drag<K> {
   keys: K[];
   state: DragState;
@@ -113,6 +117,8 @@ interface Drag<K> {
   /** Défilement automatique cumulé pendant le geste, en pt de contenu. */
   shift: number;
   absoluteY: number;
+  /** Plus grand |déplacement| vu pendant le geste : l'auto-contrôle du lâcher s'en sert. */
+  travel: number;
   rafId: number | null;
   /** Une relecture de la géométrie est programmée (les lignes ont changé de taille). */
   relayoutId: number | null;
@@ -140,10 +146,13 @@ function edgeDepth(absoluteY: number, viewport: { top: number; height: number })
 export function useDragReorder<K extends string | number>(opts: Options<K>): DragList<K> {
   const scrollContext = useContext(DragScrollContext);
   const scroll = opts.scroll ?? scrollContext;
+  // Les valeurs de la copie flottante : pilote JS, toutes (un même nœud ne mélange pas les
+  // deux pilotes). Une seule vue, posée à chaque événement du doigt : c'est peu.
   const [dragY] = useState(() => new Animated.Value(0));
   const [scrollShift] = useState(() => new Animated.Value(0));
   const [scale] = useState(() => new Animated.Value(1));
   const [opacity] = useState(() => new Animated.Value(1));
+  // Le squelette et les écarts des autres lignes : pilote natif, des `timing` lancés du JS.
   const [placeholderY] = useState(() => new Animated.Value(0));
   const [lifted, setLifted] = useState<Lifted<K> | null>(null);
   /** Les écarts des autres lignes : un jeu neuf à chaque lâcher, remis à zéro par le rendu. */
@@ -158,8 +167,8 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     return new Map(keys.map((k) => [k, new Animated.Value(0)] as const));
   }, [keys, generation]);
 
-  // Les valeurs du doigt ne sont remises à zéro qu'une fois la copie démontée (après le
-  // rendu du nouvel ordre) : les remettre avant ferait sauter la carte à son ancienne place.
+  // Les valeurs du doigt ne sont remises à zéro qu'une fois la copie vidée (après le rendu
+  // du nouvel ordre) : les remettre avant ferait sauter la carte à son ancienne place.
   useEffect(() => {
     if (lifted !== null) return;
     dragY.setValue(0);
@@ -238,24 +247,22 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     [scroll, scrollShift, retarget],
   );
 
+  /** Un déplacement du doigt, sur le fil JS : la copie suit, la machine rejoue. */
   const onMove = useCallback(
-    (e: PanGestureHandlerGestureEvent) => {
+    (translationY: number, absoluteY: number) => {
       const d = drag.current;
       if (!d) return;
-      d.translationY = e.nativeEvent.translationY;
-      d.absoluteY = e.nativeEvent.absoluteY;
+      // Le défilement au doigt est coupé au premier déplacement, pas au levé : le levé ne
+      // touche ainsi à rien d'autre que la ligne tenue (voir l'en-tête du fichier).
+      if (d.travel === 0 && scroll) scroll.lock(true);
+      d.translationY = translationY;
+      d.absoluteY = absoluteY;
+      d.travel = Math.max(d.travel, Math.abs(translationY + d.shift));
+      dragY.setValue(translationY);
       retarget(d);
       autoScroll(d);
     },
-    [retarget, autoScroll],
-  );
-
-  // Un seul événement animé, passé à tous les gestionnaires : seul l'actif émet. Le
-  // `listener` ne tourne que sur un événement natif, jamais pendant un rendu.
-  const onGestureEvent = useMemo(
-    // eslint-disable-next-line react-hooks/refs
-    () => Animated.event([{ nativeEvent: { translationY: dragY } }], { useNativeDriver: true, listener: onMove }),
-    [dragY, onMove],
+    [scroll, dragY, retarget, autoScroll],
   );
 
   const rangeOf = (from: number): [number, number] => opts.range?.(from) ?? [0, keys.length - 1];
@@ -267,7 +274,7 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     const step = reduce(null, { type: 'lift', index: from, slots: keys.map((k) => slots.current.get(k)), range: rangeOf(from), gap: opts.gap });
     if (!step.state || !step.frame) return;
     const held = step.state.slots[from] as Slot;
-    // Le squelette naît à la place d'origine, avant son premier rendu.
+    // Le squelette naît à la place d'origine, avant d'apparaître.
     placeholderY.setValue(step.frame.placeholderY);
     drag.current = {
       keys: [...keys],
@@ -276,43 +283,55 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
       translationY: 0,
       shift: 0,
       absoluteY: 0,
+      travel: 0,
       rafId: null,
       relayoutId: null,
       liftedAt: Date.now(),
     };
     setLifted({ key, y: held.y, h: held.h, bounds: step.state.bounds });
     if (scroll) {
-      scroll.lock(true);
+      const view = scroll.viewport;
       scroll.scrollRef.current?.getNativeScrollRef()?.measureInWindow((_x, y, _w, h) => {
-        scroll.viewport.current = { top: y, height: h };
+        view.current = { top: y, height: h };
       });
     }
     impact(ImpactStyle.Medium);
     Animated.parallel([
-      Animated.spring(scale, { toValue: 1.02, damping: 18, stiffness: 220, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 0.94, duration: motion.fast, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1.02, damping: 18, stiffness: 220, useNativeDriver: false }),
+      Animated.timing(opacity, { toValue: 0.94, duration: motion.fast, useNativeDriver: false }),
     ]).start();
     opts.onLift?.();
   };
 
-  /** `silent` : le système a repris le toucher, on remet en place sans retour haptique. */
-  const finish = (cancelled: boolean, silent = false) => {
+  const finish = (cancelled: boolean) => {
     const d = drag.current;
     if (!d) return;
     stopAutoScroll(d);
+    const held = d.state.slots[d.state.from] as Slot;
     const step = reduce(d.state, { type: cancelled ? 'cancel' : 'release' });
     if (!step.drop) return;
     if (step.frame) applyFrame(d, step.frame);
     const { from, to, settle } = step.drop;
+    const elapsed = Date.now() - d.liftedAt;
+    // Le système a repris le toucher juste après le levé (défilement, remontage) : ce n'est
+    // pas un geste de l'utilisateur, on remet en place sans retour haptique. Dit dans le
+    // journal : c'est la classe de bug qui a déjà coûté deux correctifs.
+    const silent = stolen(step.drop, elapsed);
+    if (silent) console.warn(`${LOG_PREFIX} cancelled ${elapsed} ms after lift, the system took the touch back`);
+    // Le doigt a parcouru plus que la hauteur de la ligne sans jamais changer de rang :
+    // les déplacements n'atteignent pas la machine. Visible dans le journal, pas au doigt.
+    if (deadMove(step.drop, d.travel, held.h)) {
+      console.warn(`${LOG_PREFIX} travelled ${Math.round(d.travel)} pt over a ${Math.round(held.h)} pt row but the target never changed`);
+    }
     Animated.parallel([
-      Animated.timing(dragY, { toValue: settle - d.shift, duration: SETTLE_MS, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.timing(scale, { toValue: 1, duration: SETTLE_MS, useNativeDriver: true }),
-      Animated.timing(opacity, { toValue: 1, duration: SETTLE_MS, useNativeDriver: true }),
+      Animated.timing(dragY, { toValue: settle - d.shift, duration: SETTLE_MS, easing: Easing.out(Easing.quad), useNativeDriver: false }),
+      Animated.timing(scale, { toValue: 1, duration: SETTLE_MS, useNativeDriver: false }),
+      Animated.timing(opacity, { toValue: 1, duration: SETTLE_MS, useNativeDriver: false }),
     ]).start(() => {
       if (drag.current !== d) return;
       drag.current = null;
       // Le même tour : les transformations disparaissent avec le rendu du nouvel ordre (un
-      // jeu d'écarts neuf, la copie démontée, la vraie ligne de nouveau visible).
+      // jeu d'écarts neuf, la copie vidée, la vraie ligne de nouveau visible).
       setGeneration((g) => g + 1);
       setLifted(null);
       scroll?.lock(false);
@@ -323,28 +342,24 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     });
   };
 
-  const onStateChange = (key: K, e: HandlerStateChangeEvent<PanGestureHandlerEventPayload>) => {
-    const { state } = e.nativeEvent;
-    if (state === State.ACTIVE) start(key);
-    else if (state === State.END) finish(false);
-    else if (state === State.CANCELLED || state === State.FAILED) {
-      const d = drag.current;
-      finish(true, d !== null && Date.now() - d.liftedAt < STEAL_MS);
-    }
-  };
-
-  const handlerProps = (key: K): PanGestureHandlerProps => {
+  // Un geste par ligne, refait à chaque rendu : `GestureDetector` garde le handler natif
+  // et ne met à jour que sa configuration et ses rappels. Sans reanimated les rappels
+  // tournent sur le fil JS ; `runOnJS(true)` le dit explicitement.
+  const gesture = (key: K): PanGesture => {
     const index = keys.indexOf(key);
     const range = rangeOf(index);
-    // Le gestionnaire actif reste actif : couper `enabled` en plein geste l'annulerait.
-    return {
-      enabled: active === key || (active === null && opts.enabled && index >= 0 && range[0] < range[1]),
-      activateAfterLongPress: 300,
-      maxPointers: 1,
-      shouldCancelWhenOutside: false,
-      onGestureEvent,
-      onHandlerStateChange: (e) => onStateChange(key, e),
-    };
+    // Le geste actif reste actif : couper `enabled` en plein geste l'annulerait.
+    const enabled = active === key || (active === null && opts.enabled && index >= 0 && range[0] < range[1]);
+    return Gesture.Pan()
+      .enabled(enabled)
+      .activateAfterLongPress(LONG_PRESS_MS)
+      .maxPointers(1)
+      .shouldCancelWhenOutside(false)
+      .runOnJS(true)
+      .onStart(() => start(key))
+      .onUpdate((e) => onMove(e.translationY, e.absoluteY))
+      // `success` est faux quand le geste actif est CANCELLED ou FAILED.
+      .onEnd((_e, success) => finish(!success));
   };
 
   // La ligne tenue reste en place, invisible : la copie la remplace à l'écran. Aucune autre
@@ -386,24 +401,31 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     });
   };
 
-  const placeholder = lifted ? (
+  // Monté en permanence (voir l'en-tête) : au repos, sans hauteur et invisible.
+  const placeholder = (
     <Animated.View
       pointerEvents="none"
-      style={[styles.placeholder, { height: lifted.h, borderRadius: opts.radius, transform: [{ translateY: placeholderY }] }]}
+      style={[
+        styles.placeholder,
+        { height: lifted?.h ?? 0, opacity: lifted ? PLACEHOLDER_OPACITY : 0, borderRadius: opts.radius, transform: [{ translateY: placeholderY }] },
+      ]}
     />
-  ) : null;
+  );
 
-  const ghost = () =>
-    lifted && translate ? (
-      <Animated.View
-        pointerEvents="none"
-        style={[styles.ghost, { top: lifted.y, borderRadius: opts.radius, transform: [{ translateY: translate }, { scale }], opacity }]}
-      >
-        {opts.ghost(lifted.key)}
-      </Animated.View>
-    ) : null;
+  // Montée en permanence aussi : vide et invisible au repos, remplie au levé.
+  const ghost = () => (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.ghost,
+        { top: lifted?.y ?? 0, borderRadius: opts.radius, transform: [{ translateY: translate ?? 0 }, { scale }], opacity: lifted ? opacity : 0 },
+      ]}
+    >
+      {lifted ? opts.ghost(lifted.key) : null}
+    </Animated.View>
+  );
 
-  return { active, handlerProps, itemStyle, onItemLayout, placeholder, ghost };
+  return { active, gesture, itemStyle, onItemLayout, placeholder, ghost };
 }
 
 /** Une ligne de la liste : reçoit son écart, et s'efface quand elle est tenue (la copie flotte). */
@@ -446,6 +468,5 @@ const styles = {
     borderStyle: 'dashed',
     borderColor: colors.border.strong,
     backgroundColor: colors.bg.raised,
-    opacity: 0.6,
   } satisfies ViewStyle,
 };

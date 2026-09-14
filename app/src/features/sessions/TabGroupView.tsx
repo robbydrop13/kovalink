@@ -7,10 +7,12 @@
 //
 // Tenir une ligne 300 ms la soulève : on la glisse à un autre rang de l'onglet, le Mac
 // suit. Tenir la partie gauche de l'en-tête soulève l'onglet entier (geste porté par
-// l'écran, qui passe `dragHandle`) ; le `+` reste hors de la zone de prise.
+// l'écran, qui passe `dragHandle`) ; le `+` reste hors de la zone de prise. Le squelette et
+// la copie flottante de la liste sont toujours rendus (premier et dernier enfant) : la
+// liste des enfants ne change pas au levé, sinon iOS annulerait le toucher.
 import { useMemo } from 'react';
-import { AccessibilityInfo, Animated, Pressable, StyleSheet, View } from 'react-native';
-import { PanGestureHandler, type PanGestureHandlerProps } from 'react-native-gesture-handler';
+import { AccessibilityInfo, Pressable, StyleSheet, View } from 'react-native';
+import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
 import type { Pane, Prompt } from '@/protocol';
 import { colors, radius, space } from '@/theme';
 import { Icon } from '@/ui/Icon';
@@ -43,7 +45,7 @@ interface Props {
   interruptDisabled: boolean;
   interruptLabel: (paneId: number) => string;
   /** Geste de l'écran pour déplacer l'onglet : posé sur la partie gauche de l'en-tête. */
-  dragHandle?: PanGestureHandlerProps | undefined;
+  dragHandle?: PanGesture | undefined;
   /** VoiceOver : déplacer l'onglet d'un rang. */
   tabReorder?: ReorderActions | undefined;
   /** Liaison dégradée : aucun déplacement de pane ne part. */
@@ -175,11 +177,11 @@ export function TabGroupView({
         style={({ pressed }) => [styles.header, pressed && styles.headerPressed]}
       >
         {dragHandle ? (
-          <PanGestureHandler {...dragHandle}>
-            <Animated.View collapsable={false} style={styles.grab}>
+          <GestureDetector gesture={dragHandle}>
+            <View collapsable={false} style={styles.grab}>
               {header}
-            </Animated.View>
-          </PanGestureHandler>
+            </View>
+          </GestureDetector>
         ) : (
           <View style={styles.grab}>{header}</View>
         )}
@@ -198,13 +200,13 @@ export function TabGroupView({
           {paneDrag.placeholder}
           {group.panes.map((pane: Pane, index: number) => (
             <DragItem key={pane.id} list={paneDrag} id={pane.id}>
-              <PanGestureHandler {...paneDrag.handlerProps(pane.id)}>
-                <Animated.View collapsable={false}>
+              <GestureDetector gesture={paneDrag.gesture(pane.id)}>
+                <View collapsable={false}>
                   <SwipeRow actions={swipeFor(pane, group)} enabled={!dragLocked && paneDrag.active === null}>
                     {row(pane, index)}
                   </SwipeRow>
-                </Animated.View>
-              </PanGestureHandler>
+                </View>
+              </GestureDetector>
             </DragItem>
           ))}
           {paneDrag.ghost()}
