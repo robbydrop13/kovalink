@@ -31,6 +31,7 @@ import {
   type PaneCommandsResponse,
   type PaneReorderResponse,
   type PaneStartClaudeResponse,
+  type PaneTerminalRequest,
   type PairClaimRequest,
   type PairClaimResponse,
   type Prompt,
@@ -262,6 +263,15 @@ export function fetchCommands(paneId: number, timeoutMs = 6000): Promise<PaneCom
  */
 export function startClaude(paneId: number, timeoutMs = 10_000): Promise<PaneStartClaudeResponse> {
   return request(ROUTES.paneStartClaude(paneId), { method: 'POST', timeoutMs });
+}
+
+/**
+ * Saisie dans le terminal du pane : une ligne suivie de l'Entrée, ou des touches de la table
+ * fermée. Le daemon passe par KeyGate et refuse (403 `FORBIDDEN_KEY`) quand une question
+ * parsée attend ses boutons.
+ */
+export function postTerminalInput(paneId: number, body: PaneTerminalRequest, timeoutMs = 8000): Promise<ActionResponse> {
+  return request(ROUTES.paneTerminal(paneId), { method: 'POST', body, timeoutMs });
 }
 
 /** Projets récents de Kova, pour l'écran « Nouvelle session » (Cmd+O). */

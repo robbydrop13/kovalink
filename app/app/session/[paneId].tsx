@@ -24,7 +24,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ImpactStyle, NotifyType, impact, notify } from '@/utils/haptics';
 
-import { attachmentsDir, indexToolResults, type PromptOption, type Turn } from '@/protocol';
+import { attachmentsDir, indexToolResults, type KeyName, type PromptOption, type Turn } from '@/protocol';
 import { colors, layout, radius, space } from '@/theme';
 import { Button, LinkAction } from '@/ui/Button';
 import { LinkPill } from '@/ui/LinkPill';
@@ -43,6 +43,7 @@ import { totalSize, type Attachment } from '@/features/chat/attachments';
 import { ValidationBar } from '@/features/prompt/ValidationBar';
 import { MonospaceFallback } from '@/features/terminal/MonospaceFallback';
 import { NumericKeypad } from '@/features/terminal/NumericKeypad';
+import { TerminalInputBar } from '@/features/terminal/TerminalInputBar';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { followSessionOnMac, showPaneMenu } from '@/features/sessions/openOnMac';
 import { paneHref, paneLabel } from '@/features/sessions/SessionRow';
@@ -60,7 +61,7 @@ import {
   requestScreen,
   setVisiblePane,
 } from '@/net/connection';
-import { fetchTurns, startClaude } from '@/net/http';
+import { fetchTurns, postTerminalInput, startClaude } from '@/net/http';
 import { LINK_LABEL, isDegraded, useConnection } from '@/store/connection';
 import { paneById, usePanes } from '@/store/panes';
 import { groupByTab, isBareShell } from '@/features/sessions/tabGroups';
@@ -415,15 +416,61 @@ export default function SessionScreen() {
   const onStartClaude = useCallback(async () => {
     impact(ImpactStyle.Medium);
     setStartRequest(paneId);
-    try {
-      const res = await startClaude(paneId);
-      if (!res.launched) throw new Error('not launched');
-    } catch {
+    // La cause réelle du Mac (409 `PANE_BUSY`, Kova injoignable, délai), jamais un silence.
+    const reason = await startClaude(paneId).then(
+      (res) => (res.launched ? null : (res.reason ?? t.sessionReasonUnknown)),
+      (e: unknown) => (e instanceof Error ? e.message : String(e)),
+    );
+    if (reason !== null) {
       setStartRequest(null);
       notify(NotifyType.Error);
-      setToast(t.sessionStartClaudeFailed);
+      setToast(t.sessionStartClaudeFailed(reason));
     }
   }, [paneId]);
+
+  // Saisie de la vue Term : ligne + Entrée, ou une touche de la table fermée. L'écran est
+  // relu juste après, pour voir l'effet sans attendre le prochain rafraîchissement de 2 s.
+  // Hors ligne ou pane fermé : instantané figé, saisie désactivée. Expression inline : un appel
+  // de fonction avec un objet ici fait renoncer le React Compiler à tout le composant.
+  const termEnabled = pane !== undefined && !degraded && !closed;
+  const refreshScreenSoon = useCallback(() => {
+    setTimeout(() => requestScreen(paneId), 250);
+    setTimeout(() => requestScreen(paneId), 1_000);
+  }, [paneId]);
+  const terminalFailed = useCallback((e: unknown) => {
+    notify(NotifyType.Error);
+    bootWarn('terminal input failed', e);
+    setToast(t.terminalInputFailed(e instanceof Error ? e.message : String(e)));
+  }, []);
+  const onTerminalLine = useCallback(
+    async (text: string): Promise<boolean> => {
+      markActed();
+      try {
+        const res = await postTerminalInput(paneId, { text });
+        refreshScreenSoon();
+        if (!res.applied) {
+          setToast(res.reason === 'became_awaiting' ? t.terminalInputNotApplied : refusalLabel(res.reason));
+          if (res.reason === 'became_awaiting') peek(paneId);
+          return false;
+        }
+        return true;
+      } catch (e) {
+        terminalFailed(e);
+        return false;
+      }
+    },
+    [paneId, markActed, refreshScreenSoon, terminalFailed],
+  );
+  const onTerminalKey = useCallback(
+    (key: KeyName) => {
+      markActed();
+      postTerminalInput(paneId, { keys: [key] }).then((res) => {
+        refreshScreenSoon();
+        if (!res.applied) setToast(refusalLabel(res.reason));
+      }, terminalFailed);
+    },
+    [paneId, markActed, refreshScreenSoon, terminalFailed],
+  );
 
   // Les trois derniers échanges d'abord ; l'historique au dessus sur demande. Le plancher
   // est posé au premier rendu de la session et ne remonte jamais : un nouvel envoi ajoute
@@ -1075,6 +1122,9 @@ export default function SessionScreen() {
       ) : null}
 
       <View style={{ paddingBottom: insets.bottom }}>
+        {view === 'term' ? (
+          <TerminalInputBar enabled={termEnabled} onSendLine={onTerminalLine} onKey={onTerminalKey} />
+        ) : (
         <MessageBar
           paneId={paneId}
           prompt={prompt}
@@ -1093,6 +1143,7 @@ export default function SessionScreen() {
           onLockedTap={() => setToast(t.sessionAnswerFirst)}
           onNotice={setToast}
         />
+        )}
       </View>
     </View>
   );
