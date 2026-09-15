@@ -190,7 +190,7 @@ describe('reorderPane', () => {
   });
 
   it('l instantane liste les panes dans l ordre de Kova, jamais par etat : le rang de l app est celui de swap-pane', async () => {
-    // Le cas du 14 septembre 2026 : onglet TrailCoach, pane 11 (inactif) puis 12 (travaille)
+    // Le cas du 14 septembre 2026 : onglet RunCoach, pane 11 (inactif) puis 12 (travaille)
     // dans l'ordre de Kova. Trie par etat, l'instantane montrait 12 avant 11 ; l'app, qui
     // affiche cet ordre, envoyait « 11 au rang 0 » pour un glisser vers le haut, et la
     // chaine d'echanges (calculee sur l'ordre de Kova, ou 11 est deja premier) etait vide.

@@ -290,9 +290,9 @@ describe('ouverture en ecriture : O_NOFOLLOW et comparaison d inode', () => {
 
 describe('abreviation d affichage', () => {
   it('remplace le dossier personnel par ~, et jamais un prefixe partiel', () => {
-    assert.equal(abbreviate('/Users/robin/dev', '/Users/robin'), '~/dev');
-    assert.equal(abbreviate('/Users/robin', '/Users/robin'), '~');
-    assert.equal(abbreviate('/Users/robinson/dev', '/Users/robin'), '/Users/robinson/dev');
-    assert.equal(abbreviate('/etc/hosts', '/Users/robin'), '/etc/hosts');
+    assert.equal(abbreviate('/Users/alice/dev', '/Users/alice'), '~/dev');
+    assert.equal(abbreviate('/Users/alice', '/Users/alice'), '~');
+    assert.equal(abbreviate('/Users/aliceson/dev', '/Users/alice'), '/Users/aliceson/dev');
+    assert.equal(abbreviate('/etc/hosts', '/Users/alice'), '/etc/hosts');
   });
 });

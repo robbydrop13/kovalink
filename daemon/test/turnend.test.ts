@@ -17,7 +17,7 @@ const { TurnEndDetector, DEBOUNCE_MS, formatDuration, formatTurnEndSubtitle } = 
 const { DEFAULT_CONFIG } = await import('../src/config.js');
 const { projectSlug } = await import('../src/paths.js');
 
-const CWD = '/Users/robin/dev/projet';
+const CWD = '/Users/alice/dev/projet';
 const SESSION = 'sess-42';
 
 function writeTranscript(lines: unknown[]): void {

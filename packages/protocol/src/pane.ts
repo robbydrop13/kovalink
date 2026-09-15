@@ -62,7 +62,7 @@ export interface Pane {
    * resout en lisant `list-tabs` et `list-panes` au meme instant. C'est la cle de
    * regroupement de l'app ; `(window, tab)` n'est qu'un repli quand il vaut `null`.
    * Une jointure sur l'index entre deux listes lues a des moments differents nommait
-   * l'onglet « Link » « Perso » apres un reordonnancement sur le Mac.
+   * l'onglet « Link » « Notes » apres un reordonnancement sur le Mac.
    */
   tabId: number | null;
   /**

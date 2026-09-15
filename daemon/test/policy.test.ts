@@ -27,7 +27,7 @@ const pane: Pane = {
   id: 66,
   window: 0,
   tab: 1,
-  cwd: '/Users/robin/dev/projet',
+  cwd: '/Users/alice/dev/projet',
   title: 'cc',
   focused: false,
   pid: 1,

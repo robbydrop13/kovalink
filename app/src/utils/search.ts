@@ -1,6 +1,6 @@
 // Recherche des palettes : sans accents ni casse, tous les mots requis. Pur, testé.
 
-/** « trail » trouve « TrailCoach », « lien » ne trouve rien. */
+/** « run » trouve « RunCoach », « lien » ne trouve rien. */
 export function fold(s: string): string {
   return s
     .normalize('NFD')

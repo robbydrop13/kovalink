@@ -149,7 +149,7 @@ passer à la suivante, segments de progression en haut.
 +---------------------------------------------+
 |  ===  ===  ---  ---  ---            [ x ]   | 44pt segments (2 sur 5 lus), Close
 +---------------------------------------------+
-| * Perso · claude                Waiting     | 36pt identité + état, fond awaitingBg
+| * Notes · claude                Waiting     | 36pt identité + état, fond awaitingBg
 +---------------------------------------------+
 |                                             |
 |  Dernier échange                            |
@@ -168,7 +168,7 @@ passer à la suivante, segments de progression en haut.
 +=============================================+
 |  [ 1 Yes ]   [ 2 Yes, always ]   [ 3 No ]   | barre de validation (existante)
 +---------------------------------------------+
-|  [ Message Perso · claude...     ]   [ ^ ]  | 52pt composer
+|  [ Message Notes · claude...     ]   [ ^ ]  | 52pt composer
 +---------------------------------------------+
 |                                        34pt |
 +---------------------------------------------+
@@ -217,7 +217,7 @@ lus, avec un bouton primaire de 60 pt qui lance le tour.
 +---------------------------------------------+
 |  [ (Q) Search unread...                  ]  | 44pt
 +---------------------------------------------+
-|  * Perso  claude                  Waiting   | ligne palette, badge status.awaiting
+|  * Notes  claude                  Waiting   | ligne palette, badge status.awaiting
 |    Je vais modifier notes/2026-09.md, tu... | résumé (turn_end.summary)
 |  * Link  cc                    Done 3 min   |
 |    Trois options, une reco. J'ai écrit...   |
@@ -304,7 +304,7 @@ Fichier attendu : `app/src/features/sessions/NextPill.tsx`.
 | Contenu, état `caughtUp` | icône `check-circle` 16 pt `status.success`, libellé `All caught up` en calloutStrong `status.success`, sans badge |
 | Contenu, état `idle` | icône `skip-forward` 16 pt `text.secondary`, libellé `Next idle` en calloutStrong `text.secondary`, badge en `bg.pressed` / `text.secondary` |
 | Pressé | fond `bg.pressed`, `spring.press` sur l'échelle (1,00 vers 0,97) |
-| Accessibilité | `accessibilityRole="button"`, label `Next unread session, 3 left`, hint `Opens Perso, claude` (la destination, calculée au rendu) |
+| Accessibilité | `accessibilityRole="button"`, label `Next unread session, 3 left`, hint `Opens Notes, claude` (la destination, calculée au rendu) |
 
 Relation avec le bouton « retour en bas » du design 4.2 (44 pt, chevron bas, même coin) :
 quand les deux sont visibles, le bouton de retour en bas se place **au dessus** du
@@ -500,7 +500,7 @@ avec ses tests, puis le store, puis le bouton dans l'écran de session, puis la 
 | `caughtUp` | `Caught up` |
 | `nothingLeftToRead` | `Nothing left to read` |
 | `nextPillA11y(n)` | `Next unread session, 3 left` |
-| `nextPillHint(tab, title)` | `Opens Perso, claude` |
+| `nextPillHint(tab, title)` | `Opens Notes, claude` |
 | `composerPlaceholderFor(tab, title)` | `Message Link · cc…` |
 | `summaryUnread(n)` | `3 unread` |
 | `panesUnreadTitle` (option C, plus tard) | `Unread` |

@@ -52,7 +52,7 @@ describe('protocole : forme des chemins de pieces jointes', () => {
     assert.equal(attachmentsSessionOf(`${ATTACHMENTS_ROOT}/a/b`), null);
     assert.equal(attachmentsSessionOf(`${ATTACHMENTS_ROOT}/.ssh`), null);
     assert.equal(attachmentsSessionOf('/tmp/kovalink/attachmentsX/a'), null);
-    assert.equal(attachmentsSessionOf('/Users/robin/attachments/a'), null);
+    assert.equal(attachmentsSessionOf('/Users/alice/attachments/a'), null);
   });
 
   it('horodate le nom et ne garde que le dernier segment', () => {

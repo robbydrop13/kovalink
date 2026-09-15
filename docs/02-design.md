@@ -606,17 +606,17 @@ Le tableau de bord. Il répond à une seule question : "qu'est-ce qui m'attend ?
 |                                             |
 |  TRAVAILLE · 1                              |
 | +-----------------------------------------+ |
-| | #  Perso · claude              en cours | |
+| | #  Notes · claude              en cours | |
 | |    Projet A                             | |
-| |    Read ~/Perso/notes.md                | | dernière action, live
+| |    Read ~/notes/todo.md                 | | dernière action, live
 | |                          Interrompre    | | 32pt secondaire (S4)
 | +-----------------------------------------+ | 120pt
 |                                             |
 |  INACTIF · 3                                |
 | +-----------------------------------------+ |
-| | o  automation-prototype · n8n     3 h   | | 64pt
+| | o  automation-demo · n8n          3 h   | | 64pt
 | | o  Admin · claude                 1 j   | | 64pt
-| | o  claap-web · codex              2 j   | | 64pt
+| | o  web-app · codex                2 j   | | 64pt
 | +-----------------------------------------+ |
 |                                             |
 |  > FERMEES · 62                             | 44pt  repliée par défaut
@@ -1777,7 +1777,7 @@ Etape 1 : share sheet iOS       Etape 2 : extension KovaLink
                                 | +-----------------------------------+ |
                                 | | (o) link / docs         recent    | | 56pt
                                 | | ( ) Downloads           recent    | | 56pt
-                                | | ( ) Perso               signet    | | 56pt
+                                | | ( ) Notes               signet    | | 56pt
                                 | | ( ) Bureau              systeme   | | 56pt
                                 | +-----------------------------------+ |
                                 | [ Choisir un autre dossier...       ] | 48pt
@@ -2199,7 +2199,7 @@ Le cas le plus dangereux, parce que c'est celui où on peut répondre à la mauv
 - **La barre en cours n'est jamais remplacée, jamais modifiée, jamais ré-armée.** Elle continue
   de porter la question du pane courant, avec son `promptHash`.
 - Une bannière interne de 64 pt annonce le second pane, exactement comme le cas C, avec un
-  libellé qui nomme le projet : `automation-prototype attend aussi`.
+  libellé qui nomme le projet : `automation-demo attend aussi`.
 - Le compteur de la section `EN ATTENTE` s'incrémente, et le badge d'icône passe à 2.
 - Un tap sur la bannière navigue vers le second pane : la barre courante sort en `motion.exit`,
   la nouvelle entre en `entering` avec sa propre fenêtre d'armement de 400 ms. Il n'existe aucun
@@ -2360,8 +2360,8 @@ par leur teinte. C'est aussi la raison pour laquelle la position dérive de l'in
 | Bouton `Interrompre` | `Interrompre l'agent` | `Envoie Échap au pane, sans confirmation` | `button` |
 | Carte de session en attente | `link, cc, en attente depuis 2 minutes. {question tronquée}` | `Double-tapez pour ouvrir la session et répondre` | `button` |
 | Bouton `Ouvrir` d'une carte | `Ouvrir la session link cc` | | `button` |
-| Ligne en cours | `Perso, claude, en cours. Dernière action, Read notes point m d.` | | `button` |
-| Ligne inactive | `automation-prototype, n8n, inactif depuis 3 heures.` | | `button` |
+| Ligne en cours | `Notes, claude, en cours. Dernière action, Read todo point m d.` | | `button` |
+| Ligne inactive | `automation-demo, n8n, inactif depuis 3 heures.` | | `button` |
 | En-tête `FERMÉES` | `Sessions fermées, 62, replié` | `Double-tapez pour déplier` | `button`, `accessibilityState: {expanded: false}` |
 | Pastille de liaison | `Connexion directe, latence 12 millisecondes` / `Mac injoignable, dernier état à 14:32` / `iPhone hors ligne` | `Double-tapez pour ouvrir les réglages` | `button` |
 | Bulle utilisateur | `Vous, 14:32. {texte}. Envoyé.` | | `text` |
@@ -2402,7 +2402,7 @@ aucun champ de texte à annoncer sur l'écran verrouillé.
 |---|---|---|
 | Passage en `awaiting`, app ouverte, cas A | `Claude attend ta validation sur link cc` puis déplacement du focus sur la barre | assertive |
 | Passage en `awaiting`, parseur en échec | `Une question attend sur link cc, les options ne sont pas lisibles` | assertive |
-| Second `awaiting` pendant qu'une barre est montée (cas D) | `automation-prototype attend aussi` | polite, sans déplacer le focus |
+| Second `awaiting` pendant qu'une barre est montée (cas D) | `automation-demo attend aussi` | polite, sans déplacer le focus |
 | Réponse acquittée | `Réponse envoyée, option 1, Oui` | polite |
 | Refus pour hash différent | `La question a changé, ta réponse n'a pas été envoyée` | assertive |
 | Fin de tâche | `Claude a terminé sur link cc` | polite |

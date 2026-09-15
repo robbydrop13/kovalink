@@ -179,7 +179,7 @@ describe('réordonnancement en attente', () => {
   });
 
   it('le lâcher poste l identifiant du pane TENU et son rang FINAL dans l ordre affiché de l onglet', async () => {
-    // L'onglet TrailCoach (9) tel que le daemon le liste depuis le 14 septembre 2026 : l'ordre
+    // L'onglet RunCoach (9) tel que le daemon le liste depuis le 14 septembre 2026 : l'ordre
     // de Kova, 11 puis 12, quel que soit leur état. La machine rapporte (1, 0) pour la
     // seconde ligne remontée en tête : c'est 12 qui part, au rang 0, et l'instantané qui
     // montre [12, 11] confirme.

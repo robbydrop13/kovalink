@@ -198,7 +198,7 @@ describe('un geste entier, comme le crochet le rejoue', () => {
   });
 });
 
-describe('l onglet TrailCoach du 14 septembre 2026 : deux lignes de 160 et 200 pt, espace 8', () => {
+describe('l onglet RunCoach du 14 septembre 2026 : deux lignes de 160 et 200 pt, espace 8', () => {
   /** Rangs 0..1, y = 0 et 168. */
   const TWO = stack([160, 200]);
   const both: [number, number] = [0, 1];

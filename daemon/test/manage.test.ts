@@ -36,7 +36,7 @@ function pane(id: number, tab: number, extra: Partial<Pane> = {}): Pane {
     tab,
     tabId: null,
     launching: false,
-    cwd: '/Users/robin/dev/link',
+    cwd: '/Users/alice/dev/link',
     title: 'claude',
     focused: false,
     pid: 1,
@@ -146,7 +146,7 @@ describe('favoris (bookmarks.json de Kova)', () => {
       {
         agent: 'claude',
         session_id: 'd0b868c3-126a-4117-9941-ecb8f8102ad4',
-        cwd: '/Users/robin/Claap/Marketing',
+        cwd: '/Users/alice/Work/Marketing',
         label: 'company-field-marketing',
       },
     ],
@@ -160,11 +160,11 @@ describe('favoris (bookmarks.json de Kova)', () => {
 
   it('ajoute une entree au format exact de Kova, atomiquement, en gardant le mode du fichier', () => {
     const file = freshFile();
-    const res = setBookmark('add', { sessionId: SID, cwd: '/Users/robin/dev/link', label: 'Application iOS Kova' }, 'dev', file);
+    const res = setBookmark('add', { sessionId: SID, cwd: '/Users/alice/dev/link', label: 'Application iOS Kova' }, 'dev', file);
     assert.deepEqual(res, { bookmarked: true });
     const text = readFileSync(file, 'utf8');
     assert.deepEqual(JSON.parse(text), {
-      items: [...ORIGINAL.items, { agent: 'claude', session_id: SID, cwd: '/Users/robin/dev/link', label: 'Application iOS Kova' }],
+      items: [...ORIGINAL.items, { agent: 'claude', session_id: SID, cwd: '/Users/alice/dev/link', label: 'Application iOS Kova' }],
     });
     assert.equal(text, JSON.stringify(JSON.parse(text), null, 2), 'indentation de deux espaces, comme Kova');
     assert.equal(statSync(file).mode & 0o777, 0o600);

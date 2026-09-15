@@ -135,10 +135,10 @@ describe('destinations rapides', () => {
   });
 
   it('abrege un chemin en deux segments lisibles', () => {
-    assert.equal(shortLabel('/Users/robin/dev/link/docs', '/Users/robin'), 'link / docs');
-    assert.equal(shortLabel('/Users/robin/dev', '/Users/robin'), 'dev');
-    assert.equal(shortLabel('/Users/robin', '/Users/robin'), 'Home');
-    assert.equal(shortLabel('/', '/Users/robin'), '/');
+    assert.equal(shortLabel('/Users/alice/dev/link/docs', '/Users/alice'), 'link / docs');
+    assert.equal(shortLabel('/Users/alice/dev', '/Users/alice'), 'dev');
+    assert.equal(shortLabel('/Users/alice', '/Users/alice'), 'Home');
+    assert.equal(shortLabel('/', '/Users/alice'), '/');
   });
 });
 

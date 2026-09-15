@@ -1,8 +1,9 @@
-// Reproduction du cas de la capture du 12 septembre (IMG_5364) a partir des lignes REELLES
-// du JSONL de la session de Robin, anonymisees : trois messages envoyes depuis l'app,
-// « C’est nettoyé ? », « Recrée un unique commit » et « Tu peux envoyer le message à Marc
-// ok ». Les deux premiers sont des lignes `user` ordinaires ; le troisieme a ete absorbe
-// en cours de tour et n'existe que comme `attachment` de type `queued_command`.
+// Reproduction du cas de la capture du 12 septembre (IMG_5364) sur un transcript JSONL
+// de meme forme que celui de la session d'origine, au contenu neutre : trois messages
+// envoyes depuis l'app, « Is the rename done? », « Squash it into a single commit » et
+// « Can you tell Sam it is done ». Les deux premiers sont des lignes `user` ordinaires ;
+// le troisieme a ete absorbe en cours de tour et n'existe que comme `attachment` de type
+// `queued_command`.
 //
 // Deux causes, deux garanties :
 //  1. le `seq` d'un tour ne depend pas de la fenetre lue : deux ouvertures de tailles
@@ -18,7 +19,7 @@ import { openTail } from '../src/transcript/tailer.js';
 
 const FIXTURE = fileURLToPath(new URL('../../test/fixtures/transcript-echo.jsonl', import.meta.url));
 
-const MESSAGES = ['C’est nettoyé ?', 'Recrée un unique commit', 'Tu peux envoyer le message à Marc ok'];
+const MESSAGES = ['Is the rename done?', 'Squash it into a single commit', 'Can you tell Sam it is done'];
 /** `uuid` de la ligne JSONL qui porte chacun des trois messages. */
 const LINE_UUIDS = [
   '9ed2d009-e7db-4e53-a37e-7990c3b0b852',
@@ -46,7 +47,7 @@ function byteOffsetOf(needle: string): number {
 }
 
 describe('capture IMG_5364 : bulles locales jamais remplacees', () => {
-  it('les trois messages de Robin sont des tours user, dans l ordre du transcript', () => {
+  it('les trois messages de l utilisateur sont des tours user, dans l ordre du transcript', () => {
     const { lines } = openTail(FIXTURE);
     const turns = buildTurns(sortAssistantBlocks(lines));
     const users = turns.filter((t) => t.kind === 'user').map(textOf);

@@ -30,7 +30,7 @@ const { projectSlug } = await import('../src/paths.js');
 type Services = import('../src/server/services.js').Services;
 type Socket = import('../src/server/hub.js').Socket;
 
-const CWD = '/Users/robin/dev/projet';
+const CWD = '/Users/alice/dev/projet';
 const SESSION = 'sess-hub';
 /** Plafond d'attente d'une reponse du hub. Largement au dessus du pire cas mesure sous charge. */
 const SAY_TIMEOUT_MS = 2_000;

@@ -5,7 +5,7 @@ import { GROUP_COLLAPSE_OVER, isCollapsible, isEditTool, shortPath, toolLabel, t
 
 describe('toolLabel', () => {
   it('Read : Reads, chemin raccourci aux trois derniers segments', () => {
-    const l = toolLabel({ name: 'Read', input: { file_path: '/Users/robin/link/app/src/boot.ts' }, preview: '' });
+    const l = toolLabel({ name: 'Read', input: { file_path: '/Users/alice/link/app/src/boot.ts' }, preview: '' });
     assert.deepEqual(l, { verb: 'Reads', target: 'app/src/boot.ts', stats: null });
   });
 

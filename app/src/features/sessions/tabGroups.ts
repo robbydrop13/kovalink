@@ -38,7 +38,7 @@ const keyOfId = (tabId: number): string => `t${tabId}`;
  * LA JOINTURE : par `pane.tabId`, l'identifiant Kova de l'onglet, résolu par le daemon
  * en lisant `list-tabs` et `list-panes` au même instant. `pane.tab` n'est qu'un INDEX
  * qui change à chaque déplacement d'onglet sur le Mac : joindre sur cet index deux
- * listes reçues à des moments différents nommait l'onglet « Link » « Perso » après un
+ * listes reçues à des moments différents nommait l'onglet « Link » « Notes » après un
  * réordonnancement. `(window, tab)` ne sert plus que de repli quand `tabId` vaut
  * `null` (pane reçu par événement avant tout `list-tabs`).
  *

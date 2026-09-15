@@ -44,15 +44,15 @@ function disk(sessionId: string, cwd: string, firstPrompt: string, lastActiveMs:
 
 describe('mergeSessions', () => {
   const DISK = [
-    disk(LINK, '/Users/robin/dev/link', 'Ok pour les sessions', 1_789_234_000_000, 'Application iOS Kova'),
-    disk(TRAIL, '/Users/robin/perso/trail-coach', 'What can you tell me', 1_789_233_000_000),
-    disk(CLOSED_A, '/Users/robin/claap/automation-prototype', 'ok is it good or work remaining?', 1_786_634_748_000),
-    disk(CLOSED_B, '/Users/robin/claap/admin', 'tu peux faire un PDF de ça ?', 1_789_036_226_000),
+    disk(LINK, '/Users/alice/dev/link', 'Ok pour les sessions', 1_789_234_000_000, 'Application iOS Kova'),
+    disk(TRAIL, '/Users/alice/projects/run-coach', 'What can you tell me', 1_789_233_000_000),
+    disk(CLOSED_A, '/Users/alice/work/automation-demo', 'is anything left to do?', 1_786_634_748_000),
+    disk(CLOSED_B, '/Users/alice/work/admin', 'can you export this as PDF?', 1_789_036_226_000),
   ];
   const KOVA = new Map<string, KovaHistoryEntry>([
-    [CLOSED_A, { id: CLOSED_A, cwd: '/Users/robin/Claap/Product/automation-prototype', title: 'ok is it good or work remaining?', label: 'Proto automation' }],
+    [CLOSED_A, { id: CLOSED_A, cwd: '/Users/alice/Work/Product/automation-demo', title: 'is anything left to do?', label: 'Proto automation' }],
   ]);
-  const PANES = [pane(11, 3, '/Users/robin/perso/trail-coach', TRAIL), pane(3, 1, '/Users/robin/dev/link', LINK), pane(4, 1, '/Users/robin/dev/link', null)];
+  const PANES = [pane(11, 3, '/Users/alice/projects/run-coach', TRAIL), pane(3, 1, '/Users/alice/dev/link', LINK), pane(4, 1, '/Users/alice/dev/link', null)];
   const TABS = [tab(11, 0), tab(3, 1), tab(18, 2), tab(10, 3)];
 
   it('ouvertes d abord dans l ordre des onglets, puis fermees par derniere activite, sans doublon', () => {
@@ -62,7 +62,7 @@ describe('mergeSessions', () => {
       [
         ['open', 3, '18567852', 'Application iOS Kova'],
         ['open', 11, 'a8fce9d9', 'What can you tell me'],
-        ['closed', null, 'a444aea0', 'tu peux faire un PDF de ça ?'],
+        ['closed', null, 'a444aea0', 'can you export this as PDF?'],
         ['closed', null, '65cd7b48', 'Proto automation'],
       ],
     );
@@ -73,8 +73,8 @@ describe('mergeSessions', () => {
     const out = mergeSessions(DISK, KOVA, [], []);
     const a = out.find((s) => s.sessionId === CLOSED_A);
     assert.equal(a?.title, 'Proto automation');
-    assert.equal(a?.cwd, '/Users/robin/claap/automation-prototype', 'pas le cwd perime de Kova');
-    assert.equal(a?.projectName, 'automation-prototype');
+    assert.equal(a?.cwd, '/Users/alice/work/automation-demo', 'pas le cwd perime de Kova');
+    assert.equal(a?.projectName, 'automation-demo');
   });
 
   it('un pane ouvert dont le transcript n est pas indexe apparait quand meme, ouvert', () => {
@@ -84,7 +84,7 @@ describe('mergeSessions', () => {
 });
 
 describe('scanTranscripts et claude_history.json', () => {
-  const cwd = '/Users/robin/dev/closed-project';
+  const cwd = '/Users/alice/dev/closed-project';
   const cwdGone = join(PROJECTS, 'dossier-disparu');
   function writeTranscript(sessionId: string, dir: string, prompt: string, extra: string[] = []): void {
     const slug = join(PROJECTS, projectSlug(dir));
@@ -179,10 +179,10 @@ describe('resumeSession', () => {
 
   it('une session deja ouverte rend son pane, sans new-tab', async () => {
     const { services, requests } = harness(true);
-    const open = pane(7, 0, '/Users/robin/dev/x', CLOSED_A);
+    const open = pane(7, 0, '/Users/alice/dev/x', CLOSED_A);
     const svc = { ...(services as object), panes: { all: () => [open], allTabs: () => [], get: () => open } } as never;
     const out = await resumeSession(svc, CLOSED_A, 'dev');
-    assert.deepEqual(out, { ok: true, response: { tabId: null, paneId: 7, cwd: '/Users/robin/dev/x', launched: false, alreadyOpen: true } });
+    assert.deepEqual(out, { ok: true, response: { tabId: null, paneId: 7, cwd: '/Users/alice/dev/x', launched: false, alreadyOpen: true } });
     assert.equal(requests.length, 0);
   });
 });

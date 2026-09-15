@@ -165,7 +165,7 @@ describe('erreurs de navigation', () => {
   });
 
   it('remonte jusqu a la racine, qui n a pas de parent', () => {
-    assert.equal(parentOf('/Users/robin/dev'), '/Users/robin');
+    assert.equal(parentOf('/Users/alice/dev'), '/Users/alice');
     assert.equal(parentOf('/Users'), '/');
     assert.equal(parentOf('/'), null);
   });

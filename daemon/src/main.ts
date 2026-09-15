@@ -149,7 +149,7 @@ async function run(): Promise<void> {
    * `subscribe` ne connait que `focus`, `pane-open`, `pane-close`, `pane-working` et
    * `pane-status`. Sans relecture, l'ordre et les noms des onglets restaient figes dans
    * l'app jusqu'au prochain redemarrage du daemon (mesure le 12 septembre 2026 : l'onglet
-   * « Perso » deplace en 2e position sur le Mac, toujours en 8e sur l'iPhone). On relit
+   * « Notes » deplace en 2e position sur le Mac, toujours en 8e sur l'iPhone). On relit
    * donc `list-tabs` + `list-panes` a chaque `focus` et toutes les `LAYOUT_POLL_MS`, et on
    * ne diffuse un instantane que si la mise en page (ordre, titres, cwd) a change.
    */

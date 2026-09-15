@@ -22,7 +22,7 @@ import {
 function pane(partial: Partial<Pane> & { id: number; tab: number }): Pane {
   return {
     window: 0,
-    cwd: '/Users/robin/dev/x',
+    cwd: '/Users/alice/dev/x',
     title: 'claude',
     focused: false,
     pid: 1,
@@ -67,28 +67,28 @@ function tab(partial: Partial<Tab> & { id: number; tab_index: number }): Tab {
 
 // État réel de Kova le 12 septembre à 17:29 (`list-tabs` et `list-panes`, lecture seule).
 // `pane.tab` est un INDEX : le pane 11 porte `tab: 3`, et l'onglet d'index 3 est
-// « TrailCoach » (id 10). L'onglet d'ID 3 est « Link ». Une jointure sur l'id mettait
-// trail-coach sous « Link » et nommait les autres onglets par leur projet.
+// « RunCoach » (id 10). L'onglet d'ID 3 est « Link ». Une jointure sur l'id mettait
+// run-coach sous « Link » et nommait les autres onglets par leur projet.
 const TABS: Tab[] = [
   tab({ id: 11, tab_index: 0, title: 'Courses', color: 2 }),
   tab({ id: 3, tab_index: 1, title: 'Link', color: 3, pane_count: 2, active: true }),
   tab({ id: 18, tab_index: 2, title: 'QR appairage', color: 3 }),
-  tab({ id: 10, tab_index: 3, title: 'TrailCoach', color: 4 }),
+  tab({ id: 10, tab_index: 3, title: 'RunCoach', color: 4 }),
   tab({ id: 8, tab_index: 4, title: 'Dollary', color: 5 }),
 ];
 
 // Volontairement dans le désordre : l'ordre affiché vient de `tab_index`, pas de la liste.
 const PANES: Pane[] = [
-  pane({ id: 9, tab: 4, cwd: '/Users/robin/AI directory/Perso/Investissements', projectName: 'Investissements', agent: null, title: 'claude', child_processes: [{ name: 'claude', pid: 28232, version: null }] }),
-  pane({ id: 13, tab: 0, cwd: '/Users/robin/AI directory/Perso', projectName: 'Perso', working: true }),
-  pane({ id: 4, tab: 1, cwd: '/Users/robin/dev/link', projectName: 'link', agent: null, title: '..al-tools/link' }),
-  pane({ id: 3, tab: 1, cwd: '/Users/robin/dev/link', projectName: 'link', awaiting: true, awaiting_since: '2026-09-12T13:11:43.000Z' }),
-  pane({ id: 20, tab: 2, cwd: '/Users/robin/dev/link', projectName: 'link', agent: null, title: '..al-tools/link' }),
-  pane({ id: 11, tab: 3, cwd: '/Users/robin/AI directory/Perso/Sport/trail-coach', projectName: 'trail-coach', working: true }),
+  pane({ id: 9, tab: 4, cwd: '/Users/alice/projects/ledger', projectName: 'ledger', agent: null, title: 'claude', child_processes: [{ name: 'claude', pid: 28232, version: null }] }),
+  pane({ id: 13, tab: 0, cwd: '/Users/alice/projects', projectName: 'projects', working: true }),
+  pane({ id: 4, tab: 1, cwd: '/Users/alice/dev/link', projectName: 'link', agent: null, title: '..al-tools/link' }),
+  pane({ id: 3, tab: 1, cwd: '/Users/alice/dev/link', projectName: 'link', awaiting: true, awaiting_since: '2026-09-12T13:11:43.000Z' }),
+  pane({ id: 20, tab: 2, cwd: '/Users/alice/dev/link', projectName: 'link', agent: null, title: '..al-tools/link' }),
+  pane({ id: 11, tab: 3, cwd: '/Users/alice/projects/sport/run-coach', projectName: 'run-coach', working: true }),
 ];
 
 describe('groupByTab', () => {
-  it('joint pane.tab à tab.tab_index, jamais à tab.id : le pane 11 (tab 3) tombe sous TrailCoach', () => {
+  it('joint pane.tab à tab.tab_index, jamais à tab.id : le pane 11 (tab 3) tombe sous RunCoach', () => {
     const groups = groupByTab(PANES, TABS);
     assert.deepEqual(
       groups.map((g) => [g.title, g.tabId, g.color, g.panes.map((p) => p.id)]),
@@ -96,12 +96,12 @@ describe('groupByTab', () => {
         ['Courses', 11, 2, [13]],
         ['Link', 3, 3, [4, 3]],
         ['QR appairage', 18, 3, [20]],
-        ['TrailCoach', 10, 4, [11]],
+        ['RunCoach', 10, 4, [11]],
         ['Dollary', 8, 5, [9]],
       ],
     );
     const trail = groups.find((g) => g.panes.some((p) => p.id === 11));
-    assert.equal(trail?.title, 'TrailCoach');
+    assert.equal(trail?.title, 'RunCoach');
     assert.notEqual(trail?.title, 'Link');
   });
 
@@ -109,7 +109,7 @@ describe('groupByTab', () => {
     const groups = groupByTab(PANES, TABS);
     assert.equal(groups.length, TABS.length);
     assert.equal(groups.flatMap((g) => g.panes).length, PANES.length);
-    assert.deepEqual(groups.map((g) => g.title), ['Courses', 'Link', 'QR appairage', 'TrailCoach', 'Dollary']);
+    assert.deepEqual(groups.map((g) => g.title), ['Courses', 'Link', 'QR appairage', 'RunCoach', 'Dollary']);
   });
 
   it('marque l’onglet actif sur le Mac', () => {
@@ -155,14 +155,14 @@ describe('filterGroups', () => {
   it('un nom d’onglet qui correspond garde TOUS ses panes, accents et casse ignorés', () => {
     const out = filterGroups(groups, 'LINK');
     assert.deepEqual(out.map((g) => [g.title, g.panes.length]), [['Link', 2], ['QR appairage', 1]]);
-    assert.deepEqual(filterGroups(groups, 'trail').map((g) => g.title), ['TrailCoach']);
+    assert.deepEqual(filterGroups(groups, 'run').map((g) => g.title), ['RunCoach']);
     assert.deepEqual(filterGroups(groups, 'Dollary').map((g) => g.title), ['Dollary']);
   });
 
   it('sinon ne garde que les panes qui correspondent, et retire l’onglet vidé', () => {
-    const out = filterGroups(groups, 'investissements');
+    const out = filterGroups(groups, 'ledger');
     assert.deepEqual(out.map((g) => [g.title, g.panes.map((p) => p.id)]), [['Dollary', [9]]]);
-    assert.deepEqual(filterGroups(groups, 'perso').map((g) => g.title), ['Courses', 'TrailCoach', 'Dollary']);
+    assert.deepEqual(filterGroups(groups, 'projects').map((g) => g.title), ['Courses', 'RunCoach', 'Dollary']);
   });
 
   it('plusieurs mots : tous requis', () => {
@@ -192,14 +192,14 @@ describe('paletteEntries (Cmd+P)', () => {
         ['Link', 4],
         ['Link', 3],
         ['QR appairage', 20],
-        ['TrailCoach', 11],
+        ['RunCoach', 11],
         ['Dollary', 9],
       ],
     );
   });
 
   it('filtre au fil de la frappe sur onglet, projet et titre, sans accents ni casse', () => {
-    assert.deepEqual(paletteEntries(groups, 'TRAIL').map((e) => e.pane.id), [11]);
+    assert.deepEqual(paletteEntries(groups, 'RUN').map((e) => e.pane.id), [11]);
     assert.deepEqual(paletteEntries(groups, 'link').map((e) => e.pane.id), [4, 3, 20]);
     assert.deepEqual(paletteEntries(groups, 'appairage tools').map((e) => e.pane.id), [20]);
     assert.deepEqual(paletteEntries(groups, 'inexistant'), []);
@@ -207,25 +207,25 @@ describe('paletteEntries (Cmd+P)', () => {
 });
 
 it('la jointure suit l identifiant de l onglet, pas son index, apres un reordonnancement sur le Mac', () => {
-  // Avant : Link en index 1. Apres deplacement : Perso (id 27) prend l index 1, Link (id 3) passe en 7.
+  // Avant : Link en index 1. Apres deplacement : Notes (id 27) prend l index 1, Link (id 3) passe en 7.
   const tabs = [
     tab({ id: 26, tab_index: 0, title: 'Claap' }),
-    tab({ id: 27, tab_index: 1, title: 'Perso' }),
+    tab({ id: 27, tab_index: 1, title: 'Notes' }),
     tab({ id: 3, tab_index: 7, title: 'Link' }),
   ];
   // Le daemon a estampille les panes avec l identifiant de leur onglet.
   const panes = [
     pane({ id: 66, tab: 7, tabId: 3, cwd: '/x/link' }),
-    pane({ id: 70, tab: 1, tabId: 27, cwd: '/x/perso' }),
+    pane({ id: 70, tab: 1, tabId: 27, cwd: '/x/notes' }),
   ];
   const groups = groupByTab(panes, tabs);
   assert.deepEqual(
     groups.map((g) => [g.title, g.panes.map((p) => p.id)]),
-    [['Perso', [70]], ['Link', [66]]],
+    [['Notes', [70]], ['Link', [66]]],
   );
   // Un pane recu par evenement sans identifiant (tabId null) retombe sur l index.
   const stale = groupByTab([pane({ id: 71, tab: 1, tabId: null })], tabs);
-  assert.equal(stale[0]?.title, 'Perso');
+  assert.equal(stale[0]?.title, 'Notes');
   assert.equal(stale[0]?.key, 't27');
 });
 
@@ -289,9 +289,9 @@ describe('réordonnancement (glisser-déposer)', () => {
   it('applyPendingOrder permute les onglets d une fenêtre et renumérote tabIndex', () => {
     const groups = groupByTab(PANES, TABS);
     const out = applyPendingOrder(groups, { window: 0, order: [3, 11, 18, 10, 8], since: 0 }, {});
-    assert.deepEqual(out.map((g) => [g.title, g.tabIndex]), [['Link', 0], ['Courses', 1], ['QR appairage', 2], ['TrailCoach', 3], ['Dollary', 4]]);
+    assert.deepEqual(out.map((g) => [g.title, g.tabIndex]), [['Link', 0], ['Courses', 1], ['QR appairage', 2], ['RunCoach', 3], ['Dollary', 4]]);
     assert.equal(out[0]?.active, true, 'la puce active suit son onglet');
-    assert.deepEqual(groups.map((g) => g.title), ['Courses', 'Link', 'QR appairage', 'TrailCoach', 'Dollary'], 'entrée intacte');
+    assert.deepEqual(groups.map((g) => g.title), ['Courses', 'Link', 'QR appairage', 'RunCoach', 'Dollary'], 'entrée intacte');
     assert.equal(applyPendingOrder(groups, null, {}).length, groups.length);
   });
 
@@ -323,7 +323,7 @@ describe('réordonnancement (glisser-déposer)', () => {
 });
 
 describe('sortGroups', () => {
-  // Courses (13 travaille), Link (3 attend), QR appairage (rien), TrailCoach (11 travaille), Dollary (rien).
+  // Courses (13 travaille), Link (3 attend), QR appairage (rien), RunCoach (11 travaille), Dollary (rien).
   const groups = groupByTab(PANES, TABS);
 
   it('`kova` rend la liste telle quelle', () => {
@@ -333,10 +333,10 @@ describe('sortGroups', () => {
   it('`activity` : ceux qui travaillent, puis ceux qui attendent, puis les autres, stable dans chaque paquet', () => {
     assert.deepEqual(
       sortGroups(groups, 'activity').map((g) => g.title),
-      ['Courses', 'TrailCoach', 'Link', 'QR appairage', 'Dollary'],
+      ['Courses', 'RunCoach', 'Link', 'QR appairage', 'Dollary'],
     );
     // La liste d origine n est pas touchee.
-    assert.deepEqual(groups.map((g) => g.title), ['Courses', 'Link', 'QR appairage', 'TrailCoach', 'Dollary']);
+    assert.deepEqual(groups.map((g) => g.title), ['Courses', 'Link', 'QR appairage', 'RunCoach', 'Dollary']);
   });
 
   it('un onglet qui travaille ET attend compte comme travaille ; un pane qui attend n est pas « travaille »', () => {
