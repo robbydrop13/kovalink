@@ -157,7 +157,21 @@ async function run(): Promise<void> {
   const layoutOf = (tabs: Record<string, unknown>[], rawPanes: Record<string, unknown>[]): string =>
     JSON.stringify([
       tabs.map((t) => [t['id'], t['window'], t['tab_index'], t['title']]),
-      rawPanes.map((p) => [p['id'], p['window'], p['tab'], p['title'], p['cwd'], p['agent']]),
+      // Processus enfants et session compris : sans eux, un `claude` quitte restait liste
+      // pour toujours (mesure du 15 septembre 2026), l'app ne voyait jamais un shell nu et
+      // n'offrait pas « Start Claude here ».
+      rawPanes.map((p) => [
+        p['id'],
+        p['window'],
+        p['tab'],
+        p['title'],
+        p['cwd'],
+        p['agent'],
+        p['agent_session_id'],
+        Array.isArray(p['child_processes'])
+          ? (p['child_processes'] as { name?: unknown }[]).map((c) => c.name).join(',')
+          : '',
+      ]),
     ]);
   const refreshLayout = async (reason: string): Promise<void> => {
     try {

@@ -1471,7 +1471,7 @@ Ce que Robin voit **sans réseau**, sans écran de chargement :
 | Question | La dernière question connue, en lecture seule, bandeau "hors ligne, état figé". **Les boutons sont désactivés** : approuver en aveugle sur un état inconnu est exactement ce que le produit doit empêcher. |
 | Chat (lot 2) | 200 derniers turns par session visitée, navigables. Résultats externalisés et sous-agents marqués "non téléchargé". |
 | Composer (lot 2) | Actif, part dans l'outbox avec son TTL de 15 min. |
-| Terminal (lot 2) | Dernier resync, lecture seule, bandeau "instantané figé". Saisie désactivée. |
+| Terminal (lot 2) | Dernier resync, bandeau "instantané figé". Saisie désactivée hors ligne. En ligne, le terminal accepte la saisie (15 septembre 2026) : une ligne suivie de l'Entrée et une rangée de touches de la table fermée (Esc, Tab, Ctrl-C, flèches, Entrée), par `POST /v1/panes/:paneId/terminal` puis `KeyGate.emitTerminalInput` / `emitKeys`, garde du prompt parsé comprise, auditée sans le contenu (`pane.terminalInput`). |
 
 Purge : 200 turns par session, 20 sessions les plus récentes, le reste supprimé au démarrage.
 

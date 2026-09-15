@@ -9,6 +9,8 @@ const RATE_RULES: Record<string, number> = {
   // La vue Term sonde l'ecran a 1 Hz (60/min) : de la marge pour le pull-to-refresh.
   screen: 150,
   launch: 10,
+  // Terminal depuis l'app : une ligne ou une touche par geste, les fleches s'enchainent vite.
+  terminal: 240,
   turns: 120,
   // Bloc C. Un dossier profond se parcourt vite : le quota de listing est large.
   // Les morceaux d'upload ne sont pas limites du tout, un fichier de 3 Go en compte 750.

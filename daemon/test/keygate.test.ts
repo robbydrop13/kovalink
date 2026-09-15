@@ -314,6 +314,41 @@ describe('KeyGate', () => {
     await assert.rejects(() => gate.emitKeys(66, ['inconnue' as never]), ForbiddenError);
     assert.equal(sent.length, 0);
   });
+
+  it('emitTerminalInput sur un shell nu : la ligne assainie puis l Entree, en deux appels', async () => {
+    const { gate, sent } = makeFixture({ agent: null, agent_session_id: null, working: false });
+    const res = await gate.emitTerminalInput(66, `ls -la${ESC}[31m\nwc\t-l`, 'dev');
+    assert.deepEqual(res, { applied: true });
+    assert.deepEqual(sent.map((x) => x.text), ['ls -la[31m wc-l', KEY_TABLE.enter]);
+  });
+
+  it('emitTerminalInput refuse sans rien envoyer : prompt parse en attente, ligne vide, trop longue', async () => {
+    const { gate, sent, panes, prompts } = makeFixture();
+    panes.setAwaiting(66, true, new Date().toISOString());
+    prompts.setState('parsed');
+    await assert.rejects(() => gate.emitTerminalInput(66, '1'), (e: Error) => e instanceof ForbiddenError && (e as InstanceType<typeof ForbiddenError>).code === 'FORBIDDEN_KEY');
+    const shell = makeFixture({ agent: null, agent_session_id: null });
+    await assert.rejects(() => shell.gate.emitTerminalInput(66, `${ESC}`), ForbiddenError);
+    await assert.rejects(
+      () => shell.gate.emitTerminalInput(66, 'x'.repeat(MAX_TEXT + 1)),
+      (e: Error) => (e as InstanceType<typeof ForbiddenError>).code === 'TEXT_TOO_LONG',
+    );
+    assert.equal(sent.length, 0);
+    assert.equal(shell.sent.length, 0);
+  });
+
+  it('emitTerminalInput passe sur un prompt unparsable (repli A6) et n ecrit jamais le texte dans l audit', async () => {
+    const { gate, sent, panes, prompts } = makeFixture();
+    panes.setAwaiting(66, true, new Date().toISOString());
+    prompts.setState('unparsable');
+    const secret = 'export TOKEN=tres-secret-42';
+    assert.equal((await gate.emitTerminalInput(66, secret, 'dev')).applied, true);
+    assert.equal(sent.length, 2);
+    const auditDir = join(process.env['KOVALINK_HOME'] ?? '', 'audit');
+    const journal = readdirSync(auditDir).map((f) => readFileSync(join(auditDir, f), 'utf8')).join('');
+    assert.ok(journal.includes('"action":"pane.terminalInput"'));
+    assert.equal(journal.includes('tres-secret-42'), false);
+  });
 });
 
 // --------------------------------------------------------------------------
@@ -412,7 +447,7 @@ describe('point d entree unique des ecritures (K1, analyse syntaxique)', () => {
     assert.throws(() => claimRawChannel(), /deja ete reclame/);
   });
 
-  it('KeyGate expose exactement cinq operations d ecriture, et pas une de plus', () => {
+  it('KeyGate expose exactement six operations d ecriture, et pas une de plus', () => {
     const source = ts.createSourceFile(
       'keygate.ts',
       readFileSync(join(SRC_DIR, 'kova/keygate.ts'), 'utf8'),
@@ -431,7 +466,7 @@ describe('point d entree unique des ecritures (K1, analyse syntaxique)', () => {
       ts.forEachChild(node, visit);
     };
     visit(source);
-    assert.deepEqual(ops.sort(), ['emitAnswer', 'emitInterrupt', 'emitKeys', 'emitLaunch', 'emitText']);
+    assert.deepEqual(ops.sort(), ['emitAnswer', 'emitInterrupt', 'emitKeys', 'emitLaunch', 'emitTerminalInput', 'emitText']);
   });
 
   it('emitAnswer n a qu un seul appelant hors de KeyGate : prompt/answer.ts', () => {
@@ -442,7 +477,12 @@ describe('point d entree unique des ecritures (K1, analyse syntaxique)', () => {
     // Liste fermee : un nouvel appelant doit etre ajoute ICI, en connaissance de cause.
     // Le hub WS n'y figure plus : la surface d'ecriture n'existe qu'une fois, en HTTPS.
     const callers = where(
-      (f) => f.calls.has('emitInterrupt') || f.calls.has('emitText') || f.calls.has('emitKeys') || f.calls.has('emitLaunch'),
+      (f) =>
+        f.calls.has('emitInterrupt') ||
+        f.calls.has('emitText') ||
+        f.calls.has('emitKeys') ||
+        f.calls.has('emitLaunch') ||
+        f.calls.has('emitTerminalInput'),
     );
     // `kova/resume.ts` porte `emitLaunch` pour les deux routes qui creent un onglet.
     assert.deepEqual(callers, ['kova/resume.ts', 'server/index.ts']);

@@ -14,7 +14,7 @@ process.env['KOVALINK_QUIET'] = '1';
 
 const { KeyGate, LAUNCH_COMMAND } = await import('../src/kova/keygate.js');
 const { PaneStore } = await import('../src/kova/panes.js');
-const { KovaIpc } = await import('../src/kova/ipc.js');
+const { KovaIpc, IpcError } = await import('../src/kova/ipc.js');
 const { KOVA_EXEC, realDeps } = await import('../src/kova/discover.js');
 const { startClaudeInPane, NEW_TAB_COMMAND } = await import('../src/kova/resume.js');
 const { FakeKova } = await import('./helpers/fakeKova.js');
@@ -110,5 +110,83 @@ describe('startClaudeInPane', () => {
     assert.equal(l.ok, false);
     if (!l.ok) assert.deepEqual([l.status, l.code], [409, 'PANE_BUSY']);
     assert.equal(launching.sent.length, 0);
+  });
+
+  it('store perime (claude quitte, processus encore liste) : le pane est relu chez Kova, puis lance', async () => {
+    const { services, sent, done } = harness({ child_processes: [{ name: 'claude', pid: 9 }] });
+    fake.respond = (msg) =>
+      msg['cmd'] === 'list-panes'
+        ? { ok: true, data: [{ id: 71, window: 0, tab: 2, cwd: '/tmp/projet', title: 'zsh', pid: 1, agent: null, working: false, awaiting: false, child_processes: [] }] }
+        : null;
+    try {
+      const out = await startClaudeInPane(services, 71, 'dev');
+      assert.deepEqual(out, { ok: true, response: { launched: true } });
+      assert.equal(sent.filter((s) => s.text.includes(LAUNCH_COMMAND)).length, 1);
+    } finally {
+      fake.respond = null;
+      done();
+    }
+  });
+
+  it('deux start-claude simultanes sur le meme pane : une seule frappe, la meme reponse', async () => {
+    const { services, sent, done } = harness();
+    const [a, b] = await Promise.all([startClaudeInPane(services, 71, 'dev'), startClaudeInPane(services, 71, 'dev')]);
+    done();
+    assert.deepEqual(a, b);
+    assert.deepEqual(a, { ok: true, response: { launched: true } });
+    assert.equal(sent.filter((s) => s.text.includes(LAUNCH_COMMAND)).length, 1);
+  });
+});
+
+describe('startClaudeInPane apres une coupure IPC (reveil du Mac)', () => {
+  /** KeyGate simulee : la premiere frappe tombe sur une coupure, les suivantes passent. */
+  function stubbed(opts: { up: boolean; screen: string | null; paneOverrides?: Record<string, unknown> }) {
+    const panes = new PaneStore();
+    panes.upsertRaw({ id: 72, window: 0, tab: 3, cwd: '/tmp/projet', title: 'zsh', pid: 1, agent: null, working: false, awaiting: false, child_processes: [] });
+    const calls: boolean[] = [];
+    const keygate = {
+      emitLaunch: async (_paneId: number, _dev: string, typeCommand = false) => {
+        calls.push(typeCommand);
+        if (calls.length === 1) {
+          // Pendant la coupure, le pane a pu changer (Kova l'a relu a la reconnexion).
+          if (opts.paneOverrides) panes.upsertRaw({ id: 72, window: 0, tab: 3, cwd: '/tmp/projet', title: 'zsh', pid: 1, agent: null, working: false, awaiting: false, child_processes: [], ...opts.paneOverrides });
+          throw new IpcError('KOVA_DOWN', 'IPC connection lost (reveil)');
+        }
+        return { applied: true };
+      },
+    };
+    const fakeIpc = {
+      whenUp: async () => opts.up,
+      getPaneContent: async () => (opts.screen === null ? [] : [{ id: 72, text: opts.screen, cols: 80, rows: 24, cursor: { row: 0, col: 0 } }]),
+    };
+    return { services: { ipc: fakeIpc, panes, keygate } as never, calls };
+  }
+
+  it('rien n a atteint le shell : une seule nouvelle frappe apres la reconnexion', async () => {
+    const { services, calls } = stubbed({ up: true, screen: '~/projet %' });
+    const out = await startClaudeInPane(services, 72, 'dev');
+    assert.deepEqual(out, { ok: true, response: { launched: true } });
+    assert.deepEqual(calls, [true, true]);
+  });
+
+  it('Claude Code est deja a l ecran, ou l agent est vu : rien n est retape', async () => {
+    const banner = stubbed({ up: true, screen: 'Welcome to Claude Code' });
+    assert.deepEqual(await startClaudeInPane(banner.services, 72, 'dev'), { ok: true, response: { launched: true } });
+    assert.deepEqual(banner.calls, [true]);
+    const agent = stubbed({ up: true, screen: '', paneOverrides: { agent: 'claude', child_processes: [{ name: 'claude', pid: 9 }] } });
+    assert.equal((await startClaudeInPane(agent.services, 72, 'dev')).ok, true);
+    assert.deepEqual(agent.calls, [true]);
+  });
+
+  it('ecran illisible ou Kova toujours absent : aucune nouvelle frappe, une raison lisible', async () => {
+    const unreadable = stubbed({ up: true, screen: null });
+    const a = await startClaudeInPane(unreadable.services, 72, 'dev');
+    assert.equal(a.ok && a.response.launched, false);
+    assert.match(a.ok ? a.response.reason ?? '' : '', /unreadable/);
+    assert.deepEqual(unreadable.calls, [true]);
+    const down = stubbed({ up: false, screen: '~ %' });
+    const b = await startClaudeInPane(down.services, 72, 'dev');
+    assert.match(b.ok ? b.response.reason ?? '' : '', /Kova is unreachable/);
+    assert.deepEqual(down.calls, [true]);
   });
 });

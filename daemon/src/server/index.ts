@@ -5,6 +5,8 @@ import {
   PROTOCOL_VERSION,
   PUBLIC_ROUTE_PATHS,
   ROUTE_PATTERNS,
+  TERMINAL_MAX_KEYS,
+  isKeyName,
   TURNS_INITIAL_LOAD,
   TURNS_PAGE_SIZE,
   TURNS_QUERY,
@@ -538,6 +540,42 @@ export async function createHttpServer(
     if (!out.ok) return fail(reply, out.status, out.code, out.message);
     return out.response;
   });
+
+  /**
+   * Saisie dans le terminal depuis l'app : `{text}` (une ligne puis l'Entree) ou `{keys}`
+   * (table fermee). Shell nu comme pane Claude (ecran de confiance : fleches et Entree).
+   * Tout passe par `KeyGate`, garde du prompt parse comprise.
+   */
+  app.post<{ Params: { paneId: string }; Body: { text?: unknown; keys?: unknown } }>(
+    ROUTE_PATTERNS.paneTerminal,
+    async (req, reply) => {
+      const deviceId = req.deviceId ?? '';
+      if (!services.rate.allow(deviceId, 'terminal')) {
+        return fail(reply, 429, 'RATE_LIMITED', 'too many terminal inputs');
+      }
+      const paneId = Number(req.params.paneId);
+      const { text, keys } = req.body ?? {};
+      try {
+        if (typeof text === 'string' && keys === undefined) {
+          return await services.keygate.emitTerminalInput(paneId, text, deviceId);
+        }
+        if (
+          text === undefined &&
+          Array.isArray(keys) &&
+          keys.length > 0 &&
+          keys.length <= TERMINAL_MAX_KEYS &&
+          keys.every(isKeyName)
+        ) {
+          return await services.keygate.emitKeys(paneId, keys, deviceId);
+        }
+        return fail(reply, 400, 'BAD_REQUEST', `send either text or 1 to ${TERMINAL_MAX_KEYS} keys from the key table`);
+      } catch (e) {
+        if (e instanceof ForbiddenError) return fail(reply, 403, e.code, e.message);
+        if (e instanceof IpcError) return fail(reply, 503, e.code, e.message);
+        throw e;
+      }
+    },
+  );
 
   /** Repli monospace (~30 lignes), lot 1. Pas de xterm.js, pas de flux d'octets. */
   app.get<{ Params: { paneId: string } }>(ROUTE_PATTERNS.paneScreen, async (req, reply) => {

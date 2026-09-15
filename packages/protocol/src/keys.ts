@@ -35,3 +35,15 @@ export function isKeyName(value: unknown): value is KeyName {
  * Elles sont gardees par `KeyGate` des qu'un prompt parse est en attente (C23).
  */
 export const DECIDING_KEYS: readonly KeyName[] = ['enter', 'digit1', 'digit2', 'digit3'];
+
+/** Plafond de touches par requete sur `POST /v1/panes/:paneId/terminal`. */
+export const TERMINAL_MAX_KEYS = 16;
+
+/**
+ * Corps de `POST /v1/panes/:paneId/terminal`, l'un OU l'autre :
+ * - `text` : une ligne tapee dans le pane puis l'Entree (assainie, une seule ligne) ;
+ * - `keys` : des touches de la table fermee, de 1 a `TERMINAL_MAX_KEYS`.
+ * Reponse : `ActionResponse`. Les touches decisives et le texte sont refuses (403
+ * `FORBIDDEN_KEY`) quand un prompt parse attend : on repond avec les boutons.
+ */
+export type PaneTerminalRequest = { text: string; keys?: undefined } | { keys: KeyName[]; text?: undefined };

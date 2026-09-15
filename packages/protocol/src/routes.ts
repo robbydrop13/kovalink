@@ -59,6 +59,11 @@ export const ROUTES = {
    * jamais une chaine du client, puis le pane passe « en demarrage » comme apres `new-tab`.
    */
   paneStartClaude: (paneId: number): string => `/v1/panes/${paneId}/start-claude`,
+  /**
+   * Saisie dans le terminal depuis l'app : une ligne suivie de l'Entree, ou des touches de
+   * la table fermee. Passe par `KeyGate` (garde du prompt parse), auditee sans le contenu.
+   */
+  paneTerminal: (paneId: number): string => `/v1/panes/${paneId}/terminal`,
   sessionTurns: (sessionId: string): string =>
     `/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
   /**
@@ -130,6 +135,7 @@ export const ROUTE_PATTERNS = {
   paneScreen: '/v1/panes/:paneId/screen',
   paneCommands: '/v1/panes/:paneId/commands',
   paneStartClaude: '/v1/panes/:paneId/start-claude',
+  paneTerminal: '/v1/panes/:paneId/terminal',
   sessionTurns: '/v1/sessions/:sessionId/turns',
   kovaLaunch: '/v1/kova/launch',
   kovaRecentProjects: '/v1/kova/recent-projects',
@@ -280,6 +286,8 @@ export interface PaneCommandsResponse {
  */
 export interface PaneStartClaudeResponse {
   launched: boolean;
+  /** Quand `launched` est faux : la cause lisible (anglais), a montrer telle quelle. */
+  reason?: string;
 }
 
 /** Une session Claude Code, ouverte dans un pane ou fermee (transcript sur disque). */

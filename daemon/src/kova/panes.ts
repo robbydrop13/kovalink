@@ -256,7 +256,10 @@ export class PaneStore extends EventEmitter {
   private launchingOf(pane: Pane): boolean {
     const at = this.launchedAt.get(pane.id);
     if (at === undefined) return false;
-    if (pane.agent !== null || this.now() - at >= LAUNCH_GRACE_MS) {
+    // La session, pas le processus : `claude` tourne des la frappe, mais tant que l'ecran
+    // de confiance d'un dossier neuf attend, il n'y a pas de session a ouvrir. L'app reste
+    // donc en « demarrage » (avec le Term pour accepter) jusqu'a ce que la session existe.
+    if (pane.agent_session_id !== null || this.now() - at >= LAUNCH_GRACE_MS) {
       this.launchedAt.delete(pane.id);
       return false;
     }

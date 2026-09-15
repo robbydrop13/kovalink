@@ -55,10 +55,24 @@ const SUBSCRIBED_EVENTS = ['focus', 'pane-status', 'pane-working', 'pane-open', 
  */
 const PROBED_COMMANDS = ['list-panes', 'list-tabs', 'get-pane-content'];
 
+/**
+ * Attente maximale d'une requete emise pendant une reconnexion (reveil, abonnement ferme).
+ * Mesure du 15 septembre 2026 : un `start-claude` arrive souvent a la milliseconde ou le
+ * reveil du Mac invalide les sockets. Il attend l'abonnement neuf au lieu d'echouer.
+ */
+export const WAIT_FOR_UP_MS = 5_000;
+
+/** Lectures pures : les rejouer apres une coupure en vol ne change rien a l'etat de Kova. */
+const IDEMPOTENT_COMMANDS = new Set(PROBED_COMMANDS);
+
 interface Pending {
   payload: Record<string, unknown>;
   resolve: (r: KovaResponse) => void;
   reject: (e: Error) => void;
+  /** Arme tant que la requete attend une connexion : a son echeance, elle echoue. */
+  waitTimer?: NodeJS.Timeout;
+  /** Une seule nouvelle tentative par requete, jamais une boucle. */
+  retried?: boolean;
 }
 
 /** Decoupe un flux JSON-lines avec garde de taille. */
@@ -148,8 +162,32 @@ export class KovaIpc extends EventEmitter {
   constructor(
     private readonly deps: DiscoverDeps = realDeps,
     private readonly downAfterMs = KOVA_DOWN_AFTER_MS,
+    private readonly waitForUpMs = WAIT_FOR_UP_MS,
   ) {
     super();
+  }
+
+  /**
+   * Rend `true` des que l'IPC est `up`, `false` apres `timeoutMs` ou si Kova est `down`.
+   * Sert aux appelants qui veulent relire l'etat avant de rejouer une ecriture.
+   */
+  whenUp(timeoutMs = this.waitForUpMs): Promise<boolean> {
+    if (this.status === 'up') return Promise.resolve(true);
+    if (this.stopped || this.status === 'down') return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const onStatus = (s: KovaStatus): void => {
+        if (s === 'reconnecting') return;
+        clearTimeout(timer);
+        this.off('status', onStatus);
+        resolve(s === 'up');
+      };
+      const timer = setTimeout(() => {
+        this.off('status', onStatus);
+        resolve(this.status === 'up');
+      }, timeoutMs);
+      timer.unref?.();
+      this.on('status', onStatus);
+    });
   }
 
   get state(): KovaStatus {
@@ -196,6 +234,34 @@ export class KovaIpc extends EventEmitter {
     if (this.status === next) return;
     this.status = next;
     this.emit('status', next, this.kovaPid);
+    // Les requetes mises en attente pendant la reconnexion partent des que c'est revenu,
+    // et echouent tout de suite si Kova est tenu pour absent.
+    if (next === 'up') this.pump();
+    if (next === 'down') this.rejectQueued(new IpcError('KOVA_DOWN', 'Kova is unreachable'));
+  }
+
+  private rejectQueued(err: Error): void {
+    const queued = this.queue;
+    this.queue = [];
+    for (const p of queued) {
+      if (p.waitTimer) clearTimeout(p.waitTimer);
+      p.reject(err);
+    }
+  }
+
+  /** La requete attend une connexion : bornee a `waitForUpMs`, puis `KOVA_DOWN`. */
+  private armWait(p: Pending): void {
+    if (p.waitTimer) return;
+    p.waitTimer = setTimeout(() => {
+      p.waitTimer = undefined;
+      const i = this.queue.indexOf(p);
+      if (i < 0) return;
+      this.queue.splice(i, 1);
+      p.reject(
+        new IpcError('KOVA_DOWN', `Kova is unreachable (waited ${Math.round(this.waitForUpMs / 1000)} s for the IPC to reconnect)`),
+      );
+    }, this.waitForUpMs);
+    p.waitTimer.unref?.();
   }
 
   /**
@@ -222,15 +288,22 @@ export class KovaIpc extends EventEmitter {
     this.downTimer.unref?.();
   }
 
-  /** Ne concerne QUE l'abonnement. Les requetes en attente echouent avec lui. */
+  /**
+   * Ne concerne QUE l'abonnement. Les requetes en file n'ont encore rien envoye : elles
+   * ATTENDENT la reconnexion (bornee a `waitForUpMs`) au lieu d'echouer. C'etait la cause
+   * du `start-claude` refuse du 15 septembre a 07:34 : `IPC connection lost (reveil)` a la
+   * milliseconde de la requete. Seul un arret, ou Kova tenu pour absent, les rejette.
+   */
   private teardown(reason: string): void {
     this.subSocket?.destroy();
     this.subSocket = null;
     this.subLines.reset();
-    const err = new IpcError('KOVA_DOWN', `IPC connection lost (${reason})`);
-    for (const p of this.queue) p.reject(err);
-    this.queue = [];
     this.markLost();
+    if (this.stopped || this.status === 'down') {
+      this.rejectQueued(new IpcError('KOVA_DOWN', `IPC connection lost (${reason})`));
+      return;
+    }
+    for (const p of this.queue) this.armWait(p);
   }
 
   // ------------------------------------------------------------------
@@ -374,29 +447,48 @@ export class KovaIpc extends EventEmitter {
 
   #enqueue(payload: Record<string, unknown>): Promise<KovaResponse> {
     return new Promise((resolve, reject) => {
-      if (this.status !== 'up' || !this.socketPath) {
-        reject(new IpcError('KOVA_DOWN', 'Kova is unreachable'));
+      const pending: Pending = { payload, resolve, reject };
+      if (this.status === 'up' && this.socketPath) {
+        this.queue.push(pending);
+        this.pump();
         return;
       }
-      this.queue.push({ payload, resolve, reject });
-      this.pump();
+      // Reconnexion en cours (reveil, abonnement ferme) : on attend, borne.
+      if (!this.stopped && this.status === 'reconnecting') {
+        this.queue.push(pending);
+        this.armWait(pending);
+        return;
+      }
+      reject(new IpcError('KOVA_DOWN', 'Kova is unreachable'));
     });
   }
 
   private pump(): void {
     if (this.busy || this.queue.length === 0) return;
+    const path = this.socketPath;
+    // Pas de connexion : la file attend `up` (voir `setStatus`), chaque requete bornee.
+    if (!path || this.status !== 'up') return;
     const next = this.queue.shift();
     if (!next) return;
-    const path = this.socketPath;
-    if (!path || this.status !== 'up') {
-      next.reject(new IpcError('KOVA_DOWN', 'Kova is unreachable'));
-      return this.pump();
-    }
+    if (next.waitTimer) clearTimeout(next.waitTimer);
+    next.waitTimer = undefined;
     this.busy = true;
     this.runOne(next, path).finally(() => {
       this.busy = false;
       this.pump();
     });
+  }
+
+  /**
+   * Une seule nouvelle tentative, en tete de file, apres la reconnexion si elle est en
+   * cours. Rend `false` si la requete a deja ete rejouee : l'appelant la fait echouer.
+   */
+  private requeue(pending: Pending): boolean {
+    if (pending.retried || this.stopped || this.status === 'down') return false;
+    pending.retried = true;
+    this.queue.unshift(pending);
+    if (this.status !== 'up') this.armWait(pending);
+    return true;
   }
 
   /**
@@ -412,6 +504,22 @@ export class KovaIpc extends EventEmitter {
       const lines = new LineBuffer();
       const sock = connect(path);
       let settled = false;
+      /** Vrai des que la requete est ecrite : avant, la rejouer est toujours sans risque. */
+      let written = false;
+      /**
+       * Echec de connexion : rejouee une fois si rien n'est parti (socket refuse pendant un
+       * reveil), ou si c'est une lecture pure. Une ecriture deja partie n'est JAMAIS rejouee
+       * ici : Kova a pu l'executer, c'est a l'appelant de relire l'etat (voir `resume.ts`).
+       */
+      const failOrRetry = (err: IpcError): void =>
+        finish(() => {
+          const safe = !written || IDEMPOTENT_COMMANDS.has(String(pending.payload['cmd']));
+          if (safe && this.requeue(pending)) {
+            logger.info('requete IPC rejouee apres une coupure', { cmd: pending.payload['cmd'], written, err: err.message });
+            return;
+          }
+          pending.reject(err);
+        });
 
       const finish = (fn: () => void): void => {
         if (settled) return;
@@ -429,6 +537,7 @@ export class KovaIpc extends EventEmitter {
 
       sock.setEncoding('utf8');
       sock.on('connect', () => {
+        written = true;
         sock.write(`${JSON.stringify(pending.payload)}\n`);
       });
       sock.on('data', (chunk: string) => {
@@ -451,14 +560,12 @@ export class KovaIpc extends EventEmitter {
         });
       });
       sock.on('error', (e) => {
-        finish(() => pending.reject(new IpcError('KOVA_DOWN', e.message)));
+        failOrRetry(new IpcError('KOVA_DOWN', e.message));
       });
       sock.on('close', () => {
-        // Fermeture avant reponse : la requete echoue, mais l'abonnement, lui, n'est
-        // pas concerne et rien n'est replanifie.
-        finish(() =>
-          pending.reject(new IpcError('KOVA_DOWN', 'connection closed before the answer')),
-        );
+        // Fermeture avant reponse : la requete echoue (ou est rejouee si c'est sans
+        // risque), mais l'abonnement, lui, n'est pas concerne et rien n'est replanifie.
+        failOrRetry(new IpcError('KOVA_DOWN', 'connection closed before the answer'));
       });
     });
   }

@@ -44,7 +44,7 @@ export async function launchInFreshPane(
   // `claude` reste tape sans etre execute. On attend donc de VOIR la commande a l'ecran,
   // puis on verifie qu'elle a bien ete consommee, avec une seconde Entree sinon.
   await waitForTypedCommand(services, paneId, deadline);
-  return pressLaunch(services, paneId, deviceId, false);
+  return (await pressLaunch(services, paneId, deviceId, false)).launched;
 }
 
 /**
@@ -54,11 +54,52 @@ export async function launchInFreshPane(
  * occupe est decide ICI, avant toute touche : un agent, un processus enfant (un `vim`,
  * un serveur) ou un lancement deja en cours rendent 409, rien n'est envoye.
  */
-export async function startClaudeInPane(
+/**
+ * Lancements en cours, par pane. Mesure du 15 septembre 2026 : l'app a envoye DEUX
+ * `start-claude` sur le pane 28 a la meme milliseconde. Le second recoit la reponse du
+ * premier : `claude` n'est jamais tape deux fois.
+ */
+const inflightStarts = new Map<number, Promise<StartClaudeOutcome>>();
+
+export function startClaudeInPane(
   services: LaunchServices,
   paneId: number,
   deviceId: string,
 ): Promise<StartClaudeOutcome> {
+  const running = inflightStarts.get(paneId);
+  if (running) {
+    audit({ deviceId, action: 'pane.start-claude', paneId, result: 'denied', detail: 'duplicate' });
+    logger.info('start-claude deja en cours sur ce pane, requete fusionnee', { paneId });
+    return running;
+  }
+  const run = startClaudeOnce(services, paneId, deviceId).finally(() => inflightStarts.delete(paneId));
+  inflightStarts.set(paneId, run);
+  return run;
+}
+
+/**
+ * Relit le pane chez Kova avant de decider. Mesure du 15 septembre 2026 sur un onglet de
+ * test : apres avoir quitte Claude, le store du daemon gardait `child_processes: [claude]`
+ * alors que Kova n'en listait plus aucun. `start-claude` rendait 409 `PANE_BUSY` sur un
+ * shell nu. Un echec de lecture laisse le store tel quel.
+ */
+async function refreshPane(services: LaunchServices, paneId: number): Promise<void> {
+  const ipc = services.ipc as { listPanes?: () => Promise<Record<string, unknown>[]> };
+  if (typeof ipc.listPanes !== 'function' || typeof services.panes.upsertRaw !== 'function') return;
+  try {
+    const raw = (await ipc.listPanes()).find((p) => p['id'] === paneId);
+    if (raw && services.panes.get(paneId)) services.panes.upsertRaw(raw);
+  } catch (e) {
+    logger.warn('relecture du pane avant start-claude en echec', { paneId, err: (e as Error).message });
+  }
+}
+
+async function startClaudeOnce(
+  services: LaunchServices,
+  paneId: number,
+  deviceId: string,
+): Promise<StartClaudeOutcome> {
+  await refreshPane(services, paneId);
   const pane = services.panes.get(paneId);
   if (!pane) {
     audit({ deviceId, action: 'pane.start-claude', paneId, result: 'denied', detail: 'pane_gone' });
@@ -67,41 +108,94 @@ export async function startClaudeInPane(
   const busy = pane.agent !== null ? 'agent' : pane.launching ? 'launching' : pane.child_processes.length > 0 ? 'child' : null;
   if (busy !== null) {
     audit({ deviceId, action: 'pane.start-claude', paneId, result: 'denied', detail: busy });
-    return { ok: false, status: 409, code: 'PANE_BUSY', message: `this pane is not a bare shell (${busy})` };
+    const why =
+      busy === 'agent'
+        ? 'Claude is already running in this pane'
+        : busy === 'launching'
+          ? 'Claude is already starting in this pane'
+          : `a program is running in this pane (${pane.child_processes.map((c) => c.name).join(', ')}), quit it first`;
+    return { ok: false, status: 409, code: 'PANE_BUSY', message: why };
   }
-  const launched = await pressLaunch(services, paneId, deviceId, true);
-  audit({ deviceId, action: 'pane.start-claude', paneId, path: pane.cwd, result: launched ? 'ok' : 'error' });
-  logger.info('claude lance dans un pane nu depuis l app', { deviceId, paneId, cwd: pane.cwd, launched });
-  return { ok: true, response: { launched } };
+  const out = await pressLaunch(services, paneId, deviceId, true);
+  audit({ deviceId, action: 'pane.start-claude', paneId, path: pane.cwd, result: out.launched ? 'ok' : 'error', detail: out.reason });
+  logger.info('claude lance dans un pane nu depuis l app', { deviceId, paneId, cwd: pane.cwd, launched: out.launched, reason: out.reason });
+  return { ok: true, response: out };
 }
 
 export type StartClaudeOutcome =
   | { ok: true; response: PaneStartClaudeResponse }
   | { ok: false; status: number; code: ErrorCode; message: string };
 
+type Press = { applied: true } | { applied: false; reason: string };
+
+const PANE_GONE_REASON = 'the pane is gone on the Mac';
+
+function hasClaude(pane: { agent: string | null; child_processes: { name: string }[] }): boolean {
+  return pane.agent !== null || pane.child_processes.some((c) => c.name === NEW_TAB_COMMAND);
+}
+
+function lastLine(text: string): string {
+  const lines = text.split('\n').filter((l) => l.trim().length > 0);
+  return lines[lines.length - 1] ?? '';
+}
+
+/**
+ * Premiere frappe. Sur une coupure IPC (reveil du Mac), on attend la reconnexion, on
+ * RELIT le pane et son ecran, et on ne rejoue qu'une fois, seulement si rien n'a atteint
+ * le shell : un agent present, la banniere de Claude Code ou la commande deja tapee
+ * valent lancement. Un ecran illisible ne rejoue rien : jamais `claude` deux fois.
+ */
+async function firstPress(services: LaunchServices, paneId: number, deviceId: string, typeCommand: boolean): Promise<Press> {
+  const attempt = async (): Promise<Press> => {
+    const r = await services.keygate.emitLaunch(paneId, deviceId, typeCommand);
+    return r.applied ? { applied: true } : { applied: false, reason: r.reason === 'pane_gone' ? PANE_GONE_REASON : `refused (${r.reason ?? 'unknown'})` };
+  };
+  try {
+    return await attempt();
+  } catch (e) {
+    const err = (e as Error).message;
+    logger.warn('lancement de claude refuse', { paneId, err });
+    if (!(e instanceof IpcError) || e.code !== 'KOVA_DOWN') return { applied: false, reason: err };
+  }
+  const ipc = services.ipc as { whenUp?: (ms?: number) => Promise<boolean> };
+  const up = typeof ipc.whenUp === 'function' ? await ipc.whenUp() : false;
+  if (!up) return { applied: false, reason: 'Kova is unreachable, the Mac may be waking up. Try again in a moment.' };
+  const pane = services.panes.get(paneId);
+  if (!pane) return { applied: false, reason: PANE_GONE_REASON };
+  if (hasClaude(pane)) return { applied: true };
+  const screen = await screenOf(services, paneId);
+  if (screen === null) return { applied: false, reason: 'the pane screen is unreadable after a Kova reconnection, nothing was typed again' };
+  if (screen.includes('Claude Code') || (typeCommand && lastLine(screen).includes(NEW_TAB_COMMAND))) {
+    logger.info('lancement deja parti avant la coupure IPC, rien n est rejoue', { paneId });
+    return { applied: true };
+  }
+  logger.info('lancement rejoue apres la reconnexion IPC', { paneId });
+  try {
+    return await attempt();
+  } catch (e) {
+    return { applied: false, reason: (e as Error).message };
+  }
+}
+
 /**
  * L'Entree qui execute `claude` (tapee aussi par le daemon si `typeCommand`), le pane
  * marque « en demarrage », puis une seconde Entree si la commande est encore a l'ecran.
  */
-async function pressLaunch(services: LaunchServices, paneId: number, deviceId: string, typeCommand: boolean): Promise<boolean> {
-  try {
-    const first = await services.keygate.emitLaunch(paneId, deviceId, typeCommand);
-    if (!first.applied) return false;
-    // Des l'Entree partie, le pane est « en demarrage » pour l'app, pas « sans agent ».
-    if (typeof services.panes.markLaunching === 'function') services.panes.markLaunching(paneId);
-  } catch (e) {
-    logger.warn('lancement de claude refuse', { paneId, err: (e as Error).message });
-    return false;
-  }
+async function pressLaunch(services: LaunchServices, paneId: number, deviceId: string, typeCommand: boolean): Promise<PaneStartClaudeResponse> {
+  const first = await firstPress(services, paneId, deviceId, typeCommand);
+  if (!first.applied) return { launched: false, reason: first.reason };
+  // Des l'Entree partie, le pane est « en demarrage » pour l'app, pas « sans agent ».
+  if (typeof services.panes.markLaunching === 'function') services.panes.markLaunching(paneId);
   if (await commandStillTyped(services, paneId)) {
     logger.info('commande toujours tapee apres l Entree, seconde Entree', { paneId });
     try {
-      return (await services.keygate.emitLaunch(paneId, deviceId)).applied;
-    } catch {
-      return false;
+      const again = await services.keygate.emitLaunch(paneId, deviceId);
+      return again.applied ? { launched: true } : { launched: false, reason: 'claude is typed in the shell but Enter was refused' };
+    } catch (e) {
+      return { launched: false, reason: `claude is typed in the shell but Enter failed: ${(e as Error).message}` };
     }
   }
-  return true;
+  return { launched: true };
 }
 
 /** Texte visible du pane, `null` si l'IPC ne le donne pas (ou n'est pas simule en test). */
@@ -133,9 +227,7 @@ async function commandStillTyped(services: LaunchServices, paneId: number): Prom
   await new Promise((r) => setTimeout(r, LAUNCH_SETTLE_MS));
   const text = await screenOf(services, paneId);
   if (text === null || text.includes('Claude Code')) return false;
-  const lines = text.split('\n').filter((l) => l.trim().length > 0);
-  const last = lines[lines.length - 1] ?? '';
-  return last.includes(NEW_TAB_COMMAND);
+  return lastLine(text).includes(NEW_TAB_COMMAND);
 }
 
 export type ResumeOutcome =
