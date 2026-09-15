@@ -231,8 +231,12 @@ L'app enregistre la voix de Robin (m4a) et l'envoie au daemon sur `POST /v1/tran
 (corps audio brut, 10 Mo au plus, types `audio/*` seulement, audite sans jamais le texte).
 Le daemon appelle OpenAI Whisper (`whisper-1`, `POST /v1/audio/transcriptions`, aucune
 langue imposee : francais ou anglais, delai de 120 s) avec une cle lue sur le Mac, et rend le texte a l'app, qui le met
-dans le champ de message sans l'envoyer. L'audio est transmis en memoire et n'est jamais
-ecrit sur le disque du Mac.
+dans le champ de message sans l'envoyer. Avant l'envoi, l'audio est normalise en wav
+16 kHz mono par `afconvert` (Whisper refusait certains m4a de l'iPhone) : il passe par un
+fichier temporaire prive (dossier `mkdtemp` 0700, fichier 0600), efface dans un `finally`
+meme en cas d'erreur. Si la conversion echoue, le fichier d'origine part tel quel. En cas
+de refus d'OpenAI, le journal garde le statut HTTP et le message d'OpenAI (jamais la cle ni
+le texte), et l'app affiche une raison claire (cle refusee, plus de credits, audio indecodable).
 
 **La cle ne quitte jamais le Mac et n'est jamais dans le depot.** Elle vit dans
 `~/.kovalink/openai-key` (une ligne, mode `0600`, surchargeable par
