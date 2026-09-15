@@ -42,7 +42,7 @@ export const ROUTES = {
   tabReorder: (tabId: number): string => `/v1/kova/tabs/${tabId}/reorder`,
   paneReorder: (paneId: number): string => `/v1/panes/${paneId}/reorder`,
   /**
-   * Mode vocal : l'app envoie l'audio (m4a, 10 Mo max) au daemon, qui appelle Gladia
+   * Mode vocal : l'app envoie l'audio (m4a, 10 Mo max) au daemon, qui appelle OpenAI Whisper
    * avec la cle lue sur le Mac. La cle ne quitte jamais le Mac, l'audio n'y reste pas.
    */
   transcribe: '/v1/transcribe',
@@ -128,7 +128,7 @@ export const ROUTE_PATTERNS = {
   tabReorder: '/v1/kova/tabs/:tabId/reorder',
   paneReorder: '/v1/panes/:paneId/reorder',
   /**
-   * Mode vocal : l'app envoie l'audio (m4a, 10 Mo max) au daemon, qui appelle Gladia
+   * Mode vocal : l'app envoie l'audio (m4a, 10 Mo max) au daemon, qui appelle OpenAI Whisper
    * avec la cle lue sur le Mac. La cle ne quitte jamais le Mac, l'audio n'y reste pas.
    */
   transcribe: '/v1/transcribe',

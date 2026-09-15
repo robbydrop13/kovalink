@@ -1,5 +1,5 @@
 // Mode vocal : la route refuse un fichier trop gros et un type non audio, et le client
-// Gladia relaie l'erreur mot pour mot. Le faux Gladia est un `fetch` en memoire.
+// Whisper relaie l'erreur mot pour mot. Le faux OpenAI est un `fetch` en memoire.
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,87 +10,79 @@ import { ROUTES, TRANSCRIBE_MAX_BYTES } from '@kovalink/protocol';
 
 process.env['KOVALINK_HOME'] = mkdtempSync(join(tmpdir(), 'kovalink-voice-'));
 process.env['KOVALINK_QUIET'] = '1';
-process.env['KOVALINK_GLADIA_KEY_FILE'] = join(process.env['KOVALINK_HOME'], 'gladia-key');
+process.env['KOVALINK_OPENAI_KEY_FILE'] = join(process.env['KOVALINK_HOME'], 'openai-key');
 
-const { transcribe, TranscriptionError, GLADIA_BASE } = await import('../src/voice/gladia.js');
+const { transcribe, TranscriptionError, OPENAI_TRANSCRIPTIONS_URL } = await import('../src/voice/whisper.js');
 
 type FakeCall = { url: string; init: RequestInit | undefined };
 
-/** Faux Gladia : upload, lancement, puis un resultat `processing` avant `done`. */
-function fakeGladia(options: { failAt?: 'upload' | 'pre-recorded' | 'result'; message?: string } = {}) {
+/** Faux OpenAI : rend `status` et `body` pour chaque appel, et garde les appels. */
+function fakeOpenai(status = 200, body: unknown = { text: ' Recrée un unique commit ' }) {
   const calls: FakeCall[] = [];
-  let polls = 0;
-  const json = (status: number, body: unknown): Response =>
-    new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input);
-    calls.push({ url, init });
-    if (url === `${GLADIA_BASE}/v2/upload`) {
-      if (options.failAt === 'upload') return json(401, { message: options.message ?? 'Invalid API key' });
-      return json(200, { audio_url: 'https://api.gladia.io/file/abc' });
-    }
-    if (url === `${GLADIA_BASE}/v2/pre-recorded`) {
-      if (options.failAt === 'pre-recorded') return json(400, { message: options.message ?? 'bad request' });
-      return json(201, { id: 'job-1', result_url: `${GLADIA_BASE}/v2/pre-recorded/job-1` });
-    }
-    if (url === `${GLADIA_BASE}/v2/pre-recorded/job-1`) {
-      polls += 1;
-      if (options.failAt === 'result') return json(200, { status: 'error', error_code: 'audio_too_short' });
-      if (polls === 1) return json(200, { status: 'processing' });
-      return json(200, {
-        status: 'done',
-        result: { transcription: { full_transcript: ' Recrée un unique commit ', languages: ['fr'] }, metadata: { audio_duration: 2.4 } },
-      });
-    }
-    return json(404, { message: 'unknown url' });
+    calls.push({ url: String(input), init });
+    return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   }) as typeof fetch;
   return { fetchImpl, calls };
 }
 
 const AUDIO = Buffer.from('fake m4a bytes');
 
-describe('client Gladia', () => {
+describe('client Whisper', () => {
   it('sans cle sur le Mac : TRANSCRIPTION_UNAVAILABLE avec le chemin du fichier a creer', async () => {
-    const { fetchImpl, calls } = fakeGladia();
+    const { fetchImpl, calls } = fakeOpenai();
     await assert.rejects(
       () => transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: fetchImpl }),
-      (e: unknown) => e instanceof TranscriptionError && e.code === 'TRANSCRIPTION_UNAVAILABLE' && /gladia-key/.test(e.message),
+      (e: unknown) => e instanceof TranscriptionError && e.code === 'TRANSCRIPTION_UNAVAILABLE' && /openai-key/.test(e.message),
     );
-    assert.equal(calls.length, 0, 'rien ne part vers Gladia sans cle');
+    assert.equal(calls.length, 0, 'rien ne part vers OpenAI sans cle');
   });
 
-  it('upload, lancement avec detection de langue, puis resultat : texte, langue, duree', async () => {
-    const { fetchImpl, calls } = fakeGladia();
-    const res = await transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: fetchImpl, key: 'k-test', pollMs: 1 });
-    assert.deepEqual(res, { text: 'Recrée un unique commit', language: 'fr', durationMs: 2400 });
-    assert.deepEqual(calls.map((c) => c.url), [
-      `${GLADIA_BASE}/v2/upload`,
-      `${GLADIA_BASE}/v2/pre-recorded`,
-      `${GLADIA_BASE}/v2/pre-recorded/job-1`,
-      `${GLADIA_BASE}/v2/pre-recorded/job-1`,
-    ]);
-    for (const c of calls) assert.equal((c.init?.headers as Record<string, string>)['x-gladia-key'], 'k-test');
-    assert.equal(JSON.parse(String(calls[1]?.init?.body)).detect_language, true);
+  it('succes : un multipart file + whisper-1 + json, sans langue imposee, rend le texte', async () => {
+    const { fetchImpl, calls } = fakeOpenai();
+    const res = await transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: fetchImpl, key: 'k-test' });
+    assert.deepEqual(res, { text: 'Recrée un unique commit', language: null, durationMs: null });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.url, OPENAI_TRANSCRIPTIONS_URL);
+    assert.equal(calls[0]?.init?.method, 'POST');
+    assert.equal((calls[0]?.init?.headers as Record<string, string>)['authorization'], 'Bearer k-test');
+    const form = calls[0]?.init?.body as FormData;
+    assert.equal(form.get('model'), 'whisper-1');
+    assert.equal(form.get('response_format'), 'json');
+    assert.equal(form.get('language'), null);
+    const file = form.get('file') as File;
+    assert.equal(file.name, 'voice.m4a');
+    assert.equal(Buffer.from(await file.arrayBuffer()).toString(), 'fake m4a bytes');
   });
 
-  it('relaie l erreur de Gladia mot pour mot, avec l etape et le statut', async () => {
-    const { fetchImpl } = fakeGladia({ failAt: 'upload', message: 'Invalid API key: revoked on 2026-09-01' });
+  it('401 : TRANSCRIPTION_UNAVAILABLE avec le message d OpenAI', async () => {
+    const { fetchImpl } = fakeOpenai(401, { error: { message: 'Incorrect API key provided' } });
     await assert.rejects(
       () => transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: fetchImpl, key: 'k' }),
-      (e: unknown) => e instanceof TranscriptionError && e.code === 'TRANSCRIPTION_FAILED' && e.message === 'Gladia upload 401: Invalid API key: revoked on 2026-09-01',
+      (e: unknown) => e instanceof TranscriptionError && e.code === 'TRANSCRIPTION_UNAVAILABLE' && e.message === 'Whisper 401: Incorrect API key provided',
     );
-    const result = fakeGladia({ failAt: 'result' });
+  });
+
+  it('5xx et reseau : TRANSCRIPTION_FAILED', async () => {
+    const { fetchImpl } = fakeOpenai(503, { error: { message: 'The server is overloaded' } });
     await assert.rejects(
-      () => transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: result.fetchImpl, key: 'k', pollMs: 1 }),
-      /Gladia result: audio_too_short/,
+      () => transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: fetchImpl, key: 'k' }),
+      (e: unknown) => e instanceof TranscriptionError && e.code === 'TRANSCRIPTION_FAILED' && e.message === 'Whisper 503: The server is overloaded',
+    );
+    const down = (async () => {
+      throw new TypeError('fetch failed');
+    }) as typeof fetch;
+    await assert.rejects(
+      () => transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: down, key: 'k' }),
+      (e: unknown) => e instanceof TranscriptionError && e.code === 'TRANSCRIPTION_FAILED' && /fetch failed/.test(e.message),
     );
   });
 
   it('lit la cle dans le fichier du Mac', async () => {
-    writeFileSync(process.env['KOVALINK_GLADIA_KEY_FILE'] as string, 'k-from-file\n', { mode: 0o600 });
-    const { fetchImpl, calls } = fakeGladia();
-    await transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: fetchImpl, pollMs: 1 });
-    assert.equal((calls[0]?.init?.headers as Record<string, string>)['x-gladia-key'], 'k-from-file');
+    writeFileSync(process.env['KOVALINK_OPENAI_KEY_FILE'] as string, 'k-from-file\n', { mode: 0o600 });
+    const { fetchImpl, calls } = fakeOpenai();
+    await transcribe(AUDIO, 'audio/wav', 'voice.wav', { fetch: fetchImpl });
+    assert.equal((calls[0]?.init?.headers as Record<string, string>)['authorization'], 'Bearer k-from-file');
   });
 });
 

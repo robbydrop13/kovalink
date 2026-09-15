@@ -60,7 +60,7 @@ import { findSession, listSessions } from '../kova/sessions.js';
 import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession, startClaudeInPane } from '../kova/resume.js';
 import { ManageError, closePane, renameCommand, renameTab, sanitizeSessionName, setBookmark } from '../kova/manage.js';
 import { reorderPane, reorderTab } from '../kova/reorder.js';
-import { TranscriptionError, transcribe } from '../voice/gladia.js';
+import { TranscriptionError, transcribe } from '../voice/whisper.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { registerMiraRoutes } from './miraRoutes.js';
 import { Hub, type Socket } from './hub.js';

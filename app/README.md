@@ -187,13 +187,13 @@ incompatible. Une politique `appVersion` provoquerait des crashs au lancement.
 Le bouton micro de la barre de message enregistre tant qu'on le maintient (niveau et
 durée affichés, glisser vers la gauche annule), envoie l'audio au daemon à la relâche, et
 le texte transcrit remplace le contenu du champ : Robin relit et appuie sur Send. La
-transcription est faite par Gladia **depuis le Mac** : la clé se place dans
-`~/.kovalink/gladia-key` sur le Mac (`0600`, une par machine, jamais dans le dépôt, voir
+transcription est faite par OpenAI Whisper **depuis le Mac** : la clé se place dans
+`~/.kovalink/openai-key` sur le Mac (`0600`, une par machine, jamais dans le dépôt, voir
 `daemon/README.md`) ; sans elle, le daemon répond `TRANSCRIPTION_UNAVAILABLE` et le bouton
 l'explique.
 
 ```bash
-umask 077 && printf '%s\n' 'VOTRE_CLE_GLADIA' > ~/.kovalink/gladia-key
+umask 077 && printf '%s\n' 'VOTRE_CLE_OPENAI' > ~/.kovalink/openai-key
 ```
 
 L'enregistrement passe par `expo-audio`, un module natif : il faut un build qui le

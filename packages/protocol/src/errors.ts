@@ -37,9 +37,9 @@ export const ERROR_CODES = [
   'RATE_LIMITED',
   'IO_ERROR',
   'NO_SPACE',
-  // Mode vocal : la cle Gladia (`~/.kovalink/gladia-key`) est absente du Mac.
+  // Mode vocal : la cle OpenAI (`~/.kovalink/openai-key`) est absente du Mac, ou refusee (401).
   'TRANSCRIPTION_UNAVAILABLE',
-  // Mode vocal : Gladia a refuse ou echoue, son message est relaye mot pour mot.
+  // Mode vocal : Whisper a refuse ou echoue, son message est relaye mot pour mot.
   'TRANSCRIPTION_FAILED',
   // Navigateur : la socket de Mira est absente (503), l'onglet est inconnu de Mira (404),
   // ou Mira a refuse la commande, son message est relaye mot pour mot (502).

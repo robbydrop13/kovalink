@@ -1,5 +1,5 @@
 // Mode vocal : enregistrer sur l'iPhone (m4a), envoyer l'audio au daemon, recevoir le
-// texte dans le composer. Le daemon parle à Gladia avec la clé du Mac : rien ne part
+// texte dans le composer. Le daemon parle à OpenAI Whisper avec la clé du Mac : rien ne part
 // ailleurs, et le fichier temporaire de l'iPhone est supprimé après envoi.
 //
 // `expo-audio` est chargé PARESSEUSEMENT : le build natif du 12 septembre ne le contient
