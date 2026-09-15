@@ -414,18 +414,25 @@ export default function SessionScreen() {
     return () => clearTimeout(timer);
   }, [startRequested]);
 
-  const onStartClaude = useCallback(async () => {
+  /**
+   * La session que Kova rouvrirait ici (son bouton `Resume`) : seulement quand le daemon et
+   * Kova l'exposent. `typeof` et non `!== null` : un instantané d'un daemon plus ancien n'a
+   * pas le champ du tout.
+   */
+  const resumable = bareShell && typeof pane?.resume_command === 'string';
+
+  const onStartClaude = useCallback(async (mode: 'new' | 'resume' = 'new') => {
     impact(ImpactStyle.Medium);
     setStartRequest(paneId);
     // La cause réelle du Mac (409 `PANE_BUSY`, Kova injoignable, délai), jamais un silence.
-    const reason = await startClaude(paneId).then(
+    const reason = await startClaude(paneId, mode).then(
       (res) => (res.launched ? null : (res.reason ?? t.sessionReasonUnknown)),
       (e: unknown) => (e instanceof Error ? e.message : String(e)),
     );
     if (reason !== null) {
       setStartRequest(null);
       notify(NotifyType.Error);
-      setToast(t.sessionStartClaudeFailed(reason));
+      setToast(mode === 'resume' ? t.sessionResumeFailed(reason) : t.sessionStartClaudeFailed(reason));
     }
   }, [paneId]);
 
@@ -894,7 +901,13 @@ export default function SessionScreen() {
       ) : null}
       {bareShell && view === 'term' ? (
         // Le shell nu vu depuis Term : le même geste que l'état vide du chat, en bandeau.
-        <Banner text={t.sessionNoAgentTitle} actionLabel={t.sessionStartClaude} onAction={() => void onStartClaude()} />
+        <Banner
+          text={t.sessionNoAgentTitle}
+          secondaryLabel={resumable ? t.sessionResume : undefined}
+          onSecondary={resumable ? () => void onStartClaude('resume') : undefined}
+          actionLabel={t.sessionStartClaude}
+          onAction={() => void onStartClaude('new')}
+        />
       ) : null}
       {session.status === 'error' ? (
         <Banner
@@ -1000,8 +1013,16 @@ export default function SessionScreen() {
 
           {bareShell ? (
             // Aucune session à afficher : le pane n'est qu'un shell. Lancer Claude ici, ou Term.
-            <EmptyState icon="terminal" title={t.sessionNoAgentTitle} body={t.sessionNoAgentBody}>
-              <Button label={t.sessionStartClaude} onPress={() => void onStartClaude()} />
+            <EmptyState icon="terminal" title={t.sessionNoAgentTitle} body={resumable ? t.sessionNoAgentResumeBody : t.sessionNoAgentBody}>
+              {resumable ? (
+                // Reprendre la session d'avant est le geste attendu : bouton principal, « nouvelle » en secondaire.
+                <>
+                  <Button label={t.sessionResume} onPress={() => void onStartClaude('resume')} />
+                  <Button label={t.sessionStartClaude} kind="secondary" onPress={() => void onStartClaude('new')} />
+                </>
+              ) : (
+                <Button label={t.sessionStartClaude} onPress={() => void onStartClaude('new')} />
+              )}
               <Button label={t.actionOpenTerminal} kind="secondary" onPress={() => setView('term')} />
             </EmptyState>
           ) : (session.status === 'ready' && session.turns.length === 0) || (session.status === 'idle' && launching) ? (

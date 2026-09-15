@@ -31,6 +31,7 @@ import {
   type PaneCommandsResponse,
   type PaneReorderResponse,
   type PaneStartClaudeResponse,
+  type PaneStartMode,
   type PaneTerminalRequest,
   type PairClaimRequest,
   type PairClaimResponse,
@@ -261,8 +262,8 @@ export function fetchCommands(paneId: number, timeoutMs = 6000): Promise<PaneCom
  * Lancer `claude` dans un pane qui n'est qu'un shell. Le daemon tape la commande, toujours
  * `claude`, et refuse (409 `PANE_BUSY`) un pane qui porte déjà un agent ou un processus.
  */
-export function startClaude(paneId: number, timeoutMs = 10_000): Promise<PaneStartClaudeResponse> {
-  return request(ROUTES.paneStartClaude(paneId), { method: 'POST', timeoutMs });
+export function startClaude(paneId: number, mode: PaneStartMode = 'new', timeoutMs = 10_000): Promise<PaneStartClaudeResponse> {
+  return request(ROUTES.paneStartClaude(paneId), { method: 'POST', body: { mode }, timeoutMs });
 }
 
 /**

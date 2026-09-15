@@ -66,6 +66,10 @@ export function toPane(raw: Record<string, unknown>): Pane {
     agent_session_name: strOrNull(raw['agent_session_name']) ?? live?.name ?? null,
     claude_session_id: strOrNull(raw['claude_session_id']) ?? live?.id ?? null,
     claude_session_name: strOrNull(raw['claude_session_name']) ?? live?.name ?? null,
+    // Absents chez un Kova plus ancien : `null`, donc pas de bouton Resume dans l'app.
+    resume_agent: strOrNull(raw['resume_agent']),
+    resume_session_id: strOrNull(raw['resume_session_id']),
+    resume_command: strOrNull(raw['resume_command']),
     projectName: basename(cwd) || cwd,
     hasTranscript: transcript,
     // Une session claude fraiche a un identifiant mais pas encore de JSONL (cree au

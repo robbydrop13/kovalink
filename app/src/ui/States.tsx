@@ -12,11 +12,16 @@ export function Banner({
   tone = 'info',
   actionLabel,
   onAction,
+  secondaryLabel,
+  onSecondary,
 }: {
   text: string;
   tone?: 'info' | 'warn' | 'error' | 'offline' | 'working';
   actionLabel?: string;
   onAction?: () => void;
+  /** Un second geste, a gauche du premier (par exemple « Resume » avant « Start new session »). */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
 }) {
   const tint =
     tone === 'error'
@@ -33,6 +38,9 @@ export function Banner({
       <Txt variant="footnote" color={colors.text.secondary} style={styles.bannerText}>
         {text}
       </Txt>
+      {secondaryLabel && onSecondary ? (
+        <Button label={secondaryLabel} kind="secondary" height={32} onPress={onSecondary} />
+      ) : null}
       {actionLabel && onAction ? (
         <Button label={actionLabel} kind="secondary" height={32} onPress={onAction} />
       ) : null}

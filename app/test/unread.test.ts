@@ -11,7 +11,7 @@ function pane(partial: Partial<Pane> & { id: number; tab: number }): Pane {
   return {
     window: 0, cwd: '/x', title: 'claude', focused: false, pid: 1, child_processes: [], is_idle: false, working: false,
     awaiting: false, awaiting_since: null, awaiting_seen: false, minimized: false, agent: 'claude', agent_session_id: null,
-    agent_session_name: null, claude_session_id: null, claude_session_name: null, projectName: 'x', hasTranscript: true,
+    agent_session_name: null, claude_session_id: null, claude_session_name: null, resume_agent: null, resume_session_id: null, resume_command: null, projectName: 'x', hasTranscript: true,
     chatCapable: true, permissionMode: null, color: null, tabId: null, launching: false, liveState: 'idle', ...partial,
   };
 }

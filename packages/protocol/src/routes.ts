@@ -284,6 +284,17 @@ export interface PaneCommandsResponse {
  * Reponse de `POST /v1/panes/:paneId/start-claude`. `launched` dit si l'Entree qui
  * execute `claude` est partie ; sinon la commande attend dans le shell du pane.
  */
+export type PaneStartMode = 'new' | 'resume';
+
+/**
+ * Corps de `POST /v1/panes/:paneId/start-claude`. `new` (defaut) tape `claude` ; `resume`
+ * demande a Kova de relancer la session du pane (`resume_command` non nul), sans que le
+ * daemon ne tape de commande lui-meme.
+ */
+export interface PaneStartClaudeRequest {
+  mode?: PaneStartMode;
+}
+
 export interface PaneStartClaudeResponse {
   launched: boolean;
   /** Quand `launched` est faux : la cause lisible (anglais), a montrer telle quelle. */

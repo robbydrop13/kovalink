@@ -2,11 +2,18 @@
 // ou reprise d'une session fermee (`claude --resume <id>`, PRD 3.4). La commande est
 // TOUJOURS construite ici : le client ne fournit qu'un index ou un identifiant, valides.
 import { statSync } from 'node:fs';
-import { isPaneContentError, type ErrorCode, type KovaResumeResponse, type PaneContent, type PaneStartClaudeResponse } from '@kovalink/protocol';
+import {
+  isPaneContentError,
+  type ErrorCode,
+  type KovaResumeResponse,
+  type PaneContent,
+  type PaneStartClaudeResponse,
+  type PaneStartMode,
+} from '@kovalink/protocol';
 import { audit } from '../audit.js';
 import { logger } from '../logger.js';
 import type { Services } from '../server/services.js';
-import { IpcError } from './ipc.js';
+import { IpcError, type KovaResponse } from './ipc.js';
 import { findSession, isSessionId } from './sessions.js';
 
 /**
@@ -65,14 +72,15 @@ export function startClaudeInPane(
   services: LaunchServices,
   paneId: number,
   deviceId: string,
+  mode: PaneStartMode = 'new',
 ): Promise<StartClaudeOutcome> {
   const running = inflightStarts.get(paneId);
   if (running) {
-    audit({ deviceId, action: 'pane.start-claude', paneId, result: 'denied', detail: 'duplicate' });
-    logger.info('start-claude deja en cours sur ce pane, requete fusionnee', { paneId });
+    audit({ deviceId, action: auditAction(mode), paneId, result: 'denied', detail: 'duplicate' });
+    logger.info('start-claude deja en cours sur ce pane, requete fusionnee', { paneId, mode });
     return running;
   }
-  const run = startClaudeOnce(services, paneId, deviceId).finally(() => inflightStarts.delete(paneId));
+  const run = startClaudeOnce(services, paneId, deviceId, mode).finally(() => inflightStarts.delete(paneId));
   inflightStarts.set(paneId, run);
   return run;
 }
@@ -94,20 +102,26 @@ async function refreshPane(services: LaunchServices, paneId: number): Promise<vo
   }
 }
 
+function auditAction(mode: PaneStartMode): string {
+  return mode === 'resume' ? 'pane.resume-pending' : 'pane.start-claude';
+}
+
 async function startClaudeOnce(
   services: LaunchServices,
   paneId: number,
   deviceId: string,
+  mode: PaneStartMode,
 ): Promise<StartClaudeOutcome> {
+  const action = auditAction(mode);
   await refreshPane(services, paneId);
   const pane = services.panes.get(paneId);
   if (!pane) {
-    audit({ deviceId, action: 'pane.start-claude', paneId, result: 'denied', detail: 'pane_gone' });
+    audit({ deviceId, action, paneId, result: 'denied', detail: 'pane_gone' });
     return { ok: false, status: 404, code: 'PANE_NOT_FOUND', message: 'unknown pane' };
   }
   const busy = pane.agent !== null ? 'agent' : pane.launching ? 'launching' : pane.child_processes.length > 0 ? 'child' : null;
   if (busy !== null) {
-    audit({ deviceId, action: 'pane.start-claude', paneId, result: 'denied', detail: busy });
+    audit({ deviceId, action, paneId, result: 'denied', detail: busy });
     const why =
       busy === 'agent'
         ? 'Claude is already running in this pane'
@@ -115,6 +129,24 @@ async function startClaudeOnce(
           ? 'Claude is already starting in this pane'
           : `a program is running in this pane (${pane.child_processes.map((c) => c.name).join(', ')}), quit it first`;
     return { ok: false, status: 409, code: 'PANE_BUSY', message: why };
+  }
+  if (mode === 'resume') {
+    // Kova porte la ligne de reprise et la valide : le daemon ne fait que nommer le pane.
+    if (pane.resume_command === null) {
+      audit({ deviceId, action, paneId, result: 'denied', detail: 'nothing_to_resume' });
+      return { ok: false, status: 409, code: 'PANE_BUSY', message: 'there is no session to resume in this pane' };
+    }
+    const out = await resumeInKova(services, paneId);
+    audit({
+      deviceId,
+      action,
+      paneId,
+      path: pane.cwd,
+      result: out.launched ? 'ok' : 'error',
+      detail: out.launched ? `session=${pane.resume_session_id ?? '?'}` : out.reason,
+    });
+    logger.info('session reprise dans son pane depuis l app', { deviceId, paneId, cwd: pane.cwd, launched: out.launched, reason: out.reason });
+    return { ok: true, response: out };
   }
   const out = await pressLaunch(services, paneId, deviceId, true);
   audit({ deviceId, action: 'pane.start-claude', paneId, path: pane.cwd, result: out.launched ? 'ok' : 'error', detail: out.reason });
@@ -196,6 +228,51 @@ async function pressLaunch(services: LaunchServices, paneId: number, deviceId: s
     }
   }
   return { launched: true };
+}
+
+/**
+ * `resume-pane` chez Kova : exactement le bouton `Resume` de sa barre laterale (Ctrl+U, la
+ * ligne rebatie par Kova, Entree). Sur une coupure IPC (reveil du Mac), on attend la
+ * reconnexion, on relit le pane et on ne rejoue qu'une fois, seulement si aucun agent n'y
+ * est apparu. Kova refuse de toute facon un pane qui n'est plus un shell nu.
+ */
+async function resumeInKova(services: LaunchServices, paneId: number): Promise<PaneStartClaudeResponse> {
+  const send = (): Promise<KovaResponse> => services.ipc.request({ cmd: 'resume-pane', pane_id: paneId });
+  let res: KovaResponse;
+  try {
+    res = await send();
+  } catch (e) {
+    const err = (e as Error).message;
+    logger.warn('resume-pane refuse', { paneId, err });
+    if (!(e instanceof IpcError) || e.code !== 'KOVA_DOWN') return { launched: false, reason: err };
+    const ipc = services.ipc as { whenUp?: (ms?: number) => Promise<boolean> };
+    const up = typeof ipc.whenUp === 'function' ? await ipc.whenUp() : false;
+    if (!up) return { launched: false, reason: 'Kova is unreachable, the Mac may be waking up. Try again in a moment.' };
+    await refreshPane(services, paneId);
+    const pane = services.panes.get(paneId);
+    if (!pane) return { launched: false, reason: PANE_GONE_REASON };
+    if (hasClaude(pane)) {
+      markLaunched(services, paneId);
+      return { launched: true };
+    }
+    try {
+      res = await send();
+    } catch (e2) {
+      return { launched: false, reason: (e2 as Error).message };
+    }
+  }
+  if (!res.ok) {
+    const err = res.error ?? 'unknown error';
+    if (/^unknown command/i.test(err)) return { launched: false, reason: 'update Kova on the Mac to resume sessions from the phone' };
+    if (/not found/i.test(err)) return { launched: false, reason: PANE_GONE_REASON };
+    return { launched: false, reason: err };
+  }
+  markLaunched(services, paneId);
+  return { launched: true };
+}
+
+function markLaunched(services: LaunchServices, paneId: number): void {
+  if (typeof services.panes.markLaunching === 'function') services.panes.markLaunching(paneId);
 }
 
 /** Texte visible du pane, `null` si l'IPC ne le donne pas (ou n'est pas simule en test). */

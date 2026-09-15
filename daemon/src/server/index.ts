@@ -531,12 +531,17 @@ export async function createHttpServer(
    * `split` : c'est un lancement. Le refus d'un pane occupe (409 `PANE_BUSY`) est decide
    * dans `startClaudeInPane`, avant toute touche.
    */
-  app.post<{ Params: { paneId: string } }>(ROUTE_PATTERNS.paneStartClaude, async (req, reply) => {
+  app.post<{ Params: { paneId: string }; Body: { mode?: unknown } | undefined }>(ROUTE_PATTERNS.paneStartClaude, async (req, reply) => {
     const deviceId = req.deviceId ?? '';
+    // `mode: 'resume'` : Kova relance la session du pane (`resume-pane`), rien n'est tape par le daemon.
+    const mode = req.body?.mode ?? 'new';
+    if (mode !== 'new' && mode !== 'resume') {
+      return fail(reply, 400, 'BAD_REQUEST', 'mode must be "new" or "resume"');
+    }
     if (!services.rate.allow(deviceId, 'launch')) {
       return fail(reply, 429, 'RATE_LIMITED', 'too many launches');
     }
-    const out = await startClaudeInPane(services, Number(req.params.paneId), deviceId);
+    const out = await startClaudeInPane(services, Number(req.params.paneId), deviceId, mode);
     if (!out.ok) return fail(reply, out.status, out.code, out.message);
     return out.response;
   });

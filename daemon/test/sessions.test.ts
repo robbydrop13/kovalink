@@ -31,7 +31,7 @@ function pane(id: number, tab: number, cwd: string, sessionId: string | null): P
     id, window: 0, tab, tabId: null, launching: false, cwd, title: 'claude', focused: false, pid: 1, child_processes: [], is_idle: false,
     working: false, awaiting: false, awaiting_since: null, awaiting_seen: false, minimized: false,
     agent: sessionId ? 'claude' : null, agent_session_id: sessionId, agent_session_name: null,
-    claude_session_id: null, claude_session_name: null, projectName: cwd.split('/').pop() ?? cwd,
+    claude_session_id: null, claude_session_name: null, resume_agent: null, resume_session_id: null, resume_command: null, projectName: cwd.split('/').pop() ?? cwd,
     hasTranscript: true, chatCapable: true, permissionMode: null, color: null, liveState: 'idle',
   };
 }

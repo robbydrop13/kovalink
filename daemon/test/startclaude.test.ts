@@ -190,3 +190,66 @@ describe('startClaudeInPane apres une coupure IPC (reveil du Mac)', () => {
     assert.deepEqual(down.calls, [true]);
   });
 });
+
+describe('startClaudeInPane, mode resume', () => {
+  const ID = '0b6f1c2e-6a1d-4c8e-9f00-1234567890ab';
+  const RESUME = { resume_agent: 'claude', resume_session_id: ID, resume_command: `claude --resume ${ID}` };
+  const resumesSince = (from: number) => fake.received.slice(from).filter((m) => m['cmd'] === 'resume-pane');
+
+  it('Kova recoit `resume-pane` avec le seul pane_id, le daemon ne tape rien, le pane demarre', async () => {
+    const { services, panes, sent, done } = harness(RESUME);
+    assert.equal(panes.get(71)?.resume_command, `claude --resume ${ID}`);
+    const from = fake.received.length;
+    const out = await startClaudeInPane(services, 71, 'dev', 'resume');
+    done();
+    assert.deepEqual(out, { ok: true, response: { launched: true } });
+    assert.deepEqual(resumesSince(from), [{ cmd: 'resume-pane', pane_id: 71 }]);
+    assert.equal(sent.length, 0);
+    assert.equal(panes.get(71)?.launching, true);
+  });
+
+  it('un Kova plus ancien (champs absents) : aucune reprise possible, 409 et rien envoye', async () => {
+    const { services, panes, done } = harness();
+    assert.equal(panes.get(71)?.resume_command, null);
+    const from = fake.received.length;
+    const out = await startClaudeInPane(services, 71, 'dev', 'resume');
+    done();
+    assert.equal(out.ok, false);
+    assert.equal(!out.ok && out.status, 409);
+    assert.deepEqual(resumesSince(from), []);
+  });
+
+  it('un pane occupe : 409 PANE_BUSY avant tout envoi', async () => {
+    const { services, done } = harness({ ...RESUME, agent: 'claude' });
+    const from = fake.received.length;
+    const out = await startClaudeInPane(services, 71, 'dev', 'resume');
+    done();
+    assert.equal(!out.ok && out.code, 'PANE_BUSY');
+    assert.deepEqual(resumesSince(from), []);
+  });
+
+  it('deux taps a la meme milliseconde : un seul `resume-pane`', async () => {
+    const { services, done } = harness(RESUME);
+    const from = fake.received.length;
+    const [a, b] = await Promise.all([
+      startClaudeInPane(services, 71, 'dev', 'resume'),
+      startClaudeInPane(services, 71, 'dev', 'resume'),
+    ]);
+    done();
+    assert.deepEqual(a, b);
+    assert.equal(resumesSince(from).length, 1);
+  });
+
+  it('Kova refuse : sa raison est relayee, le pane ne passe pas en demarrage', async () => {
+    const { services, panes, done } = harness(RESUME);
+    fake.respond = (msg) => (msg['cmd'] === 'resume-pane' ? { ok: false, error: 'nothing to resume in pane 71' } : null);
+    try {
+      const out = await startClaudeInPane(services, 71, 'dev', 'resume');
+      assert.deepEqual(out, { ok: true, response: { launched: false, reason: 'nothing to resume in pane 71' } });
+      assert.equal(panes.get(71)?.launching, false);
+    } finally {
+      fake.respond = null;
+      done();
+    }
+  });
+});

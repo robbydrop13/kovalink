@@ -44,6 +44,15 @@ export interface Pane {
   agent_session_name: string | null;
   claude_session_id: string | null;
   claude_session_name: string | null;
+  /**
+   * La conversation que le bouton `Resume` de Kova rouvrirait dans ce pane (un pane
+   * restaure au lancement dont la derniere commande est `claude --resume <id>`), `null`
+   * sinon. Toujours `null` avec un Kova qui ne les expose pas encore. Le daemon ne tape
+   * jamais `resume_command` : il demande `resume-pane` a Kova.
+   */
+  resume_agent: string | null;
+  resume_session_id: string | null;
+  resume_command: string | null;
   // Calcules par le daemon.
   projectName: string;
   hasTranscript: boolean;
