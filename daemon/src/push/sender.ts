@@ -15,6 +15,17 @@ import { loadDevices, saveDevices, type DeviceRecord } from '../security/token.j
 import { deliveryFor, HourlyCap, inQuietHours, type DevicePushPrefs } from './policy.js';
 
 const RECEIPT_DELAY_MS = 15 * 60_000;
+/** Un appel Expo sans reponse ne doit pas laisser un envoi pendu sans trace. */
+const EXPO_TIMEOUT_MS = 30_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what}: timeout after ${ms} ms`)), ms);
+    timer.unref?.();
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
 
 /** Les regles vivent dans `policy.ts` ; reexportees pour les appelants historiques. */
 export { inQuietHours };
@@ -241,12 +252,25 @@ export class PushSender {
 
     const { messages, routed } = this.compose(prompt, pane, ctx, targets, awaitingCount);
     if (messages.length === 0) return 0;
-    const expo = await this.client();
+    // Le chargement du SDK peut echouer (dependance manquante, mesure le 15 septembre
+    // 2026 : `promise-limit` absent). Hors de ce try, le rejet remontait jusqu'a un
+    // `void` et TUAIT le daemon a chaque push : aucun envoi n'est jamais parti.
+    let expo: ExpoLike;
+    try {
+      expo = await this.client();
+    } catch (e) {
+      logger.warn('envoi push en echec', { paneId: pane.id, stage: 'sdk', err: (e as Error).message });
+      return 0;
+    }
 
     let sent = 0;
     for (const chunk of expo.chunkPushNotifications(messages as never)) {
       try {
-        const tickets = (await expo.sendPushNotificationsAsync(chunk)) as ExpoTicket[];
+        const tickets = (await withTimeout(
+          expo.sendPushNotificationsAsync(chunk),
+          EXPO_TIMEOUT_MS,
+          'expo send',
+        )) as ExpoTicket[];
         sent += tickets.length;
         // Le ticket `i` correspond au message `i` du meme lot : c'est ce lien qui permet
         // de ne desinscrire QUE l'appareil fautif.

@@ -449,4 +449,47 @@ describe('journal a l emission d un push (CA-12)', () => {
     // L appareil revoque ne compte pas parmi les appaires.
     assert.equal(entry?.['pairedDevices'], 1);
   });
+
+  it('SDK Expo introuvable : une ligne « envoi push en echec », jamais un rejet qui tue le daemon', async () => {
+    saveDevices({
+      d1: {
+        deviceId: 'd1',
+        name: 'iPhone',
+        pairedAt: '',
+        exp: 0,
+        revoked: false,
+        expoPushToken: 'ExponentPushToken[xxxx]',
+        prefs: { onlyValidations: false, quietHours: false },
+      },
+    });
+    const sender = new PushSender(() => cfg, new HourlyCap(), async () => {
+      throw new Error("Cannot find package 'promise-limit'");
+    });
+    const sent = await sender.send(turnEnd, pane, { cfg, now: at3pm }, 1);
+    sender.stop();
+    assert.equal(sent, 0);
+    const lines = readFileSync(paths.logFile(), 'utf8')
+      .split('\n')
+      .filter((l) => l.includes('"envoi push en echec"') && l.includes('promise-limit'));
+    assert.equal(lines.length, 1);
+  });
+
+  it('PushNotifier : un send qui rejette est journalise, sans rejet non gere', async () => {
+    const notifier = new PushNotifier({
+      isWatchedLive: () => false,
+      isMacFocused: () => false,
+      pane: () => pane,
+      isRefValid: () => true,
+      send: async () => {
+        throw new Error('boom-notifier');
+      },
+    });
+    assert.deepEqual(notifier.notify(turnEnd, pane), { kind: 'sent' });
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    const lines = readFileSync(paths.logFile(), 'utf8')
+      .split('\n')
+      .filter((l) => l.includes('"envoi push en echec"') && l.includes('boom-notifier'));
+    assert.equal(lines.length, 1);
+  });
 });

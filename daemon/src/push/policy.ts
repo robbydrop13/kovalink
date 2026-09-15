@@ -182,7 +182,16 @@ export class PushNotifier {
       this.pending.set(pane.id, handle);
       return { kind: 'deferred', delayMs: MAC_FOCUSED_DEFER_MS };
     }
-    void this.ports.send(prompt, pane);
+    // Jamais un `void` nu : un rejet non gere arrete le processus Node, et le daemon
+    // redemarrait a chaque push sans rien journaliser (mesure du 15 septembre 2026).
+    const fail = (e: unknown): void => {
+      logger.warn('envoi push en echec', { paneId: pane.id, err: (e as Error)?.message ?? String(e) });
+    };
+    try {
+      this.ports.send(prompt, pane).catch(fail);
+    } catch (e) {
+      fail(e);
+    }
     return { kind: 'sent' };
   }
 
