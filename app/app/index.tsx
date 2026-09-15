@@ -43,6 +43,7 @@ import type { ReorderActions } from '@/features/sessions/reorderAccessibility';
 import { DragItem, DragScrollContext, useDragReorder, type DragList, type DragScroll } from '@/features/sessions/useDragReorder';
 import { applyPendingOrder, groupByTab, sortGroups, summaryLine, tabOrderOf, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
+import { createScrollLock } from '@/features/sessions/scrollLock';
 import { isDegraded, useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { isAging, usePrompts } from '@/store/prompts';
@@ -214,9 +215,11 @@ export default function SessionsScreen() {
   const viewport = useRef({ top: 0, height: 0 });
   const contentHeight = useRef(0);
   const [scrollLocked, setScrollLocked] = useState(false);
+  // Un verrou partagé par la liste des onglets et celle de chaque onglet : chacune rend le sien.
+  const scrollLock = useMemo(() => createScrollLock(setScrollLocked), []);
   const dragScroll = useMemo<DragScroll>(
-    () => ({ scrollRef, offsetY, viewport, contentHeight, lock: setScrollLocked }),
-    [],
+    () => ({ scrollRef, offsetY, viewport, contentHeight, lock: scrollLock.set }),
+    [scrollLock],
   );
   /** Le temps d'un déplacement d'onglet, tous les onglets sont repliés (sans le persister). */
   const [tabDragging, setTabDragging] = useState(false);
@@ -230,6 +233,11 @@ export default function SessionsScreen() {
     dragging.current = false;
     setFrozen(null);
   };
+  // Filet : la liste n'est plus figée, donc aucun geste n'est en cours. Le défilement revient
+  // quoi qu'une liste ait oublié de rendre.
+  useEffect(() => {
+    if (frozen === null) scrollLock.releaseAll();
+  }, [frozen, scrollLock]);
   // Le Mac n'a pas suivi : la liste revient à son ordre, animée sauf en plein geste (la
   // liste y est figée, l'animation s'appliquerait au lâcher et casserait la pose).
   const reportFailure = (kind: ReorderFailure) => {
@@ -305,7 +313,9 @@ export default function SessionsScreen() {
         onInterrupt={(id) => void interrupt(id)}
         interruptDisabled={degraded}
         interruptLabel={(id) => labelFor(id, degraded)}
-        dragHandle={list && canDragTab(group, index) ? list.gesture(group.key) : undefined}
+        // L'onglet tenu garde son geste même si la liaison se dégrade en plein geste : démonter
+        // le `GestureDetector` actif perdrait son `onEnd`, et la liste resterait figée.
+        dragHandle={list && (list.active === group.key || canDragTab(group, index)) ? list.gesture(group.key) : undefined}
         tabReorder={ghost ? undefined : tabReorderFor(group, index)}
         dragDisabled={degraded}
         dragLocked={ghost || frozen !== null}

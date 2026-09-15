@@ -50,8 +50,11 @@ export interface DragScroll {
   /** Fenêtre visible, mesurée à l'écran au levé. */
   viewport: RefObject<{ top: number; height: number }>;
   contentHeight: RefObject<number>;
-  /** Vrai pendant le geste : le défilement au doigt est coupé. */
-  lock: (locked: boolean) => void;
+  /**
+   * Couper (`true`) ou rendre (`false`) le défilement au doigt, au nom d'une liste : le
+   * verrou est partagé par toutes les listes de l'écran (voir `scrollLock.ts`).
+   */
+  lock: (owner: object, locked: boolean) => void;
 }
 
 export const DragScrollContext = createContext<DragScroll | null>(null);
@@ -132,6 +135,8 @@ interface Drag<K> {
   /** Une relecture de la géométrie est programmée (les lignes ont changé de taille). */
   relayoutId: number | null;
   liftedAt: number;
+  /** Le doigt est levé (lâcher ou annulation) : la pose est en cours, plus aucun événement. */
+  ended: boolean;
 }
 
 function stopAutoScroll<K>(d: Drag<K>): void {
@@ -167,6 +172,22 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
   const slots = useRef(new Map<K, Slot>());
   const drag = useRef<Drag<K> | null>(null);
   const active = lifted?.key ?? null;
+  /** Le nom de cette liste auprès du verrou de défilement partagé. */
+  const [lockOwner] = useState(() => ({}));
+  const latestScroll = useRef(scroll);
+  latestScroll.current = scroll;
+
+  // Démontée en plein geste (l'onglet disparaît, l'écran se ferme) : aucun `onEnd` ne
+  // viendra. Le défilement est rendu ici, sinon la liste resterait figée pour de bon.
+  useEffect(
+    () => () => {
+      const d = drag.current;
+      if (d) stopAutoScroll(d);
+      drag.current = null;
+      latestScroll.current?.lock(lockOwner, false);
+    },
+    [lockOwner],
+  );
 
   const { keys } = opts;
   /**
@@ -287,10 +308,10 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
   const onMove = useCallback(
     (translationY: number, absoluteY: number) => {
       const d = drag.current;
-      if (!d) return;
+      if (!d || d.ended) return;
       // Le défilement au doigt est coupé au premier déplacement, pas au levé : le levé ne
       // touche ainsi à rien d'autre que la ligne tenue (voir l'en-tête du fichier).
-      if (d.travel === 0 && scroll) scroll.lock(true);
+      if (d.travel === 0 && scroll) scroll.lock(lockOwner, true);
       d.translationY = translationY;
       d.absoluteY = absoluteY;
       d.travel = Math.max(d.travel, Math.abs(translationY + d.shift));
@@ -298,7 +319,7 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
       retarget(d);
       autoScroll(d);
     },
-    [scroll, dragY, retarget, autoScroll],
+    [scroll, lockOwner, dragY, retarget, autoScroll],
   );
 
   const rangeOf = (from: number): [number, number] => opts.range?.(from) ?? [0, keys.length - 1];
@@ -324,6 +345,7 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
       rafId: null,
       relayoutId: null,
       liftedAt: Date.now(),
+      ended: false,
     };
     setLifted({ key, y: held.y, h: held.h, bounds: step.state.bounds });
     if (scroll) {
@@ -340,13 +362,23 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
     opts.onLift?.();
   };
 
-  const finish = (cancelled: boolean) => {
+  const finish = (key: K, cancelled: boolean) => {
     const d = drag.current;
-    if (!d) return;
+    // Une seule fin par geste (`onEnd` puis `onFinalize`), et seulement pour la ligne tenue.
+    if (!d || d.ended || d.keys[d.state.from] !== key) return;
+    d.ended = true;
     stopAutoScroll(d);
+    // Le doigt est levé : le défilement revient tout de suite, jamais au bout d'une animation
+    // dont le rappel pourrait ne pas venir.
+    scroll?.lock(lockOwner, false);
     const held = d.state.slots[d.state.from] as Slot;
     const step = reduce(d.state, { type: cancelled ? 'cancel' : 'release' });
-    if (!step.drop) return;
+    if (!step.drop) {
+      drag.current = null;
+      resetOffsets();
+      setLifted(null);
+      return;
+    }
     if (step.frame) applyFrame(d, step.frame);
     const { from, to, settle } = step.drop;
     const elapsed = Date.now() - d.liftedAt;
@@ -373,7 +405,6 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
       // ligne écartée ne passe par aucune image intermédiaire.
       resetOffsets();
       setLifted(null);
-      scroll?.lock(false);
       if (to !== from) notify(NotifyType.Success);
       else if (!silent) impact(ImpactStyle.Light);
       opts.onDrop(from, to);
@@ -398,7 +429,9 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
       .onStart(() => start(key))
       .onUpdate((e) => onMove(e.translationY, e.absoluteY))
       // `success` est faux quand le geste actif est CANCELLED ou FAILED.
-      .onEnd((_e, success) => finish(!success));
+      .onEnd((_e, success) => finish(key, !success))
+      // Filet : `onFinalize` vient à toute fin de geste ; sans effet si `onEnd` a déjà fini.
+      .onFinalize((_e, success) => finish(key, !success));
   };
 
   // La ligne tenue reste en place, invisible : la copie la remplace à l'écran. Aucune autre
