@@ -44,6 +44,7 @@ import { ValidationBar } from '@/features/prompt/ValidationBar';
 import { MonospaceFallback } from '@/features/terminal/MonospaceFallback';
 import { NumericKeypad } from '@/features/terminal/NumericKeypad';
 import { TerminalInputBar } from '@/features/terminal/TerminalInputBar';
+import { useTerminalUnlock } from '@/features/terminal/useTerminalUnlock';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { followSessionOnMac, showPaneMenu } from '@/features/sessions/openOnMac';
 import { paneHref, paneLabel } from '@/features/sessions/SessionRow';
@@ -442,8 +443,13 @@ export default function SessionScreen() {
     bootWarn('terminal input failed', e);
     setToast(t.terminalInputFailed(e instanceof Error ? e.message : String(e)));
   }, []);
+  const unlockTerminal = useTerminalUnlock(paneId, view === 'term');
   const onTerminalLine = useCallback(
     async (text: string): Promise<boolean> => {
+      if (!(await unlockTerminal())) {
+        setToast(t.terminalFaceIdCancelled);
+        return false;
+      }
       markActed();
       try {
         const res = await postTerminalInput(paneId, { text });
@@ -459,17 +465,23 @@ export default function SessionScreen() {
         return false;
       }
     },
-    [paneId, markActed, refreshScreenSoon, terminalFailed],
+    [paneId, unlockTerminal, markActed, refreshScreenSoon, terminalFailed],
   );
   const onTerminalKey = useCallback(
     (key: KeyName) => {
-      markActed();
-      postTerminalInput(paneId, { keys: [key] }).then((res) => {
-        refreshScreenSoon();
-        if (!res.applied) setToast(refusalLabel(res.reason));
-      }, terminalFailed);
+      void unlockTerminal().then((ok) => {
+        if (!ok) {
+          setToast(t.terminalFaceIdCancelled);
+          return;
+        }
+        markActed();
+        postTerminalInput(paneId, { keys: [key] }).then((res) => {
+          refreshScreenSoon();
+          if (!res.applied) setToast(refusalLabel(res.reason));
+        }, terminalFailed);
+      });
     },
-    [paneId, markActed, refreshScreenSoon, terminalFailed],
+    [paneId, unlockTerminal, markActed, refreshScreenSoon, terminalFailed],
   );
 
   // Les trois derniers échanges d'abord ; l'historique au dessus sur demande. Le plancher

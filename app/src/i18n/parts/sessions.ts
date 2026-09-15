@@ -302,6 +302,8 @@ export const sessions = {
   terminalKeyEnterA11y: 'Enter key',
   terminalInputFailed: (reason: string) => `Not sent to the terminal: ${reason}`,
   terminalInputNotApplied: 'Not sent: a question appeared in the pane, answer it first',
+  terminalFaceIdPrompt: 'Unlock terminal input',
+  terminalFaceIdCancelled: 'Face ID cancelled, nothing was sent',
   sessionFrozenSnapshot: 'Frozen snapshot',
   sessionScreenUnavailableTitle: 'Screen unavailable',
   sessionScreenUnavailableBody: 'The Mac is unreachable, the pane screen will arrive on reconnection.',
