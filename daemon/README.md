@@ -229,8 +229,8 @@ hors du projet passe par `Read` et, en mode `default`, par un prompt de permissi
 
 L'app enregistre la voix de Robin (m4a) et l'envoie au daemon sur `POST /v1/transcribe`
 (corps audio brut, 10 Mo au plus, types `audio/*` seulement, audite sans jamais le texte).
-Le daemon appelle OpenAI Whisper (`whisper-1`, `POST /v1/audio/transcriptions`, aucune
-langue imposee : francais ou anglais, delai de 120 s) avec une cle lue sur le Mac, et rend le texte a l'app, qui le met
+Le daemon appelle OpenAI (`gpt-4o-transcribe`, `POST /v1/audio/transcriptions`, langue
+imposee au francais, delai de 120 s) avec une cle lue sur le Mac, et rend le texte a l'app, qui le met
 dans le champ de message sans l'envoyer. Avant l'envoi, l'audio est normalise en wav
 16 kHz mono par `afconvert` (Whisper refusait certains m4a de l'iPhone) : il passe par un
 fichier temporaire prive (dossier `mkdtemp` 0700, fichier 0600), efface dans un `finally`

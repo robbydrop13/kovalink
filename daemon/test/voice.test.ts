@@ -60,7 +60,7 @@ describe('client Whisper', () => {
     assert.equal(conv.calls.length, 0, 'aucune conversion sans cle');
   });
 
-  it('succes : convertit en wav, envoie un multipart file + whisper-1 + json sans langue, rend le texte', async () => {
+  it('succes : convertit en wav, envoie un multipart file + gpt-4o-transcribe + json + langue fr, rend le texte', async () => {
     const { fetchImpl, calls } = fakeOpenai();
     const conv = fakeConvert();
     const res = await transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: fetchImpl, key: 'k-test', convert: conv.convert });
@@ -71,9 +71,9 @@ describe('client Whisper', () => {
     assert.equal(calls[0]?.init?.method, 'POST');
     assert.equal((calls[0]?.init?.headers as Record<string, string>)['authorization'], 'Bearer k-test');
     const form = calls[0]?.init?.body as FormData;
-    assert.equal(form.get('model'), 'whisper-1');
+    assert.equal(form.get('model'), 'gpt-4o-transcribe');
     assert.equal(form.get('response_format'), 'json');
-    assert.equal(form.get('language'), null);
+    assert.equal(form.get('language'), 'fr');
     assert.deepEqual(await sentFile(calls[0]), { name: 'voice.wav', type: 'audio/wav', bytes: 'fake wav bytes' });
   });
 

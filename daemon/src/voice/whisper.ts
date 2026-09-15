@@ -1,9 +1,9 @@
-// Mode vocal : transcription par OpenAI Whisper (`whisper-1`), depuis le Mac.
+// Mode vocal : transcription par OpenAI (`gpt-4o-transcribe`, langue forcee au francais), depuis le Mac.
 //
 // La cle vit dans `~/.kovalink/openai-key` (une ligne) et ne quitte JAMAIS le Mac :
 // l'iPhone envoie l'audio au daemon, le daemon parle a OpenAI. Un seul appel :
 //   `POST /v1/audio/transcriptions` (multipart : file, model, response_format=json) -> { text }
-// Aucune langue imposee : Robin parle francais et anglais, Whisper la detecte.
+// Langue imposee au francais (`language=fr`) : Robin dicte toujours en francais.
 //
 // Normalisation : avant l'envoi, l'audio est converti en wav 16 kHz mono (PCM 16 bits) par
 // `afconvert` de macOS. Whisper refusait certains m4a de l'iPhone ("could not be decoded")
@@ -24,7 +24,9 @@ import { logger } from '../logger.js';
 import { paths } from '../paths.js';
 
 export const OPENAI_TRANSCRIPTIONS_URL = 'https://api.openai.com/v1/audio/transcriptions';
-export const WHISPER_MODEL = 'whisper-1';
+export const WHISPER_MODEL = 'gpt-4o-transcribe';
+/** Robin dicte toujours en francais : la forcer evite les contresens sur les messages courts. */
+export const WHISPER_LANGUAGE = 'fr';
 export const AFCONVERT_BIN = '/usr/bin/afconvert';
 const TIMEOUT_MS = 120_000;
 const CONVERT_TIMEOUT_MS = 60_000;
@@ -177,6 +179,7 @@ export async function transcribe(
   const form = new FormData();
   form.append('file', new Blob([new Uint8Array(payload)], { type: payloadMime }), payloadName);
   form.append('model', WHISPER_MODEL);
+  form.append('language', WHISPER_LANGUAGE);
   form.append('response_format', 'json');
 
   let res: Response;
