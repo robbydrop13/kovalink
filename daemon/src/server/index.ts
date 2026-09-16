@@ -23,6 +23,7 @@ import {
   type KovaResumeRequest,
   type KovaBookmarkRequest,
   type KovaBookmarkResponse,
+  type PaneReadResponse,
   type PaneTitleRequest,
   type PaneTitleResponse,
   type ReorderRequest,
@@ -60,6 +61,7 @@ import { findSession, listSessions } from '../kova/sessions.js';
 import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession, startClaudeInPane } from '../kova/resume.js';
 import { ManageError, closePane, renameCommand, renameTab, sanitizeSessionName, setBookmark } from '../kova/manage.js';
 import { reorderPane, reorderTab } from '../kova/reorder.js';
+import { markPaneRead } from '../kova/read.js';
 import { TranscriptionError, transcribe } from '../voice/whisper.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { registerMiraRoutes } from './miraRoutes.js';
@@ -365,6 +367,27 @@ export async function createHttpServer(
       if (e instanceof ManageError) return fail(reply, e.code === 'PANE_NOT_FOUND' ? 404 : 400, e.code, e.message);
       throw e;
     }
+  });
+
+  /**
+   * « Lu » : le pendant en ECRITURE du bit `unread` de Kova. Le pane que Robin vient de
+   * lire sur le telephone cesse de tirer la pastille Next du MAC (`set-pane-unread`, qui
+   * ne focalise rien et ne leve aucune fenetre). Meme seau que les lectures de panes :
+   * c'est un echo d'affichage, pas un lancement.
+   *
+   * Cette route ne rend JAMAIS d'erreur a l'app : pane ferme, Kova trop ancien ou
+   * injoignable valent 200 avec `applied:false` et leur raison. L'app a deja marque le
+   * pane lu chez elle, et un toast pour ca serait du bruit.
+   */
+  app.post<{ Params: { paneId: string } }>(ROUTE_PATTERNS.paneRead, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'panes')) return fail(reply, 429, 'RATE_LIMITED', 'too many read marks');
+    const paneId = Number(req.params.paneId);
+    if (!Number.isInteger(paneId) || paneId < 0) {
+      return fail(reply, 400, 'BAD_REQUEST', 'paneId must be a non-negative integer');
+    }
+    const res: PaneReadResponse = await markPaneRead(services, paneId, deviceId);
+    return res;
   });
 
   /**

@@ -24,6 +24,7 @@ import {
   type MiraFrameResponse,
   type MiraTabsResponse,
   type Pane,
+  type PaneReadResponse,
   type PaneTitleRequest,
   type PaneTitleResponse,
   type PaneSessionNameRequest,
@@ -287,6 +288,16 @@ export function fetchRecentProjects(): Promise<KovaRecentProjectsResponse> {
 /** Fermer un pane : le seul geste destructeur, confirmé côté app avec l'état du pane. */
 export function postClose(paneId: number, nonce: string, timeoutMs = 5000): Promise<ActionResponse> {
   return request(ROUTES.paneClose(paneId), { method: 'POST', body: { nonce }, timeoutMs });
+}
+
+/**
+ * « Lu » : le pane que Robin vient de lire ici cesse aussi de tirer la pastille Next du Mac.
+ * Le daemon demande `set-pane-unread` à Kova, qui ne focalise rien et ne lève aucune fenêtre.
+ * Ne rend jamais d'erreur utile à l'écran : l'appelant l'émet et l'oublie
+ * (`markPaneReadOnMac`), la marque locale ayant déjà été posée.
+ */
+export function postPaneRead(paneId: number, timeoutMs = 4000): Promise<PaneReadResponse> {
+  return request(ROUTES.paneRead(paneId), { method: 'POST', timeoutMs });
 }
 
 /** Renommer l'onglet du pane. `null` : titre automatique de Kova. */

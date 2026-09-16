@@ -51,6 +51,7 @@ import { paneHref, paneLabel } from '@/features/sessions/SessionRow';
 import { NEXT_BUTTON_SPACE, NextPill } from '@/features/sessions/NextPill';
 import { useNextTarget } from '@/features/sessions/useNextTarget';
 import { readMarkRef, readablePrompt } from '@/features/sessions/unread';
+import { markPaneReadOnMac } from '@/features/sessions/markReadOnMac';
 import { useReads } from '@/store/reads';
 import { useDrafts, draftOf } from '@/store/drafts';
 import { dismissBannersForPane, paneIdentity } from '@/notifications/banners';
@@ -62,7 +63,7 @@ import {
   requestScreen,
   setVisiblePane,
 } from '@/net/connection';
-import { fetchTurns, postTerminalInput, startClaude } from '@/net/http';
+import { fetchTurns, postPaneRead, postTerminalInput, startClaude } from '@/net/http';
 import { LINK_LABEL, isDegraded, useConnection } from '@/store/connection';
 import { paneById, usePanes } from '@/store/panes';
 import { groupByTab, isBareShell } from '@/features/sessions/tabGroups';
@@ -227,7 +228,12 @@ export default function SessionScreen() {
   const somethingShown = session.status === 'ready' || (view === 'term' && screen !== undefined);
   useEffect(() => {
     if (!somethingShown) return;
-    const timer = setTimeout(() => markRead(paneId, readRef), READ_AFTER_MS);
+    const timer = setTimeout(() => {
+      markRead(paneId, readRef);
+      // Et le Mac l'apprend : sa pastille Next s'éteint sur ce pane comme ici. Muet et sans
+      // reprise, la marque locale ci dessus tient quoi qu'il arrive (`markReadOnMac`).
+      markPaneReadOnMac(paneId, postPaneRead);
+    }, READ_AFTER_MS);
     return () => clearTimeout(timer);
   }, [paneId, readRef, somethingShown, markRead]);
   /** Robin agit sur le pane : lu tout de suite. */

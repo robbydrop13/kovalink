@@ -27,6 +27,14 @@ export const ROUTES = {
   paneClose: (paneId: number): string => `/v1/panes/${paneId}/close`,
   paneTitle: (paneId: number): string => `/v1/panes/${paneId}/title`,
   /**
+   * Le pendant en ECRITURE du bit `unread` de Kova : le pane que Robin vient de lire sur
+   * le telephone cesse de tirer la pastille Next du Mac. Le daemon emet
+   * `set-pane-unread {unread:false}`, une commande qui ne focalise rien, ne leve aucune
+   * fenetre et ne restaure aucun pane minimise. Un Kova anterieur a cette commande vaut
+   * `applied:false`, jamais une erreur : l'app garde sa marque locale.
+   */
+  paneRead: (paneId: number): string => `/v1/panes/${paneId}/read`,
+  /**
    * Renommage au sens Claude : `/rename <name>` tape par le daemon dans le pane, via
    * KeyGate, nom assaini. Le nom survit a la fermeture et a la reprise de la session.
    */
@@ -123,6 +131,7 @@ export const ROUTE_PATTERNS = {
   paneText: '/v1/panes/:paneId/text',
   paneClose: '/v1/panes/:paneId/close',
   paneTitle: '/v1/panes/:paneId/title',
+  paneRead: '/v1/panes/:paneId/read',
   paneSessionName: '/v1/panes/:paneId/session-name',
   kovaBookmark: '/v1/kova/bookmark',
   tabReorder: '/v1/kova/tabs/:tabId/reorder',
@@ -365,6 +374,23 @@ export interface PaneTitleRequest {
 
 export interface PaneTitleResponse {
   title: string | null;
+}
+
+/**
+ * Raison d'un `applied:false` sur `POST /v1/panes/:paneId/read`. Aucune n'est une panne
+ * du point de vue de l'app : elle a deja pose sa marque locale et n'affiche rien.
+ *  - `pane_gone` : le pane n'est plus dans l'instantane du daemon ;
+ *  - `kova_too_old` : le Kova qui tourne ne connait pas `set-pane-unread` (il la connaitra
+ *    au prochain lancement) ;
+ *  - `kova_down` : Kova est injoignable ou n'a pas repondu a temps ;
+ *  - `kova_refused` : Kova a repondu autre chose (pane inconnu de son cote).
+ */
+export type PaneReadReason = 'pane_gone' | 'kova_too_old' | 'kova_down' | 'kova_refused';
+
+/** Reponse de `POST /v1/panes/:paneId/read`. Toujours 200 : la lecture n'echoue jamais pour l'app. */
+export interface PaneReadResponse {
+  applied: boolean;
+  reason?: PaneReadReason;
 }
 
 /** Corps de `POST /v1/panes/:paneId/session-name` : le nom seulement, assaini par le daemon. */
