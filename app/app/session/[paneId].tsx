@@ -50,7 +50,7 @@ import { followSessionOnMac, showPaneMenu } from '@/features/sessions/openOnMac'
 import { paneHref, paneLabel } from '@/features/sessions/SessionRow';
 import { NEXT_BUTTON_SPACE, NextPill } from '@/features/sessions/NextPill';
 import { useNextTarget } from '@/features/sessions/useNextTarget';
-import { readablePrompt } from '@/features/sessions/unread';
+import { readMarkRef, readablePrompt } from '@/features/sessions/unread';
 import { useReads } from '@/store/reads';
 import { useDrafts, draftOf } from '@/store/drafts';
 import { dismissBannersForPane, paneIdentity } from '@/notifications/banners';
@@ -218,17 +218,22 @@ export default function SessionScreen() {
 
   // Lu = affiché au premier plan avec quelque chose à l'écran pendant 1 200 ms continus,
   // pour CETTE référence. Interrompu avant : rien, le pane reste dans l'anneau.
+  //
+  // La marque ne dépend plus d'un `Prompt` : Kova compte aussi comme non lus une cloche,
+  // une commande shell finie ou un Cmd+U, qui n'ont aucun `promptRef` (`readMarkRef` pose
+  // alors un jeton fixe). Sans cela ces panes là ne pouvaient jamais être marqués lus ici.
   const promptRef = readablePrompt(prompt) ? prompt.promptRef : null;
+  const readRef = readMarkRef(prompt);
   const somethingShown = session.status === 'ready' || (view === 'term' && screen !== undefined);
   useEffect(() => {
-    if (!promptRef || !somethingShown) return;
-    const timer = setTimeout(() => markRead(paneId, promptRef), READ_AFTER_MS);
+    if (!somethingShown) return;
+    const timer = setTimeout(() => markRead(paneId, readRef), READ_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [paneId, promptRef, somethingShown, markRead]);
+  }, [paneId, readRef, somethingShown, markRead]);
   /** Robin agit sur le pane : lu tout de suite. */
   const markActed = useCallback(() => {
-    if (promptRef) markRead(paneId, promptRef);
-  }, [paneId, promptRef, markRead]);
+    markRead(paneId, readRef);
+  }, [paneId, readRef, markRead]);
 
   // Abonnement : uniquement le pane et la session visibles. Jamais les autres.
   useEffect(() => {

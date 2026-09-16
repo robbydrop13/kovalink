@@ -1,23 +1,54 @@
 // Cmd+J sur l'iPhone (docs/16) : ce qui est « non lu », l'anneau à parcourir, la cible du
 // prochain saut. Pur, testé sous Node.
 //
-// Non lu = un `Prompt` lisible (`turn_end`, `parsed`, `unparsable`) dont le `promptRef`
-// n'est pas la marque de lecture du pane sur ce téléphone. Un pane qui travaille n'est pas
-// non lu (rien à lire encore). L'ordre est celui du sélecteur de Kova (fenêtre, onglet,
-// pane), les `awaiting` non vus d'abord (P2), en boucle à partir du pane courant.
+// KOVA FAIT FOI. `pane.unread` porte le bit que le Mac calcule pour lui même
+// (`PaneFlags::is_unread`) et qui pilote déjà Cmd+J, la pastille Next et Cmd+U : marque
+// manuelle, ou quelque chose de neuf depuis que le pane a été regardé (question, fin de
+// tour, cloche, completion, drapeau du hook). Le téléphone recalculait auparavant « non
+// lu » à partir des seuls `Prompt` du daemon, qui n'existent que pour un pane `claude`
+// avec une session et un tour d'au moins 60 s : les cloches, les commandes shell finies,
+// les panes sans agent, les tours courts et les Cmd+U restaient invisibles, et le bouton
+// Next du téléphone ne comptait pas la même chose que la pastille du Mac. Cette règle
+// locale ne survit que comme REPLI, pour un Kova qui n'envoie pas encore le champ.
+//
+// La marque de lecture du téléphone reste PAR DESSUS, en recouvrement optimiste : la
+// pastille s'efface dès que Robin a lu le pane, sans attendre les 5 s du sondage.
+//
+// L'ordre est celui du sélecteur de Kova (fenêtre, onglet, pane), les `awaiting` non vus
+// d'abord (P2), en boucle à partir du pane courant.
 import type { Pane, Prompt } from '@/protocol';
 import type { PaletteEntry } from './tabGroups';
 
 export type ReadMarks = Readonly<Record<number, string>>;
 
+/**
+ * Marque de lecture d'un non lu SANS `promptRef` : une cloche, une commande shell
+ * terminée, un Cmd+U posé sur le Mac. Kova dit « non lu » sans qu'il existe le moindre
+ * `Prompt` à référencer, et il faut quand même pouvoir dire « lu sur ce téléphone ».
+ */
+export const KOVA_UNREAD_MARK = 'kova-unread';
+
 export function readablePrompt(prompt: Prompt | undefined): prompt is Exclude<Prompt, { state: 'none' }> {
   return prompt !== undefined && prompt.state !== 'none';
 }
 
+/** La référence que la marque de lecture compare pour ce pane. */
+export function readMarkRef(prompt: Prompt | undefined): string {
+  return readablePrompt(prompt) ? prompt.promptRef : KOVA_UNREAD_MARK;
+}
+
 export function isUnread(pane: Pane, prompt: Prompt | undefined, marks: ReadMarks): boolean {
-  if (pane.working) return false;
-  if (!readablePrompt(prompt)) return false;
-  return marks[pane.id] !== prompt.promptRef;
+  // Repli : Kova n'envoie pas le champ. Un `Prompt` lisible que ce téléphone n'a pas
+  // marqué, jamais un pane qui travaille (il n'y a rien à lire avant la fin du tour).
+  if (pane.unread === undefined) {
+    if (pane.working) return false;
+    if (!readablePrompt(prompt)) return false;
+    return marks[pane.id] !== prompt.promptRef;
+  }
+  // Kova dit lu : c'est lu, y compris pour un `Prompt` que l'app garde encore en mémoire.
+  if (!pane.unread) return false;
+  // Kova dit non lu : sauf si Robin vient de le lire ICI, sur ce téléphone.
+  return marks[pane.id] !== readMarkRef(prompt);
 }
 
 /** Session Claude au repos, sans rien à lire : le repli de Kova quand tout est lu. */
@@ -35,6 +66,9 @@ function rotate(entries: readonly PaletteEntry[], currentId: number | null): Pal
 /**
  * L'anneau des non lus, hors pane courant : d'abord les `awaiting` non vus, puis les
  * autres, chacun dans l'ordre de Kova à partir du pane courant.
+ *
+ * Les panes MINIMISÉS en sont exclus, comme `collect_unread` sur le Mac : un pane replié
+ * n'est pas une destination, et le Next du Mac ne s'y arrête pas non plus.
  */
 export function unreadRing(
   entries: readonly PaletteEntry[],
@@ -42,7 +76,9 @@ export function unreadRing(
   marks: ReadMarks,
   currentId: number | null,
 ): PaletteEntry[] {
-  const ring = rotate(entries, currentId).filter((e) => e.pane.id !== currentId && isUnread(e.pane, prompts[e.pane.id], marks));
+  const ring = rotate(entries, currentId).filter(
+    (e) => e.pane.id !== currentId && !e.pane.minimized && isUnread(e.pane, prompts[e.pane.id], marks),
+  );
   const urgent = ring.filter((e) => e.pane.awaiting && !e.pane.awaiting_seen);
   const rest = ring.filter((e) => !(e.pane.awaiting && !e.pane.awaiting_seen));
   return [...urgent, ...rest];
@@ -74,10 +110,19 @@ export function nextTarget(
   return null;
 }
 
-/** Les marques dont le pane n'existe plus : purgées au premier instantané. */
+/**
+ * Les marques à purger au prochain instantané : celles des panes fermés, et celles des
+ * panes que KOVA annonce lus. Sans ce second cas, une marque posée sur une cloche (qui n'a
+ * pas de `promptRef`, donc toujours la même référence) resterait valable pour toujours et
+ * la cloche SUIVANTE n'apparaîtrait jamais comme non lue sur le téléphone.
+ */
 export function staleMarks(marks: ReadMarks, panes: readonly Pane[]): number[] {
-  const alive = new Set(panes.map((p) => p.id));
+  const byId = new Map(panes.map((p) => [p.id, p]));
   return Object.keys(marks)
     .map(Number)
-    .filter((id) => !alive.has(id));
+    .filter((id) => {
+      const pane = byId.get(id);
+      if (pane === undefined) return true;
+      return pane.unread === false;
+    });
 }

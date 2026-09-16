@@ -40,22 +40,40 @@ mémoire. Une app lancée à froid ne sait donc pas quels tours se sont terminé
 `Prompt` non `none` par pane et le rejouer après `panes.snapshot` (section 6.5). Sans cela,
 aucune des trois options ne fonctionne au premier lancement.
 
-### 0.2 Ce qui compte comme « non lu » sur l'iPhone (commun aux trois options)
+### 0.2 Ce qui compte comme « non lu » sur l'iPhone
 
-Un pane est **non lu** quand il porte un `Prompt` dans l'état `turn_end`, `parsed` ou
-`unparsable` **et** que ce `promptRef` n'est pas celui que Robin a lu sur ce téléphone
-(`readMark[paneId] !== prompt.promptRef`). Conséquences, dans l'ordre où elles tranchent :
+> **Révisé le 16 septembre 2026. Kova est la source de vérité.** La règle d'origine (le
+> téléphone recalculait « non lu » à partir des seuls `Prompt` du daemon) est **caduque**,
+> et l'écart volontaire avec Kova qu'elle décrivait n'en est plus un. Ce choix rendait
+> invisibles sur l'iPhone les cloches, les commandes shell terminées, les panes sans agent,
+> les tours de moins de 60 s et les Cmd+U : le bouton Next du téléphone ne comptait pas la
+> même chose que la pastille Next du Mac. C'est exactement le symptôme rapporté, « le bouton
+> Next marche sur le Mac, pas sur le téléphone ».
 
-- Un pane qui **travaille** n'est pas non lu : il n'y a rien à lire, il le deviendra à la fin
-  du tour. C'est un écart volontaire avec Kova, qui compte aussi la « sortie » ; sur mobile,
-  la sortie en cours est du bruit.
-- Un pane **inactif** sans prompt (`none`) n'est pas non lu.
+Un pane est **non lu** quand `pane.unread` vaut `true`. C'est le bit que Kova calcule pour
+lui même (`PaneFlags::is_unread`, `kova/src/window/sidebar.rs`) et qui pilote déjà Cmd+J, la
+pastille Next et Cmd+U sur le Mac : marque manuelle, ou quelque chose de neuf depuis que le
+pane a été regardé (question, fin de tour, cloche, completion, drapeau du hook). Kova
+l'expose dans `list-panes`, le daemon le recopie tel quel dans `Pane`.
+
+Conséquences, dans l'ordre où elles tranchent :
+
+- Le pane sous les yeux sur le Mac n'est jamais non lu : Kova le tient pour vu. « Follow on
+  Mac » (ouvrir un pane sur l'iPhone le focalise sur le Mac) suffit donc à éteindre la
+  pastille des deux côtés pour une fin de tour ou une question.
+- La marque de lecture est **locale au téléphone**, persistée (`kv`), et vient PAR DESSUS le
+  bit de Kova, en recouvrement optimiste : la pastille s'efface dès que Robin a lu le pane,
+  sans attendre les 5 s du sondage. Elle compare des références, jamais des horloges : le
+  `promptRef` quand il y en a un, sinon un jeton fixe (une cloche n'a pas de `promptRef`).
+  Dès que Kova annonce le pane lu, la marque est purgée, donc un NOUVEAU signal sur le même
+  pane redevient non lu.
+- Un pane **minimisé** ne fait pas partie de l'anneau, comme `collect_unread` sur le Mac.
 - Un pane fermé quitte la liste et sa marque de lecture est purgée.
-- La marque de lecture est **locale au téléphone** et persistée (`kv`). Elle compare des
-  références, jamais des horloges : aucun décalage Mac / iPhone ne peut faire apparaître ou
-  disparaître un non lu.
 - `awaiting_seen` n'exclut pas du non lu : une question vue sur le Mac et pas répondue reste
   dans le tour. Il sert seulement à l'ordre (section 0.3).
+- **Repli** : un Kova assez ancien pour ne pas envoyer `unread` laisse le champ absent, et
+  l'app retombe alors sur la règle d'origine (un `Prompt` lisible non marqué, pane `working`
+  exclu). Absent n'est pas `false` : `false` veut dire « Kova affirme que ce pane est lu ».
 
 ### 0.3 L'ordre du tour (l'anneau)
 

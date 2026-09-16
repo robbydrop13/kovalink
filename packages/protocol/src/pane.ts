@@ -38,6 +38,18 @@ export interface Pane {
   awaiting: boolean;
   awaiting_since: string | null;
   awaiting_seen: boolean;
+  /**
+   * LE bit de non lu de Kova (`PaneFlags::is_unread`, `kova/src/window/sidebar.rs`) : marque
+   * manuelle (Cmd+U), ou bien quelque chose de neuf depuis que le pane a ete regarde
+   * (question, fin de tour, cloche, completion, drapeau du hook). C'est celui qui pilote
+   * Cmd+J, la pastille Next et Cmd+U sur le Mac : le telephone s'en sert comme SOURCE DE
+   * VERITE pour que « non lu » veuille dire la meme chose des deux cotes.
+   *
+   * ABSENT (`undefined`) chez un Kova qui ne l'expose pas encore. Absent n'est pas `false` :
+   * `false` dirait « Kova affirme que ce pane est lu », alors que l'absence fait retomber
+   * l'app sur sa regle locale (les `Prompt` synthetises par le daemon).
+   */
+  unread?: boolean;
   minimized: boolean;
   agent: string | null;
   agent_session_id: string | null;

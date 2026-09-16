@@ -135,7 +135,7 @@ export default function SessionsScreen() {
   const collapsedTabs = useTabCollapse((s) => s.collapsed);
   const toggleCollapse = useTabCollapse((s) => s.toggle);
   const unreadOf = (pane: Pane) => isUnread(pane, prompts[pane.id], marks);
-  const summary = kovaDown ? null : summaryLine(panes);
+  const summary = kovaDown ? null : summaryLine(panes, next.unreadCount);
   const jumpNext = () => {
     if (!next.target) return;
     impact(ImpactStyle.Light);

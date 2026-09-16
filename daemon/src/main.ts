@@ -168,6 +168,11 @@ async function run(): Promise<void> {
         p['cwd'],
         p['agent'],
         p['agent_session_id'],
+        // Le bit de non lu : Kova n'emet AUCUN evenement quand il change (une cloche, une
+        // fin de tour trop courte pour notre detecteur, un Cmd+U sur le Mac). Sans lui dans
+        // la signature, un pane qui devient non lu ne declenchait aucune diffusion et la
+        // pastille du telephone attendait le prochain changement de mise en page.
+        p['unread'],
         Array.isArray(p['child_processes'])
           ? (p['child_processes'] as { name?: unknown }[]).map((c) => c.name).join(',')
           : '',

@@ -60,6 +60,11 @@ export function toPane(raw: Record<string, unknown>): Pane {
     awaiting,
     awaiting_since: strOrNull(raw['awaiting_since']),
     awaiting_seen: bool(raw['awaiting_seen']),
+    // Le bit de non lu de Kova, recopie tel quel : c'est lui qui fait dire la meme chose au
+    // bouton Next du telephone et a la pastille du Mac. Chez un Kova plus ancien le champ
+    // est absent, et on le laisse ABSENT : `bool()` en ferait `false`, c'est a dire « Kova
+    // dit que ce pane est lu », ce qui supprimerait le repli local de l'app.
+    ...(typeof raw['unread'] === 'boolean' ? { unread: raw['unread'] } : {}),
     minimized: bool(raw['minimized']),
     agent,
     agent_session_id: strOrNull(raw['agent_session_id']) ?? live?.id ?? null,

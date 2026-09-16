@@ -55,6 +55,7 @@ export const sessions = {
   tabHeaderAccessibilityLabel: (title: string, collapsed: boolean) =>
     `Tab ${title}, ${collapsed ? 'collapsed, expand' : 'expanded, collapse'}`,
   tabCollapsedCount: (count: number) => `${count} pane${count > 1 ? 's' : ''}`,
+  summaryUnread: (count: number) => `${count} unread`,
   summaryWaiting: (count: number) => `${count} waiting`,
   summaryWorking: (count: number) => `${count} working`,
 

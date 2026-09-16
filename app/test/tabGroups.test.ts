@@ -180,6 +180,9 @@ describe('summaryLine', () => {
     assert.equal(summaryLine([pane({ id: 1, tab: 1, working: true })]), '1 working');
     assert.equal(summaryLine([pane({ id: 1, tab: 1, working: true, awaiting: true })]), '1 waiting');
     assert.equal(summaryLine([pane({ id: 1, tab: 1 })]), null);
+    // Les non lus en tête, comme la section 6.6 de docs/16 le demande.
+    assert.equal(summaryLine(PANES, 3), '3 unread · 1 waiting · 2 working');
+    assert.equal(summaryLine([pane({ id: 1, tab: 1 })], 2), '2 unread');
   });
 });
 
