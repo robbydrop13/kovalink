@@ -16,7 +16,7 @@ import { UploadStore } from './fs/uploads.js';
 import { KovaIpc } from './kova/ipc.js';
 import { KeyGate } from './kova/keygate.js';
 import { PaneStore, type WorkingTransition } from './kova/panes.js';
-import { LAYOUT_POLL_MS } from './kova/layoutPoll.js';
+import { LAYOUT_POLL_MS, LayoutGate } from './kova/layoutPoll.js';
 import { purgeOrphanRaws, RAW_PURGE_INTERVAL_MS, realRawPurgeDeps } from './kova/rawPurge.js';
 import { logger } from './logger.js';
 import { runPair } from './pair.js';
@@ -50,9 +50,13 @@ import { NonceStore, type Services } from './server/services.js';
 
 const DAEMON_VERSION = '0.1.0';
 
-/** Detection de reveil apres veille : un ecart superieur a 5 s signale un saut d'horloge. */
+/**
+ * Detection de reveil apres veille. Le seuil est a 30 s, pas a 5 : sous 30 s, un saut
+ * d'horloge est presque toujours une famine de boucle d'evenements ou un regroupement de
+ * minuteries, pas une veille. Et meme au dela, Kova est sonde avant qu'on casse l'IPC.
+ */
 const CLOCK_TICK_MS = 1_000;
-const CLOCK_JUMP_MS = 5_000;
+const CLOCK_JUMP_MS = 30_000;
 
 async function run(): Promise<void> {
   // Contrainte 5 : jamais root.
@@ -109,8 +113,10 @@ async function run(): Promise<void> {
   const panes = new PaneStore();
   const refs = new PromptRefs();
   const prompts = new PromptState(ipc, refs);
-  const keygate = new KeyGate(ipc, panes, prompts);
   const tailer = new TranscriptTailer();
+  // Le tailer sert de PREUVE de soumission a KeyGate : un message dans le JSONL est un
+  // message que Claude a lu. Il est construit avant, pour cette seule raison.
+  const keygate = new KeyGate(ipc, panes, prompts, tailer);
   const push = new PushSender(cfg);
   const sleep = new SleepAssertion(() => cfg().preventSleep);
 
@@ -145,47 +151,30 @@ async function run(): Promise<void> {
   };
 
   /**
-   * Kova n'emet AUCUN evenement quand un onglet est renomme, deplace ou cree vide : son
-   * `subscribe` ne connait que `focus`, `pane-open`, `pane-close`, `pane-working` et
-   * `pane-status`. Sans relecture, l'ordre et les noms des onglets restaient figes dans
-   * l'app jusqu'au prochain redemarrage du daemon (mesure le 12 septembre 2026 : l'onglet
-   * « Notes » deplace en 2e position sur le Mac, toujours en 8e sur l'iPhone). On relit
-   * donc `list-tabs` + `list-panes` a chaque `focus` et toutes les `LAYOUT_POLL_MS`, et on
-   * ne diffuse un instantane que si la mise en page (ordre, titres, cwd) a change.
+   * Porte de diffusion de la mise en page (`layoutSignature`, `LayoutGate`). Kova n'emet
+   * AUCUN evenement quand un onglet est renomme, deplace ou cree vide : son `subscribe` ne
+   * connait que `focus`, `pane-open`, `pane-close`, `pane-working` et `pane-status`. Sans
+   * relecture, l'ordre et les noms des onglets restaient figes dans l'app jusqu'au
+   * prochain redemarrage du daemon (mesure le 12 septembre 2026 : l'onglet « Notes »
+   * deplace en 2e position sur le Mac, toujours en 8e sur l'iPhone). On relit donc
+   * `list-tabs` + `list-panes` a chaque `focus` et toutes les `LAYOUT_POLL_MS`.
    */
-  let layoutSignature = '';
-  const layoutOf = (tabs: Record<string, unknown>[], rawPanes: Record<string, unknown>[]): string =>
-    JSON.stringify([
-      tabs.map((t) => [t['id'], t['window'], t['tab_index'], t['title']]),
-      // Processus enfants et session compris : sans eux, un `claude` quitte restait liste
-      // pour toujours (mesure du 15 septembre 2026), l'app ne voyait jamais un shell nu et
-      // n'offrait pas « Start Claude here ».
-      rawPanes.map((p) => [
-        p['id'],
-        p['window'],
-        p['tab'],
-        p['title'],
-        p['cwd'],
-        p['agent'],
-        p['agent_session_id'],
-        // Le bit de non lu : Kova n'emet AUCUN evenement quand il change (une cloche, une
-        // fin de tour trop courte pour notre detecteur, un Cmd+U sur le Mac). Sans lui dans
-        // la signature, un pane qui devient non lu ne declenchait aucune diffusion et la
-        // pastille du telephone attendait le prochain changement de mise en page.
-        p['unread'],
-        Array.isArray(p['child_processes'])
-          ? (p['child_processes'] as { name?: unknown }[]).map((c) => c.name).join(',')
-          : '',
-      ]),
-    ]);
+  const layout = new LayoutGate();
+  /**
+   * Relecture de la mise en page.
+   *
+   * DEUX portes, pas une. La relecture du magasin (`setTabs` + `replaceAll`) a lieu
+   * TOUJOURS : c'est la seule chose qui relit le vrai `working` et le vrai `awaiting` de
+   * Kova, et la seule voie de convergence apres un evenement perdu. Seule la DIFFUSION
+   * est gardee par la signature. Avant, le retour anticipe sautait aussi la relecture :
+   * l'etat du magasin pouvait rester faux indefiniment.
+   */
   const refreshLayout = async (reason: string): Promise<void> => {
     try {
       const [tabs, rawPanes] = await Promise.all([ipc.listTabs(), ipc.listPanes()]);
-      const signature = layoutOf(tabs, rawPanes);
-      if (signature === layoutSignature) return;
-      layoutSignature = signature;
       panes.setTabs(tabs);
       panes.replaceAll(rawPanes);
+      if (!layout.changed(tabs, rawPanes)) return;
       hub.pushPanesSnapshot();
       logger.debug('mise en page relue', { reason });
     } catch {
@@ -298,20 +287,45 @@ async function run(): Promise<void> {
       const n = panes.all().length;
       panes.replaceAll([]);
       panes.setTabs([]);
+      // La signature DOIT repartir de zero avec la liste. Sinon, quand le
+      // rafraichissement de `ready` echoue (528 fois dans le journal, timeout IPC de
+      // 5 s), le sondage suivant recalculait la MEME signature qu'avant la coupure,
+      // repartait aussitot, et la liste des panes restait vide indefiniment.
+      layout.reset();
       hub.pushPanesSnapshot();
       sleep.reconcile(false);
       if (n > 0) logger.info('kova absent, liste des panes videe', { panes: n });
     }
   });
 
+  /**
+   * Premier rafraichissement apres une connexion : `list-panes` echoue parfois (Kova
+   * vient de demarrer, ou repond au dela de 5 s). Trois tentatives bornees, pas une
+   * boucle : sans elles, la liste restait vide jusqu'au sondage suivant, ou pour
+   * toujours quand la signature n'avait pas bouge.
+   */
+  const READY_REFRESH_TRIES = 3;
+  const READY_REFRESH_DELAY_MS = 1_000;
+  const wait = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      setTimeout(resolve, ms).unref?.();
+    });
   ipc.on('ready', () => {
     void (async () => {
-      try {
-        panes.replaceAll(await ipc.listPanes());
-        await refreshTabs();
-        hub.pushPanesSnapshot();
-      } catch (e) {
-        logger.warn('rafraichissement initial en echec', { err: (e as Error).message });
+      for (let attempt = 1; attempt <= READY_REFRESH_TRIES; attempt++) {
+        try {
+          panes.replaceAll(await ipc.listPanes());
+          await refreshTabs();
+          hub.pushPanesSnapshot();
+          return;
+        } catch (e) {
+          logger.warn('rafraichissement initial en echec', {
+            attempt,
+            tries: READY_REFRESH_TRIES,
+            err: (e as Error).message,
+          });
+        }
+        if (attempt < READY_REFRESH_TRIES) await wait(READY_REFRESH_DELAY_MS);
       }
     })();
   });
@@ -505,20 +519,53 @@ async function run(): Promise<void> {
   // --- Reveil apres veille -----------------------------------------------
 
   let lastTick = Date.now();
+  let wakeInFlight = false;
+  /**
+   * Un saut d'horloge n'est pas forcement un reveil.
+   *
+   * Le seuil valait 5 s : 5 secondes de famine de boucle d'evenements ou de
+   * regroupement de minuteries par macOS suffisaient a declarer un reveil (43 des 733
+   * dans le journal se trouvaient dans la bande 5 a 10 s). Chaque faux reveil cassait
+   * l'IPC et detachait tous les tails. On monte le seuil a 30 s ET on demande son avis
+   * a Kova : s'il repond a un `list-panes`, l'abonnement est vivant et il n'y a rien a
+   * redemarrer. Les tails, eux, sont rouverts dans les deux cas : un watcher de fichier
+   * mort apres une veille est invisible et ne se repare jamais tout seul.
+   */
+  const onClockJump = async (driftMs: number): Promise<void> => {
+    if (wakeInFlight) return;
+    wakeInFlight = true;
+    try {
+      let alive = false;
+      if (ipc.state === 'up') {
+        try {
+          await ipc.listPanes();
+          alive = true;
+        } catch (e) {
+          logger.info('sonde kova en echec apres un saut d horloge', { err: (e as Error).message });
+        }
+      }
+      logger.info('saut d horloge', { driftMs, kovaVivant: alive });
+      // Un tail detache n'est JAMAIS rouvert par personne d'autre : on le refait ici.
+      tailer.detachAll();
+      await hub.reattachAll(alive ? 'saut d horloge' : 'reveil');
+      if (!alive) {
+        // `restart`, pas `stop` puis `start` : l'etat passe par `reconnecting`, jamais par
+        // `down`, sans quoi un simple reveil viderait la liste des panes de l'app.
+        ipc.restart('reveil');
+      }
+      // Un ecouteur peut avoir ete cree par la reconciliation des adresses avec un
+      // ancien materiel TLS : le reveil est aussi un bon moment pour verifier le certificat.
+      renewCertificate();
+    } finally {
+      wakeInFlight = false;
+    }
+  };
   const clockTimer = setInterval(() => {
     const now = Date.now();
     const drift = now - lastTick - CLOCK_TICK_MS;
     lastTick = now;
     if (drift < CLOCK_JUMP_MS) return;
-    // Les sockets survivent rarement a une veille : autant les considerer morts.
-    logger.info('reveil detecte, invalidation des connexions', { driftMs: drift });
-    tailer.detachAll();
-    // `restart`, pas `stop` puis `start` : l'etat passe par `reconnecting`, jamais par
-    // `down`, sans quoi un simple reveil viderait la liste des panes de l'app.
-    ipc.restart('reveil');
-    // Un ecouteur peut avoir ete cree par la reconciliation des adresses avec un
-    // ancien materiel TLS : le reveil est aussi un bon moment pour verifier le certificat.
-    renewCertificate();
+    void onClockJump(drift);
   }, CLOCK_TICK_MS);
   clockTimer.unref?.();
 

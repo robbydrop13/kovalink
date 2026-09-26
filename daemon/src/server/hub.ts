@@ -444,7 +444,16 @@ export class Hub {
     this.services.sleep.reconcile(this.services.panes.anyWorking());
   }
 
-  private async attachSession(client: Client, reqId: string, sessionId: string): Promise<void> {
+  /**
+   * `stamp` est FAUX pour un rattachement decide par le daemon (reveil) : Robin n'a rien
+   * ouvert, et marquer le premier plan supprimerait ses notifications pendant 60 s.
+   */
+  private async attachSession(
+    client: Client,
+    reqId: string,
+    sessionId: string,
+    stamp = true,
+  ): Promise<void> {
     const pane = this.services.panes.findBySession(sessionId);
     if (!pane) return this.error(client, reqId, 'SESSION_NOT_FOUND', 'no pane for this session');
     const path = transcriptPath(pane.cwd, sessionId);
@@ -452,7 +461,7 @@ export class Hub {
     client.sessions.add(sessionId);
     // Ouvrir l'ecran de session est un signal de premier plan, rafraichi ensuite par
     // chaque `ping.foregroundPaneId`.
-    this.stampForeground(client, pane.id);
+    if (stamp) this.stampForeground(client, pane.id);
     let lines: unknown[] = [];
     try {
       lines = await this.services.tailer.attach(sessionId, path);
@@ -476,6 +485,41 @@ export class Hub {
       turns,
       hasMoreBefore: first === undefined || (first.offset as number) > 0,
     });
+  }
+
+  /**
+   * Rattachement de TOUS les tails encore revendiques par un client.
+   *
+   * C'est la reparation du reveil. `tailer.detachAll()` etait appele au saut d'horloge et
+   * RIEN ne rouvrait les tails : `tailer.attach` n'a qu'un seul appelant, `session.attach`,
+   * qui ne vient que du client. Les sessions restant dans `client.sessions`, le daemon
+   * croyait la conversation surveillee, le WebSocket restait vert, et `session.append` ne
+   * partait plus jamais : le chat du telephone gelait jusqu'au prochain changement d'ecran.
+   *
+   * On rouvre chaque tail et on renvoie un instantane complet : le client REMPLACE ses
+   * tours, exactement comme apres une reouverture de fichier (`reopened`). Une session qui
+   * echoue n'interrompt jamais les autres.
+   */
+  async reattachAll(reason: string): Promise<number> {
+    let done = 0;
+    for (const client of [...this.clients]) {
+      for (const sessionId of [...client.sessions]) {
+        try {
+          if (!this.services.panes.findBySession(sessionId)) {
+            // Le pane a disparu pendant la veille : la session n'est plus rattachable.
+            client.sessions.delete(sessionId);
+            logger.info('session sans pane au rattachement, oubliee', { sessionId });
+            continue;
+          }
+          await this.attachSession(client, `reattach-${sessionId}`, sessionId, false);
+          if (this.services.tailer.isAttached(sessionId)) done += 1;
+        } catch (e) {
+          logger.warn('rattachement de session en echec', { sessionId, err: (e as Error).message });
+        }
+      }
+    }
+    logger.info('tails rattaches', { reason, sessions: done });
+    return done;
   }
 
   private maybeDetach(sessionId: string): void {

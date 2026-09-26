@@ -143,7 +143,22 @@ export async function createHttpServer(
   );
 
   const websocket = (await import('@fastify/websocket')).default;
-  await app.register(websocket, { options: { maxPayload: 256 * 1024 } });
+  await app.register(websocket, {
+    options: {
+      // Meme plafond que `MAX_FRAME_BYTES` du hub : ce qu'on refuse de lire, on refuse
+      // aussi de le recevoir.
+      maxPayload: 256 * 1024,
+      /**
+       * Compression negociee. Un `session.attach` sur le vrai transcript de Robin (37 Mo
+       * de JSONL, 9 001 lignes, 177 tours) expedie 260 Ko de JSON non compresse, ce qui
+       * se voit sur un partage de connexion. Le seuil de 1 Ko laisse les petites trames
+       * (pong, evenement de pane) tranquilles : les compresser coute plus qu'il ne
+       * rapporte. La negociation reste a la main du client : un client qui n'annonce pas
+       * l'extension recoit exactement ce qu'il recevait avant.
+       */
+      perMessageDeflate: { threshold: 1024 },
+    },
+  });
 
   // Toute reponse d'erreur porte un `ErrorPayload`, y compris celles que Fastify produit
   // lui meme. Sans ces deux gestionnaires, un 404 rend `{message,error,statusCode}` sans

@@ -67,6 +67,12 @@ export type ActionReason =
   | 'became_awaiting'
   /** Texte colle puis efface : le TUI n'a jamais honore le retour chariot. */
   | 'not_submitted'
+  /**
+   * Kova n'a pas repondu pendant l'envoi. Le champ du Mac a ete vide : rien n'est reste
+   * en plan, et l'app doit montrer un echec plutot qu'une file fantome qui rejoue le
+   * meme texte par dessus le premier.
+   */
+  | 'ipc_timeout'
   | 'forbidden'
   | 'kova_down';
 

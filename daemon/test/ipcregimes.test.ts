@@ -142,6 +142,28 @@ describe('Kova quitte : etat down apres le delai sans socket (CA-123)', () => {
     ipc.stop();
   });
 
+  /**
+   * D3. `teardown` detruisait le socket d'abonnement sans retirer ses ecouteurs : son
+   * `close` arrivait APRES que la connexion neuve avait reussi, et la demolissait. Mesure
+   * du journal : 613 des 651 « reconnexion planifiee reason=abonnement ferme » tombent
+   * dans les 2 secondes d'un « kova ipc connecte » tout frais.
+   */
+  it('un abonnement demoli ne fait plus tomber son successeur (D3)', async () => {
+    const { ipc, statuses, ready } = makeIpc(5_000);
+    const before = fake.subscriptions.length;
+    ipc.start();
+    await new Promise((r) => ipc.once('ready', r));
+    ipc.restart('reveil');
+    await new Promise((r) => ipc.once('ready', r));
+    // Le `close` du socket detruit, puis tout le backoff d'une reconnexion parasite.
+    await wait(1_200);
+    assert.equal(ipc.state, 'up');
+    assert.deepEqual(statuses, ['up', 'reconnecting', 'up'], `etats : ${statuses.join(', ')}`);
+    assert.equal(ready(), 2, 'exactement deux abonnements : le premier et celui du reveil');
+    assert.equal(fake.subscriptions.length - before, 2, 'aucun abonnement en trop cote Kova');
+    ipc.stop();
+  });
+
   it('sans Kova au demarrage, down d emblee, sans attendre', async () => {
     const empty = mkdtempSync(join(tmpdir(), 'kovalink-nosock-'));
     const ipc = new KovaIpc({ ...realDeps, socketDir: empty }, 5_000);

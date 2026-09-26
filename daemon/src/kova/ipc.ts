@@ -145,6 +145,11 @@ export class KovaIpc extends EventEmitter {
   private kovaPid: number | null = null;
 
   private subSocket: Socket | null = null;
+  /**
+   * Generation de l'abonnement. Chaque `teardown` l'incremente, et tout gestionnaire
+   * installe par `openSubscription` se tait des que sa generation n'est plus la courante.
+   */
+  private subGeneration = 0;
   private readonly subLines = new LineBuffer();
 
   private queue: Pending[] = [];
@@ -295,6 +300,15 @@ export class KovaIpc extends EventEmitter {
    * milliseconde de la requete. Seul un arret, ou Kova tenu pour absent, les rejette.
    */
   private teardown(reason: string): void {
+    // `removeAllListeners` AVANT `destroy`, sinon le `close` du socket detruit arrive
+    // APRES que `connect()` a reussi et demolit la connexion NEUVE. Mesure du journal :
+    // 613 des 651 « reconnexion planifiee reason=abonnement ferme » tombent dans les
+    // 2 secondes d'un « kova ipc connecte » tout frais, et le journal de Kova montre
+    // `subscriber N listening`, `subscriber N gone`, `subscriber N+1 listening` dans la
+    // meme seconde. La generation ci dessous ferme la porte pour de bon : un
+    // gestionnaire d'un socket perime ne peut plus rien declencher.
+    this.subGeneration += 1;
+    this.subSocket?.removeAllListeners();
     this.subSocket?.destroy();
     this.subSocket = null;
     this.subLines.reset();
@@ -343,7 +357,12 @@ export class KovaIpc extends EventEmitter {
   private openSubscription(path: string): Promise<Socket> {
     return new Promise((resolve, reject) => {
       const sock = connect(path);
+      // La generation de CE socket. Les gestionnaires ci dessous ne parlent qu'au nom
+      // d'elle : un socket deja demoli n'a plus le droit de faire tomber son successeur.
+      const generation = this.subGeneration;
+      const current = (): boolean => generation === this.subGeneration && !this.stopped;
       const fail = (e: Error): void => {
+        sock.removeAllListeners();
         sock.destroy();
         reject(e);
       };
@@ -352,6 +371,7 @@ export class KovaIpc extends EventEmitter {
         sock.off('error', fail);
         sock.setEncoding('utf8');
         sock.on('data', (chunk: string) => {
+          if (!current()) return;
           try {
             for (const line of this.subLines.push(chunk)) this.onSubLine(line);
           } catch (e) {
@@ -360,11 +380,12 @@ export class KovaIpc extends EventEmitter {
           }
         });
         sock.on('error', (e) => {
+          if (!current()) return;
           this.teardown(e.message);
           this.scheduleReconnect(e.message);
         });
         sock.on('close', () => {
-          if (this.stopped) return;
+          if (!current()) return;
           // Une connexion d'abonnement fermee est un incident : Kova la garde ouverte
           // indefiniment tant qu'il vit.
           this.teardown('close');

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { closeSync, openSync, readSync, statSync, type Stats } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import { logger } from '../logger.js';
-import { safeParseLine, type RawLine } from './jsonl.js';
+import { isHumanUserLine, safeParseLine, type RawLine } from './jsonl.js';
 
 /** Une ligne reelle monte jusqu'a 132 746 octets (V5) : la fenetre initiale est plafonnee. */
 const MAX_INITIAL_BYTES = 2 * 1024 * 1024;
@@ -223,6 +223,23 @@ const UNBORN_POLL_MS = 1_000;
 
 export class TranscriptTailer extends EventEmitter {
   private readonly handles = new Map<string, TailHandle>();
+  /**
+   * Messages HUMAINS vus dans chaque transcript depuis l'abonnement. C'est la preuve la
+   * plus fiable qu'un envoi a reellement atteint Claude : si la ligne est dans le JSONL,
+   * Claude l'a lue. `KeyGate` s'en sert pour prouver une soumission au lieu de deviner.
+   */
+  private readonly humanTurns = new Map<string, number>();
+
+  /** Nombre de messages humains vus sur cette session, `null` si elle n'est pas suivie. */
+  humanTurnsSeen(sessionId: string): number | null {
+    return this.humanTurns.get(sessionId) ?? null;
+  }
+
+  private countHuman(sessionId: string, lines: readonly RawLine[]): void {
+    const n = lines.reduce((acc, l) => acc + (isHumanUserLine(l) ? 1 : 0), 0);
+    if (n === 0) return;
+    this.humanTurns.set(sessionId, (this.humanTurns.get(sessionId) ?? 0) + n);
+  }
 
   /**
    * Abonne la session et rend l'ETAT COURANT, a chaque appel.
@@ -240,6 +257,7 @@ export class TranscriptTailer extends EventEmitter {
     const onChange = (): void => {
       try {
         const res = readMore(state);
+        this.countHuman(sessionId, res.lines);
         if (res.lines.length > 0 || res.reopened) {
           this.emit('lines', sessionId, res.lines, res.reopened);
         }
@@ -254,10 +272,14 @@ export class TranscriptTailer extends EventEmitter {
     let closer: () => void = () => {};
     const startWatcher = async (): Promise<void> => {
       const { watch } = await import('chokidar');
-      const watcher = watch(path, {
-        ignoreInitial: true,
-        awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
-      });
+      // AUCUN `awaitWriteFinish`. Il ajoutait un plancher de 80 a 100 ms a CHAQUE ajout
+      // et regroupait les rafales : mesure sur le vrai fichier de session de Robin, 34 %
+      // des lignes consecutives (1 782 sur 5 246) sont ecrites a moins de 80 ms d'ecart,
+      // donc pendant un tour actif les ajouts etaient retenus jusqu'a ce que le fichier
+      // se taise. La garde etait redondante : `readMore` traite deja une ligne coupee en
+      // deux lectures avec son `StringDecoder` persistant et son `carry`, et une ligne
+      // sans saut de ligne final n'est jamais emise.
+      const watcher = watch(path, { ignoreInitial: true });
       watcher.on('change', onChange);
       watcher.on('add', onChange);
       watcher.on('unlink', () => this.emit('closed', sessionId));
@@ -282,6 +304,9 @@ export class TranscriptTailer extends EventEmitter {
       state,
       close: () => closer(),
     });
+    // Le compteur existe des l'abonnement : `0` veut dire « suivi, rien vu », a la
+    // difference de `null` qui veut dire « pas suivi, aucune preuve possible ».
+    this.humanTurns.set(sessionId, 0);
     return lines;
   }
 
@@ -289,12 +314,15 @@ export class TranscriptTailer extends EventEmitter {
   poll(sessionId: string): RawLine[] {
     const h = this.handles.get(sessionId);
     if (!h) return [];
-    return readMore(h.state).lines;
+    const lines = readMore(h.state).lines;
+    this.countHuman(sessionId, lines);
+    return lines;
   }
 
   detach(sessionId: string): void {
     this.handles.get(sessionId)?.close();
     this.handles.delete(sessionId);
+    this.humanTurns.delete(sessionId);
   }
 
   detachAll(): void {

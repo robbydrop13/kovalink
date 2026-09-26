@@ -177,3 +177,80 @@ describe('transcript pas encore ne', () => {
     assert.equal(readMore(opened.state).lines.length, 1);
   });
 });
+
+describe('ajouts sans delai de stabilisation (D6)', () => {
+  /**
+   * `awaitWriteFinish: { stabilityThreshold: 80 }` ajoutait un plancher de 80 a 100 ms a
+   * CHAQUE ajout et regroupait les rafales : mesure sur le vrai fichier de session de
+   * Robin, 34 % des lignes consecutives (1 782 sur 5 246) sont ecrites a moins de 80 ms
+   * d'ecart, donc pendant un tour actif les ajouts etaient retenus jusqu'a ce que le
+   * fichier se taise. La garde etait redondante avec le `carry` de `readMore`, teste plus
+   * haut (« conserve une ligne partielle jusqu a son saut de ligne »).
+   */
+  it('deux ajouts rapproches sont livres tous les deux', async () => {
+    const path = tmpFile();
+    writeFileSync(path, line(0));
+    const { TranscriptTailer } = await import('../src/transcript/tailer.js');
+    const tailer = new TranscriptTailer();
+    const got: string[] = [];
+    tailer.on('lines', (_id: string, lines: { uuid?: string }[]) => {
+      for (const l of lines) got.push(l.uuid ?? '');
+    });
+    await tailer.attach('s-d6', path);
+    const settle = async (n: number): Promise<void> => {
+      const deadline = Date.now() + 5_000;
+      while (got.length < n && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    };
+    // FSEvents met quelques centaines de millisecondes a devenir vivant : on attend une
+    // premiere livraison avant de mesurer quoi que ce soit.
+    appendFileSync(path, line(1));
+    await settle(1);
+    appendFileSync(path, line(2));
+    appendFileSync(path, line(3));
+    await settle(3);
+    tailer.detachAll();
+    assert.deepEqual(got, ['u1', 'u2', 'u3'], 'aucune ligne retenue par un delai de stabilisation');
+  });
+
+  it('le guetteur n installe plus aucun delai de stabilisation', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const src = readFileSync(fileURLToPath(new URL('../../src/transcript/tailer.ts', import.meta.url)), 'utf8');
+    assert.equal(src.includes('awaitWriteFinish:'), false, 'awaitWriteFinish est revenu');
+  });
+});
+
+describe('compteur de messages humains (preuve de soumission, D7)', () => {
+  it('compte les messages de Robin, jamais les retours d outil', async () => {
+    const path = tmpFile();
+    writeFileSync(path, line(0));
+    const { TranscriptTailer } = await import('../src/transcript/tailer.js');
+    const tailer = new TranscriptTailer();
+    await tailer.attach('s-d7', path);
+    assert.equal(tailer.humanTurnsSeen('s-d7'), 0, 'suivi, rien vu');
+    assert.equal(tailer.humanTurnsSeen('autre'), null, 'pas suivi, aucune preuve possible');
+
+    // Un retour d'outil est une ligne `user` : il ne doit RIEN prouver.
+    appendFileSync(
+      path,
+      JSON.stringify({
+        type: 'user',
+        uuid: 'tr1',
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] },
+      }) + '\n',
+    );
+    tailer.poll('s-d7');
+    assert.equal(tailer.humanTurnsSeen('s-d7'), 0);
+
+    appendFileSync(
+      path,
+      JSON.stringify({ type: 'user', uuid: 'h1', message: { role: 'user', content: 'continue stp' } }) + '\n',
+    );
+    tailer.poll('s-d7');
+    assert.equal(tailer.humanTurnsSeen('s-d7'), 1);
+
+    tailer.detach('s-d7');
+    assert.equal(tailer.humanTurnsSeen('s-d7'), null);
+    tailer.detachAll();
+  });
+});

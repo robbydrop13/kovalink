@@ -65,6 +65,21 @@ export function safeParseLine(line: string): RawLine | null {
   }
 }
 
+/**
+ * Ligne `user` qui porte un message HUMAIN, pas un retour d'outil.
+ *
+ * Le discriminant est le meme que celui de `buildTurns` : une ligne `user` dont tous les
+ * blocs sont des `tool_result` est la suite d'un tour, pas un message de Robin. Sert de
+ * PREUVE de soumission a `KeyGate` : la ligne est dans le JSONL, donc Claude l'a lue.
+ */
+export function isHumanUserLine(line: RawLine): boolean {
+  if (line.type !== 'user' || !line.message) return false;
+  const content = line.message.content;
+  if (typeof content === 'string') return content.trim().length > 0;
+  if (!Array.isArray(content)) return false;
+  return content.some((b) => (b as { type?: unknown }).type === 'text');
+}
+
 /** Types ignores en bloc. `queue-operation` en fait partie (C22) : zero message de Robin. */
 const IGNORED_TYPES = new Set([
   'queue-operation',

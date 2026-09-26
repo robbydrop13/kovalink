@@ -340,6 +340,62 @@ describe('Hub : attache de session et instantane (H2)', () => {
   });
 });
 
+describe('Hub : rattachement des tails apres un reveil (D1)', () => {
+  it('rouvre chaque tail detache et renvoie un instantane complet au client', async () => {
+    writeTranscript();
+    const h = harness();
+    const s = h.connect();
+    await s.say({ t: 'session.attach', id: 's1', sessionId: SESSION });
+    assert.equal(h.tailer.isAttached(SESSION), true);
+
+    // Le reveil : `detachAll` coupe tout, et RIEN ne rouvrait. Le client reste pourtant
+    // abonne, donc le daemon croyait la session surveillee et `session.append` ne partait
+    // plus jamais : c'est le chat gele derriere une pastille verte.
+    h.tailer.detachAll();
+    assert.equal(h.tailer.isAttached(SESSION), false);
+
+    const before = s.sent.length;
+    assert.equal(await h.hub.reattachAll('test'), 1);
+    assert.equal(h.tailer.isAttached(SESSION), true, 'le tail est rouvert');
+    const snap = s.sent.slice(before).find((m) => m.t === 'session.snapshot');
+    assert.ok(snap, 'le client recoit un instantane complet, il REMPLACE ses tours');
+    assert.equal((snap as { turns: unknown[] }).turns.length, 2);
+  });
+
+  it('ne pose AUCUN signal de premier plan : Robin n a rien ouvert, ses notifications restent', async () => {
+    writeTranscript();
+    const h = harness();
+    const s = h.connect();
+    await s.say({ t: 'session.attach', id: 's1', sessionId: SESSION });
+    // Le signal d'ouverture d'ecran a perime pendant la veille.
+    h.advance(FOREGROUND_TTL_MS + 1);
+    assert.equal(h.hub.isWatching(SESSION, 66), false);
+    h.tailer.detachAll();
+    await h.hub.reattachAll('reveil');
+    assert.equal(
+      h.hub.isWatching(SESSION, 66),
+      false,
+      'un rattachement du daemon ne doit pas supprimer un push pendant 60 s',
+    );
+  });
+
+  it('une session sans pane n interrompt pas les autres', async () => {
+    writeTranscript();
+    const h = harness();
+    const s = h.connect();
+    await s.say({ t: 'session.attach', id: 's1', sessionId: SESSION });
+    // Session fantome revendiquee par le client : son pane a disparu pendant la veille.
+    (h.hub as unknown as { clients: Set<{ sessions: Set<string> }> }).clients
+      .values()
+      .next()
+      .value?.sessions.add('sess-fantome');
+    h.tailer.detachAll();
+    assert.equal(await h.hub.reattachAll('reveil'), 1, 'la bonne session est rattachee quand meme');
+    assert.equal(h.tailer.isAttached(SESSION), true);
+    assert.equal(h.tailer.isAttached('sess-fantome'), false);
+  });
+});
+
 describe('Hub : premier plan et suppression de push (A1, CA-31)', () => {
   it('attacher la session pose le premier plan ; il perime apres 60 s sans ping', async () => {
     writeTranscript();

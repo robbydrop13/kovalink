@@ -9,9 +9,16 @@ import ts from 'typescript';
 process.env['KOVALINK_HOME'] = mkdtempSync(join(tmpdir(), 'kovalink-test-'));
 process.env['KOVALINK_QUIET'] = '1';
 
-const { KeyGate, sanitizeFreeText, ForbiddenError, MAX_TEXT } = await import(
-  '../src/kova/keygate.js'
-);
+const {
+  KeyGate,
+  sanitizeFreeText,
+  ForbiddenError,
+  MAX_TEXT,
+  MIN_NEEDLE_LEN,
+  composerIsEmpty,
+  composerNeedles,
+  composerShows,
+} = await import('../src/kova/keygate.js');
 const { PaneStore } = await import('../src/kova/panes.js');
 const { KovaIpc, claimRawChannel } = await import('../src/kova/ipc.js');
 const { KOVA_EXEC, realDeps } = await import('../src/kova/discover.js');
@@ -90,6 +97,18 @@ interface Sent {
   text: string;
 }
 
+/** Tout le journal d'audit ecrit depuis le debut du fichier de test. */
+function auditText(): string {
+  const dir = join(process.env['KOVALINK_HOME'] ?? '', 'audit');
+  try {
+    return readdirSync(dir)
+      .map((f) => readFileSync(join(dir, f), 'utf8'))
+      .join('');
+  } catch {
+    return '';
+  }
+}
+
 function makeFixture(overrides: Record<string, unknown> = {}) {
   const sent: Sent[] = [];
   fake.on('command', (payload: Record<string, unknown>) => {
@@ -118,7 +137,15 @@ function makeFixture(overrides: Record<string, unknown> = {}) {
    * comme le vrai TUI quand tout va bien. `absorbDelayMs` simule la conversion d'un
    * chemin d'image ; `ignoreEnters` le nombre de retours chariot que le TUI avale.
    */
-  const screen = { composerText: '', absorbDelayMs: 0, ignoreEnters: 0, reads: 0, enters: 0 };
+  const screen = {
+    composerText: '',
+    absorbDelayMs: 0,
+    ignoreEnters: 0,
+    reads: 0,
+    enters: 0,
+    /** Vrai : le TUI replie le collage en `[Pasted text #1 +N lines]`, comme le vrai. */
+    collapsePaste: false,
+  };
   fake.on('command', (payload: Record<string, unknown>) => {
     if (payload['cmd'] !== 'send-keys' || payload['pane_id'] !== 66) return;
     const text = payload['text'] as string;
@@ -135,7 +162,10 @@ function makeFixture(overrides: Record<string, unknown> = {}) {
     const open = text.indexOf(`${ESC}[200~`);
     const close = text.lastIndexOf(`${ESC}[201~`);
     if (open < 0 || close < 0) return;
-    const pasted = text.slice(open + 6, close).split('\n')[0] ?? '';
+    const body = text.slice(open + 6, close);
+    const pasted = screen.collapsePaste
+      ? `[Pasted text #1 +${body.split('\n').length - 1} lines]`
+      : (body.split('\n')[0] ?? '');
     if (screen.absorbDelayMs > 0) {
       screen.composerText = '';
       setTimeout(() => {
@@ -249,6 +279,108 @@ describe('KeyGate', () => {
     assert.equal(sent.some((x) => x.text === KEY_TABLE.enter), false, 'aucun retour chariot');
     assert.equal(sent[sent.length - 1]?.text, '\u0015', 'le texte colle est efface');
     assert.equal(screen.composerText, '');
+  });
+
+  // ------------------------------------------------------------------------
+  // D7 : reconnaitre le repli d'un collage, et PROUVER la soumission.
+  // ------------------------------------------------------------------------
+
+  it('reconnait le repli d un collage multi-lignes en [Pasted text #n +m lines]', async () => {
+    // Preuve dans les captures PTY de Robin : `pty-capture-32294-46.raw` contient
+    // « Pasted text #1 +8 lines] », et les panes 34 et 46 sont exactement ceux dont les
+    // envois du 25 septembre journalisaient `absorb=timeout`. L'aiguille tiree du texte ne
+    // pouvait par construction jamais matcher ce que le composer affiche.
+    const { gate, sent, screen } = makeFixture();
+    screen.collapsePaste = true;
+    const texte = Array.from({ length: 9 }, (_, i) => `ligne numero ${i}`).join('\n');
+    const t0 = Date.now();
+    const res = await gate.emitText(66, texte);
+    assert.equal(res.applied, true);
+    assert.ok(Date.now() - t0 < 1_500, 'aucune attente de 3 s : l absorption est VUE');
+    assert.equal(sent.filter((x) => x.text === KEY_TABLE.enter).length, 1, 'un seul retour chariot');
+    const journal = auditText();
+    assert.ok(journal.includes('absorb=needle'), `absorption non reconnue : ${journal.slice(-200)}`);
+  });
+
+  it('un collage replie que le TUI ne valide JAMAIS est refuse, jamais annonce comme parti', async () => {
+    // C'est le seul vrai message perdu en silence du systeme : `submitted()` rendait
+    // `true` des que l'aiguille etait ABSENTE, ce qui est trivialement vrai quand elle n'a
+    // jamais pu matcher. Le daemon journalisait `applied: true` sans aucune preuve.
+    const { gate, sent, screen } = makeFixture();
+    screen.collapsePaste = true;
+    screen.ignoreEnters = 99;
+    const res = await gate.emitText(66, 'premiere ligne\ndeuxieme ligne\ntroisieme ligne');
+    assert.equal(res.applied, false);
+    assert.equal(res.reason, 'not_submitted');
+    assert.equal(screen.enters, 3);
+    assert.equal(sent[sent.length - 1]?.text, '\u0015', 'le champ est vide, jamais de texte orphelin');
+  });
+
+  it('un message de un ou deux caracteres n a pas d aiguille, et part quand meme en une Entree', async () => {
+    // Cas reels : `2026-09-18T19:34:05 not_submitted len=1` et
+    // `2026-09-16T16:56:05 len=1 enter=3`. Une aiguille de 1 a 3 caracteres matche a peu
+    // pres n'importe quel composer : la soumission n'etait donc jamais prouvee, trois
+    // Entrees partaient, puis un Ctrl-U effacait le texte de Robin.
+    assert.deepEqual(composerNeedles('y'), []);
+    assert.equal(composerShows(['❯ your turn, dis moi'], 'y'), false, 'une aiguille de 1 caractere ne prouve rien');
+    assert.ok(MIN_NEEDLE_LEN >= 4);
+    const { gate, sent, screen } = makeFixture();
+    const res = await gate.emitText(66, 'ok');
+    assert.equal(res.applied, true);
+    assert.equal(screen.enters, 1, 'une seule Entree');
+    assert.equal(sent.some((x) => x.text === '\u0015'), false, 'aucun Ctrl-U : rien n a ete efface');
+  });
+
+  it('le champ vide est une preuve, le champ encore plein n en est pas une', () => {
+    assert.equal(composerIsEmpty(['─────', '❯ ', '─────']), true);
+    assert.equal(composerIsEmpty(['❯ continue stp']), false);
+    // Un collage replie sous la ligne du chevron : le champ n'est PAS vide.
+    assert.equal(composerIsEmpty(['❯ ', '[Pasted text #3 +11 lines]']), false);
+    assert.equal(composerIsEmpty(['rien a voir']), false, 'sans composer lisible, aucune preuve');
+  });
+
+  it('emitText ne reste pas 400 ms sur un envoi ordinaire : la premiere capture gagne', async () => {
+    const { gate } = makeFixture();
+    const t0 = Date.now();
+    assert.equal((await gate.emitText(66, 'continue stp')).applied, true);
+    assert.ok(Date.now() - t0 < 400, `envoi en ${Date.now() - t0} ms, le plancher etait de ~400 ms`);
+  });
+
+  // ------------------------------------------------------------------------
+  // D8 : un echec IPC ne laisse jamais de texte en plan dans le composer du Mac.
+  // ------------------------------------------------------------------------
+
+  it('collage refuse par l IPC : applied false, raison ipc_timeout, audit en erreur', async () => {
+    const { gate, sent } = makeFixture();
+    fake.respond = (msg) =>
+      msg['cmd'] === 'send-keys' ? { ok: false, error: 'Kova did not answer within 5 s' } : null;
+    try {
+      const res = await gate.emitText(66, 'tu peux relancer le build');
+      assert.deepEqual(res, { applied: false, reason: 'ipc_timeout' });
+      assert.equal(sent.some((x) => x.text === KEY_TABLE.enter), false, 'aucune validation');
+    } finally {
+      fake.respond = null;
+    }
+    const journal = auditText();
+    assert.ok(journal.includes('"result":"error"'), 'un echec IPC doit laisser une ligne d audit');
+    assert.ok(journal.includes('paste len=25'));
+  });
+
+  it('validation refusee par l IPC : le champ est vide, et l app recoit un echec', async () => {
+    const { gate, sent, screen } = makeFixture();
+    fake.respond = (msg) =>
+      msg['cmd'] === 'send-keys' && msg['text'] === KEY_TABLE.enter
+        ? { ok: false, error: 'Kova did not answer within 5 s' }
+        : null;
+    try {
+      const res = await gate.emitText(66, 'relance la suite de tests');
+      assert.deepEqual(res, { applied: false, reason: 'ipc_timeout' });
+    } finally {
+      fake.respond = null;
+    }
+    assert.equal(sent[sent.length - 1]?.text, '\u0015', 'Ctrl-U : rien ne reste dans le champ du Mac');
+    assert.equal(screen.composerText, '');
+    assert.ok(auditText().includes('enter len=25'));
   });
 
   it('emitLaunch n envoie l Entree que sur un pane sans agent (processus claude compris)', async () => {

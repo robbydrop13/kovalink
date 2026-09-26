@@ -196,14 +196,39 @@ export class PaneStore extends EventEmitter {
   }
 
   setTabs(raw: Record<string, unknown>[]): void {
-    this.tabs = raw.map(toTab);
-    // Les onglets ont pu etre deplaces : chaque pane reprend l'identifiant de l'onglet
-    // qui se trouve MAINTENANT a son index.
-    for (const [id, pane] of this.panes) {
-      const tabId = this.tabIdOf(pane.window, pane.tab);
-      if (tabId !== pane.tabId) this.panes.set(id, { ...pane, tabId });
-    }
-    this.bumpEtag();
+    this.stable(() => {
+      this.tabs = raw.map(toTab);
+      // Les onglets ont pu etre deplaces : chaque pane reprend l'identifiant de l'onglet
+      // qui se trouve MAINTENANT a son index.
+      for (const [id, pane] of this.panes) {
+        const tabId = this.tabIdOf(pane.window, pane.tab);
+        if (tabId !== pane.tabId) this.panes.set(id, { ...pane, tabId });
+      }
+      this.bumpEtag();
+    });
+  }
+
+  /** Empreinte de tout ce qui est diffuse : onglets et panes, dans l'ordre. */
+  private fingerprint(): string {
+    return JSON.stringify([this.tabs, [...this.panes.values()]]);
+  }
+
+  /**
+   * Execute une relecture complete et ne laisse l'etag bouger QUE si le contenu a change.
+   *
+   * `refreshLayout` relit desormais le magasin a chaque cycle de 5 s pour que `working` et
+   * `awaiting` convergent apres un evenement perdu. Sans cette garde, l'etag changerait
+   * toutes les 5 secondes, l'etag de reprise de l'app ne correspondrait plus jamais, et le
+   * daemon renverrait la liste entiere a chaque reconnexion pour rien.
+   */
+  private stable(fn: () => void): void {
+    const before = this.fingerprint();
+    const etag = this.etag;
+    const revision = this.revision;
+    fn();
+    if (this.fingerprint() !== before) return;
+    this.etag = etag;
+    this.revision = revision;
   }
 
   /** Identifiant de l'onglet a cet index, `null` tant que `list-tabs` ne l'a pas donne. */
@@ -213,6 +238,10 @@ export class PaneStore extends EventEmitter {
 
   /** Remplacement complet. Le client REMPLACE aussi, il ne fusionne pas. */
   replaceAll(raw: Record<string, unknown>[]): void {
+    this.stable(() => this.replaceAllNow(raw));
+  }
+
+  private replaceAllNow(raw: Record<string, unknown>[]): void {
     const seen = new Set<number>();
     for (const r of raw) {
       const pane = toPane(r);
