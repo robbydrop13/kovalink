@@ -24,6 +24,19 @@ type RNWebSocketCtor = new (
 
 const PING_INTERVAL_MS = WS_PING_INTERVAL_MS;
 export const PONG_TIMEOUT_MS = 8_000;
+/**
+ * Cadence RAPIDE, tant qu'un écran de session est ouvert. Le régime lent (20 s de ping,
+ * 8 s de pong, deux pongs manqués) laisse jusqu'à 36 s avant de reconnecter, et le
+ * journal du 25 septembre montre ce que ça coûte : le socket de l'iPhone meurt à
+ * 20:04:55 avec une session ouverte et ne revient qu'à 20:29:23, soit 24,5 minutes
+ * d'aveuglement, puis un second trou de 18,8 minutes, pendant que les envois HTTPS
+ * passaient toujours. Un seul pong manqué suffit alors à reconnecter. Hors écran de
+ * session, on garde le régime lent : la batterie compte.
+ */
+export const PING_INTERVAL_FAST_MS = 6_000;
+export const PONG_TIMEOUT_FAST_MS = 4_000;
+const MISSED_PONGS_SLOW = 2;
+const MISSED_PONGS_FAST = 1;
 const BACKOFF_MS = [250, 500, 1000, 2000, 4000, 8000, 15000];
 
 export interface SocketHandlers {
@@ -51,6 +64,8 @@ export class Socket {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pongTimer: ReturnType<typeof setTimeout> | null = null;
   private missedPongs = 0;
+  /** Vrai tant qu'un écran de session est ouvert : ping serré, pong court. */
+  private fast = false;
   private attempt = 0;
   private closedByUs = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -71,6 +86,28 @@ export class Socket {
 
   get isOpen(): boolean {
     return this.ws?.readyState === 1;
+  }
+
+  /**
+   * Régime de surveillance. Appelé quand un écran de session s'ouvre ou se ferme : la
+   * minuterie en cours est reprise tout de suite, sans attendre le cycle suivant.
+   */
+  setFastPing(on: boolean): void {
+    if (this.fast === on) return;
+    this.fast = on;
+    if (this.pingTimer) this.startPing();
+  }
+
+  private get pingEveryMs(): number {
+    return this.fast ? PING_INTERVAL_FAST_MS : PING_INTERVAL_MS;
+  }
+
+  private get pongWaitMs(): number {
+    return this.fast ? PONG_TIMEOUT_FAST_MS : PONG_TIMEOUT_MS;
+  }
+
+  private get missedPongsAllowed(): number {
+    return this.fast ? MISSED_PONGS_FAST : MISSED_PONGS_SLOW;
   }
 
   connect(): void {
@@ -161,16 +198,16 @@ export class Socket {
     this.pongTimer = setTimeout(() => {
       this.pongTimer = null;
       this.missedPongs += 1;
-      // Deux pongs manqués consécutifs déclenchent la reconnexion. Le second ping part
-      // tout de suite, pas au prochain cycle : un socket mort se voit en 16 s, pas en 36.
-      if (this.missedPongs >= 2) this.reconnectNow();
+      // Le ping suivant part tout de suite, pas au prochain cycle : un socket mort se voit
+      // en 16 s et non en 36 (régime lent), ou en 4 s avec une session ouverte.
+      if (this.missedPongs >= this.missedPongsAllowed) this.reconnectNow();
       else this.ping();
-    }, PONG_TIMEOUT_MS);
+    }, this.pongWaitMs);
   }
 
   private startPing(): void {
     this.stopPing();
-    this.pingTimer = setInterval(() => this.ping(), PING_INTERVAL_MS);
+    this.pingTimer = setInterval(() => this.ping(), this.pingEveryMs);
   }
 
   private onPong(reqId: string): void {

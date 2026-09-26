@@ -10,6 +10,7 @@ import Constants from 'expo-constants';
 import type { PushRegister, S2C } from '@/protocol';
 import { PROTOCOL_VERSION } from '@/protocol';
 import { Socket, nextId } from './ws';
+import { resumeActions } from './resume';
 import { loadCredentials, rotateToken } from '@/store/credentials';
 import { useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
@@ -43,11 +44,7 @@ let unreachableTimer: ReturnType<typeof setTimeout> | null = null;
  * délai, la liaison est « connecting » : pas de bandeau, la barre de validation reste.
  */
 export const UNREACHABLE_AFTER_MS = 8_000;
-/**
- * Au delà de cette absence, le daemon a certainement fermé le socket (deux pings serveur
- * sans pong, 40 s) : on rouvre sans attendre de constater sa mort.
- */
-export const BACKGROUND_RECONNECT_AFTER_MS = 30_000;
+export { BACKGROUND_RECONNECT_AFTER_MS } from './resume';
 
 function clearUnreachableTimer(): void {
   if (unreachableTimer) clearTimeout(unreachableTimer);
@@ -226,18 +223,31 @@ export async function startConnection(): Promise<void> {
     if (status === 'active') {
       const away = backgroundedAt === null ? 0 : Date.now() - backgroundedAt;
       backgroundedAt = null;
-      // Socket fermé, ou absence assez longue pour que le daemon l'ait tué : on rouvre
-      // tout de suite plutôt que d'attendre deux pongs manqués (16 s d'état figé).
-      if (!socket?.isOpen || away > BACKGROUND_RECONNECT_AFTER_MS) {
-        useConnection.getState().setLink('connecting');
-        socket?.reconnectNow();
-        return;
+      // Écran de session ouvert : on remet la surveillance serrée avant tout le reste.
+      socket?.setFastPing(visibleSessionId !== null);
+      // La décision vit dans `resume.ts`, testable sans React Native. `reconnect` est
+      // seul : le `hello.ok` de la connexion neuve rejoue l'abonnement, le `peek` et
+      // l'attache. Sinon on redemande TOUT ce qui est visible, même après dix secondes
+      // d'absence : un simple ping ne rattrapait rien de ce qui s'était perdu.
+      for (const action of resumeActions({
+        open: socket?.isOpen === true,
+        awayMs: away,
+        visiblePaneId,
+        visibleSessionId,
+      })) {
+        if (action === 'reconnect') {
+          useConnection.getState().setLink('connecting');
+          socket?.reconnectNow();
+        } else if (action === 'ping') socket?.pingNow();
+        else if (action === 'panes.subscribe') socket?.send({ t: 'panes.subscribe', id: nextId() });
+        else if (action === 'pane.peek' && visiblePaneId !== null) peek(visiblePaneId);
+        else if (action === 'session.attach' && visibleSessionId) attachSession(visibleSessionId, true);
       }
-      // Absence courte : un ping vérifie que le socket vit encore, et rétablit le premier plan.
-      socket?.pingNow();
       return;
     }
     if (backgroundedAt === null) backgroundedAt = Date.now();
+    // Arrière plan : la surveillance serrée n'a plus de raison d'être, la batterie compte.
+    socket?.setFastPing(false);
     // Téléphone verrouillé ou app quittée : le daemon doit cesser de croire que Robin lit
     // ce pane, sinon la prochaine fin de tour ne vibre pas. Ping immédiat, pane à null.
     socket?.pingNow();
@@ -319,18 +329,28 @@ export function setVisiblePane(paneId: number | null): void {
   socket?.pingNow();
 }
 
-export function attachSession(sessionId: string): void {
-  if (visibleSessionId === sessionId) return;
-  if (visibleSessionId) socket?.send({ t: 'session.detach', id: nextId(), sessionId: visibleSessionId });
+/**
+ * `force` sert au retour au premier plan : sans lui, le retour anticipé sur « même
+ * session » empêchait toute réattache, même en remontant l'écran. Le magasin de session,
+ * lui, ne se réinitialise pas pour la même session : aucun clignotement.
+ */
+export function attachSession(sessionId: string, force = false): void {
+  if (visibleSessionId === sessionId && !force) return;
+  if (visibleSessionId && visibleSessionId !== sessionId) {
+    socket?.send({ t: 'session.detach', id: nextId(), sessionId: visibleSessionId });
+  }
   visibleSessionId = sessionId;
   useSession.getState().attach(sessionId);
   socket?.send({ t: 'session.attach', id: nextId(), sessionId });
+  // Écran de session ouvert : ping serré, un seul pong manqué reconnecte.
+  socket?.setFastPing(true);
 }
 
 export function detachSession(): void {
   if (visibleSessionId) socket?.send({ t: 'session.detach', id: nextId(), sessionId: visibleSessionId });
   visibleSessionId = null;
   useSession.getState().detach();
+  socket?.setFastPing(false);
 }
 
 export function forceReconnect(): void {

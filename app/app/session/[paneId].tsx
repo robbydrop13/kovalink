@@ -81,6 +81,7 @@ import {
 } from '@/store/session';
 import { answerPrompt } from '@/actions/answer';
 import { flushOutbox } from '@/actions/outboxRunner';
+import { nonce } from '@/actions/nonce';
 import { sendText, type Pieces, type SendTextOutcome } from '@/actions/sendText';
 import {
   TEXT_QUEUE_MAX,
@@ -128,6 +129,8 @@ function refusalLabel(reason: string | undefined): string {
       return t.sessionRefusalBecameAwaiting;
     case 'not_submitted':
       return t.sessionRefusalNotSubmitted;
+    case 'ipc_timeout':
+      return t.sessionRefusalIpcTimeout;
     case 'pane_gone':
       return t.paneGoneOnMac;
     default:
@@ -336,11 +339,14 @@ export default function SessionScreen() {
       for (const nonce of Object.keys(refused)) notices.forget(nonce);
       setPending((p) => {
         if (!p.some(left)) return p;
-        const ts = new Date().toISOString();
+        // `sentAt`, jamais `ts` : réécrire `ts` remettait à zéro la borne de
+        // reconnaissance de l'écho ET l'heure affichée sous la bulle, alors que seule
+        // l'horloge de « non confirmé » doit repartir quand la vidange envoie le message.
+        const sentAt = new Date().toISOString();
         return p.map((m) => {
           if (!left(m)) return m;
           const cause = refused[m.nonce];
-          return cause ? { ...m, state: 'failed', error: cause } : { ...m, state: 'sent', ts };
+          return cause ? { ...m, state: 'failed', error: cause } : { ...m, state: 'sent', sentAt };
         });
       });
     });
@@ -619,15 +625,42 @@ export default function SessionScreen() {
       // texte) après un toast, et `bootWarn` la trace.
       if (Date.now() - arrivedAt < INPUT_GUARD_MS) return false;
       markActed();
+      // A1 : la bulle est posée MAINTENANT, pas après l'attente du Mac. Le composer se
+      // vide dès l'appui (MessageBar) : sans cette bulle, le message n'était visible
+      // nulle part pendant 0,4 à 7,1 s. Le nonce est décidé ici pour que l'issue de
+      // l'envoi sache quelle bulle mettre à jour. `withoutEchoed` la dédoublonne contre
+      // le vrai tour du transcript, comme n'importe quelle autre bulle locale.
+      const id = nonce();
+      const patch = (fields: Partial<PendingMessage>): void =>
+        setPending((p) => p.map((m) => (m.nonce === id ? { ...m, ...fields } : m)));
+      const drop = (): void => setPending((p) => p.filter((m) => m.nonce !== id));
+      setPending((p) => [
+        ...p,
+        {
+          nonce: id,
+          text,
+          state: 'sending',
+          ts,
+          afterSeq,
+          sessionId,
+          ...(attachments.length > 0 ? { attachments } : {}),
+        },
+      ]);
+      stickToBottom.current = true;
+      showJump(false);
+      scrollRef.current?.scrollToEnd({ animated: true });
       let outcome: SendTextOutcome;
       try {
-        outcome = await sendText(paneId, text, prompt, pieces);
+        outcome = await sendText(paneId, text, prompt, pieces, id);
       } catch (e) {
+        drop();
         bootWarn('text send, exception', e);
         setToast(t.sessionSendFailed(e instanceof Error ? e.message : String(e)));
         return false;
       }
       if (!outcome.ok) {
+        // Rien n'est parti : la bulle optimiste s'efface et le composer reprend le texte.
+        if (outcome.kind !== 'queued') drop();
         if (outcome.kind === 'locked') {
           bootWarn('text send refused', 'parsed prompt awaiting');
           setToast(t.sessionAnswerFirst);
@@ -639,18 +672,10 @@ export default function SessionScreen() {
           return false;
         }
         if (outcome.kind === 'queued') {
-          setPending((p) => [
-            ...p,
-            {
-              nonce: outcome.nonce,
-              text,
-              state: 'queued',
-              ts,
-              afterSeq,
-              sessionId,
-              ...(outcome.attachments.length > 0 ? { attachments: outcome.attachments } : {}),
-            },
-          ]);
+          patch({
+            state: 'queued',
+            ...(outcome.attachments.length > 0 ? { attachments: outcome.attachments } : {}),
+          });
           return true;
         }
         if (outcome.kind === 'refused') {
@@ -665,19 +690,14 @@ export default function SessionScreen() {
       }
       const applied = outcome.result.applied;
       const cause = applied ? null : refusalLabel(outcome.result.reason);
-      setPending((p) => [
-        ...p,
-        {
-          nonce: outcome.nonce,
-          text,
-          state: applied ? 'sent' : 'failed',
-          ts,
-          afterSeq,
-          sessionId,
-          ...(cause ? { error: cause } : {}),
-          ...(outcome.attachments.length > 0 ? { attachments: outcome.attachments } : {}),
-        },
-      ]);
+      patch({
+        state: applied ? 'sent' : 'failed',
+        // L'horloge de « non confirmé » part du moment où le Mac a accepté, pas de
+        // l'appui sur Envoyer : l'envoi lui même peut prendre plusieurs secondes.
+        sentAt: new Date().toISOString(),
+        ...(cause ? { error: cause } : {}),
+        ...(outcome.attachments.length > 0 ? { attachments: outcome.attachments } : {}),
+      });
       if (!applied) {
         // Le Mac a accepté la requête mais n'a rien validé dans le pane : la bulle passe en
         // échec avec la cause, et le message reste renvoyable. Jamais silencieux.

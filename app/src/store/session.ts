@@ -243,9 +243,22 @@ export function imageCount(blocks: readonly Block[]): number {
 export interface PendingMessage {
   nonce: string;
   text: string;
-  state: 'queued' | 'sent' | 'failed';
+  /**
+   * `sending` est l'état des premières centaines de millisecondes : la bulle est posée
+   * AVANT l'attente du Mac (0,4 à 0,7 s au mieux, 3,2 s dans 13 % des envois, 7,1 s au
+   * pire mesuré). Avant, rien n'apparaissait pendant tout ce temps alors que le composer
+   * s'était déjà vidé : Robin ne voyait plus son message nulle part.
+   */
+  state: 'sending' | 'queued' | 'sent' | 'failed';
   /** Horodatage figé à l'envoi. Le recalculer à chaque rendu faisait avancer l'heure affichée. */
   ts: string;
+  /**
+   * Moment où le message est REELLEMENT parti, quand ce n'est pas `ts` (message resté en
+   * file, puis vidangé). C'est lui qui arme l'horloge de « non confirmé », et lui seul :
+   * réécrire `ts` remettait aussi à zéro la borne de reconnaissance de l'écho et l'heure
+   * affichée sous la bulle.
+   */
+  sentAt?: string;
   /**
    * Plus haut `seq` du transcript connu au moment de l'envoi. Sert de borne basse pour
    * reconnaître le tour serveur correspondant, sans confondre avec un message identique
@@ -393,7 +406,7 @@ export function unconfirmed(
 ): PendingMessage[] {
   return list.filter((m) => {
     if (m.state !== 'sent') return false;
-    const sentAt = Date.parse(m.ts);
+    const sentAt = Date.parse(m.sentAt ?? m.ts);
     return Number.isFinite(sentAt) && now - sentAt >= after;
   });
 }

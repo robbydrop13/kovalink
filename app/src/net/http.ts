@@ -233,11 +233,21 @@ export function postInterrupt(
   });
 }
 
+/**
+ * Le délai DOIT couvrir le pire cas du daemon, pas le cas moyen. `emitText` peut prendre
+ * `ABSORB_MAX_MS` (3 s) plus trois validations d'environ 1,4 s, soit près de 7,1 s :
+ * l'audit contient exactement ce cas (`2026-09-18T19:54:40 len=130 enter=3 absorb=timeout`,
+ * résultat `ok` côté daemon). À 6 s, l'app abandonnait AVANT le daemon, et un `AbortError`
+ * n'étant pas un `HttpError`, `sendText` le classait « en file » : le composer se vidait, le
+ * message était déjà parti, et quinze minutes plus tard le bandeau de file périmée
+ * proposait de le renvoyer, hors de la fenêtre de déduplication des nonces. Donc une
+ * seconde livraison réelle. 20 s couvre le pire cas avec de la marge.
+ */
 export function postText(
   paneId: number,
   text: string,
   nonce: string,
-  timeoutMs = 6000,
+  timeoutMs = 20_000,
 ): Promise<ActionResponse> {
   return request(ROUTES.paneText(paneId), {
     method: 'POST',

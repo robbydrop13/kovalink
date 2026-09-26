@@ -1,6 +1,6 @@
 // Un seul socket vivant : un socket remplacé ne rappelle plus personne (13 septembre).
 import assert from 'node:assert/strict';
-import { afterEach, beforeEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it, mock } from 'node:test';
 
 class FakeWs {
   static all: FakeWs[] = [];
@@ -45,9 +45,16 @@ beforeEach(() => {
 });
 afterEach(() => {
   (globalThis as { WebSocket?: unknown }).WebSocket = saved;
+  mock.timers.reset();
 });
 
-const { Socket } = await import('@/net/ws');
+/** Minuteries simulées : les cadences de ping se testent à leur vraie valeur, sans attendre. */
+function fakeClock(): { tick: (ms: number) => void } {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  return { tick: (ms: number) => mock.timers.tick(ms) };
+}
+
+const { Socket, PING_INTERVAL_FAST_MS, PONG_TIMEOUT_FAST_MS } = await import('@/net/ws');
 
 function make() {
   const events: string[] = [];
@@ -91,6 +98,54 @@ describe('Socket', () => {
     first.fireClose(1006);
     assert.deepEqual(events, ['open', 'close:network']);
     assert.equal(s.isOpen, false);
+    s.close();
+  });
+
+  /**
+   * A3. En régime lent (20 s de ping, 8 s de pong, deux pongs manqués), un socket mort
+   * pouvait rester en place 36 s. Le journal du 25 septembre montre pire : mort à 20:04:55
+   * avec une session ouverte, retour à 20:29:23, 24,5 minutes d'aveuglement, pendant que
+   * les envois HTTPS passaient toujours. Écran de session ouvert, un seul pong manqué
+   * suffit désormais.
+   */
+  it('en régime rapide, un seul pong manqué reconnecte', () => {
+    const clock = fakeClock();
+    const { s } = make();
+    s.setFastPing(true);
+    s.connect();
+    const first = FakeWs.all[0]!;
+    first.open();
+    s.pingNow();
+    assert.equal(FakeWs.all.length, 1);
+    // Aucun pong : à l'échéance du pong court, on reconnecte sans attendre un second ping.
+    clock.tick(PONG_TIMEOUT_FAST_MS);
+    assert.equal(FakeWs.all.length, 2, 'un socket neuf, tout de suite');
+    s.close();
+  });
+
+  it('en régime lent, il faut deux pongs manqués', () => {
+    const clock = fakeClock();
+    const { s } = make();
+    s.connect();
+    const first = FakeWs.all[0]!;
+    first.open();
+    s.pingNow();
+    clock.tick(8_000);
+    assert.equal(FakeWs.all.length, 1, 'un second ping part, pas une reconnexion');
+    clock.tick(8_000);
+    assert.equal(FakeWs.all.length, 2);
+    s.close();
+  });
+
+  it('le passage en régime rapide reprend la minuterie en cours', () => {
+    const clock = fakeClock();
+    const { s } = make();
+    s.connect();
+    FakeWs.all[0]!.open();
+    const sentBefore = FakeWs.all[0]!.sent.length;
+    s.setFastPing(true);
+    clock.tick(PING_INTERVAL_FAST_MS);
+    assert.ok(FakeWs.all[0]!.sent.length > sentBefore, 'le ping serré part sans attendre 20 s');
     s.close();
   });
 

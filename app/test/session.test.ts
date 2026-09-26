@@ -296,12 +296,37 @@ describe('unconfirmed (CA-48)', () => {
     assert.equal(unconfirmed(local, t0 + 19_999).length, 0);
     assert.equal(unconfirmed(local, t0 + 20_000).length, 1);
   });
-  it('un message en file ou en échec ne compte pas', () => {
+  it('un message en file, en cours d envoi ou en échec ne compte pas', () => {
     const local = [
       pendingMsg({ nonce: 'q', state: 'queued', ts: new Date(t0).toISOString() }),
+      pendingMsg({ nonce: 's', state: 'sending', ts: new Date(t0).toISOString() }),
       pendingMsg({ nonce: 'f', state: 'failed', ts: new Date(t0).toISOString() }),
     ];
     assert.equal(unconfirmed(local, t0 + 60_000).length, 0);
+  });
+
+  it("l'horloge part de sentAt quand le message a attendu en file (A1)", () => {
+    // Une bulle en file depuis dix minutes que la vidange vient d'envoyer : son `ts`
+    // reste celui de l'appui sur Envoyer (heure affichée, borne de reconnaissance de
+    // l'écho), et seule l'horloge de « non confirmé » repart. L'ancien code réécrivait
+    // `ts`, ce qui décalait les deux autres usages.
+    const sent = new Date(t0 + 600_000).toISOString();
+    const local = [pendingMsg({ nonce: 'n1', ts: new Date(t0).toISOString(), sentAt: sent })];
+    assert.equal(unconfirmed(local, t0 + 600_000 + 19_999).length, 0, 'il vient de partir');
+    assert.equal(unconfirmed(local, t0 + 600_000 + 20_000).length, 1);
+  });
+});
+
+describe('bulle optimiste posée avant l attente du Mac (A1)', () => {
+  it("une bulle `sending` est dédoublonnée par le vrai tour, comme n'importe quelle autre", () => {
+    // La bulle est créée AVANT `await sendText` : elle porte le nonce définitif, l'heure de
+    // l'appui, et la borne `afterSeq` lue juste avant. Quand le transcript rend le message,
+    // `withoutEchoed` la consomme : jamais deux bulles pour un même envoi.
+    const local = [pendingMsg({ nonce: 'n1', state: 'sending', text: 'lance les tests', afterSeq: 4 })];
+    const before = [turn({ id: 'u1', seq: 4, blocks: [{ type: 'text', text: 'salut' }] })];
+    assert.deepEqual(withoutEchoed(local, before, 's1'), local, 'tant que rien n arrive, la bulle reste');
+    const echoed = [...before, turn({ id: 'u2', seq: 5, blocks: [{ type: 'text', text: 'lance les tests' }] })];
+    assert.deepEqual(withoutEchoed(local, echoed, 's1'), []);
   });
 });
 

@@ -33,7 +33,7 @@ import { Markdown } from './Markdown';
 import { segmentBlocks } from './segments';
 import { ToolGroup } from './ToolGroup';
 
-export type SendState = 'queued' | 'sent' | 'failed';
+export type SendState = 'sending' | 'queued' | 'sent' | 'failed';
 
 /** Appui long sur un message : `Copier`, `Partager`, ou rien. */
 export function messageActions(text: string): void {
@@ -74,9 +74,11 @@ export function UserBubble({
 }) {
   const { width } = useWindowDimensions();
   // État d'envoi en icône : `clock` en file, `alert-circle` en échec, `check` livré.
-  const markIcon: IconName = state === 'queued' ? 'clock' : state === 'failed' ? 'alert-circle' : 'check';
+  // `sending` et `queued` portent la même horloge : le message n'est pas encore confirmé.
+  const waiting = state === 'sending' || state === 'queued';
+  const markIcon: IconName = waiting ? 'clock' : state === 'failed' ? 'alert-circle' : 'check';
   const markColor =
-    state === 'failed' ? colors.status.error : state === 'queued' ? colors.text.tertiary : colors.status.success;
+    state === 'failed' ? colors.status.error : waiting ? colors.text.tertiary : colors.status.success;
   const raw = textOf(turn.blocks);
   const { text, paths } = attachments && attachments.length > 0 ? { text: raw, paths: [] } : splitAttachmentLines(raw);
   const images = attachments && attachments.length > 0 ? 0 : imageCount(turn.blocks);

@@ -85,11 +85,17 @@ export async function materialize(job: OutboxJob): Promise<string> {
   return composeMessage(payload.text, arrived);
 }
 
+/**
+ * `id` est fourni par l'appelant quand il a déjà affiché une bulle locale : la bulle est
+ * posée AVANT l'attente (docs A1), elle doit donc porter le nonce définitif dès sa
+ * création, sinon l'issue de l'envoi ne saurait pas quelle bulle mettre à jour.
+ */
 export async function sendText(
   paneId: number,
   text: string,
   prompt: Prompt | undefined,
   pieces: Pieces | null = null,
+  id: string = nonce(),
 ): Promise<SendTextOutcome> {
   if (prompt?.state === 'parsed') return { ok: false, kind: 'locked' };
 
@@ -102,7 +108,6 @@ export async function sendText(
 
   impact(ImpactStyle.Light);
 
-  const id = nonce();
   const now = Date.now();
   const payload: TextPayload = pieces
     ? { text, attachments: pieces.items, destDir: pieces.destDir, cellularApproved: pieces.cellularApproved }

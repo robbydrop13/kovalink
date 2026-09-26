@@ -236,6 +236,7 @@ export const sessions = {
   sessionMoreActions: 'More actions',
   sessionRefusalBecameAwaiting: 'The agent asked a question, your message was not sent',
   sessionRefusalNotSubmitted: 'The pane did not submit the message, the Mac input field was cleared',
+  sessionRefusalIpcTimeout: 'The Mac did not answer while sending, the input field was cleared. Nothing was delivered',
   sessionRefusalUnknown: (reason: string) => `Message not delivered to the pane (${reason})`,
   sessionReasonUnknown: 'unknown reason',
   sessionNotDelivered: 'Message not delivered to the pane',
