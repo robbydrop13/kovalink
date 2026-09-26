@@ -30,6 +30,8 @@ const REDACT_PATTERNS: RegExp[] = [
   /Bearer\s+[A-Za-z0-9._\-~+/=]+/gi,
   /kovalink:\/\/pair#[A-Za-z0-9._\-~+/=]+/gi,
   /ExponentPushToken\[[^\]]*\]/gi,
+  /xox[abposr]-[A-Za-z0-9-]+/g,
+  /xapp-[A-Za-z0-9-]+/g,
 ];
 
 function redactString(s: string): string {

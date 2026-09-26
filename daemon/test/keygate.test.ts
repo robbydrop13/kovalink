@@ -617,7 +617,9 @@ describe('point d entree unique des ecritures (K1, analyse syntaxique)', () => {
         f.calls.has('emitTerminalInput'),
     );
     // `kova/resume.ts` porte `emitLaunch` pour les deux routes qui creent un onglet.
-    assert.deepEqual(callers, ['kova/resume.ts', 'server/index.ts']);
+    // `main.ts` porte `emitText` pour le pont Slack (`slack/bridge.ts`), apres son filtre
+    // d'autorisation : meme chemin, memes gardes que l'iPhone.
+    assert.deepEqual(callers, ['kova/resume.ts', 'main.ts', 'server/index.ts']);
   });
 });
 

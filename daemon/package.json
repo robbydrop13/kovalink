@@ -19,6 +19,8 @@
   "dependencies": {
     "@fastify/websocket": "^11.0.1",
     "@kovalink/protocol": "*",
+    "@slack/socket-mode": "^3.0.1",
+    "@slack/web-api": "^8.1.1",
     "chokidar": "^4.0.1",
     "expo-server-sdk": "^6.1.0",
     "fastify": "^5.1.0",

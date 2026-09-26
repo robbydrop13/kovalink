@@ -93,6 +93,22 @@ describe('detection de fin de tour (D1)', () => {
     assert.ok(prompt.promptRef.length > 0);
   });
 
+  it('turn-closed part meme sous le seuil de duree du push (pont Slack)', async () => {
+    writeTranscript(closedTurn);
+    const panes = new PaneStore();
+    panes.upsertRaw({ id: 66, window: 0, tab: 1, cwd: CWD, title: 'cc', pid: 1, agent: 'claude', agent_session_id: SESSION, working: true, awaiting: false, child_processes: [] });
+    const detector = new TurnEndDetector(panes, new PromptRefs(), () => DEFAULT_CONFIG);
+    const pushes: unknown[] = [];
+    const closed: unknown[] = [];
+    detector.on('turn-end', (p: unknown) => pushes.push(p));
+    detector.on('turn-closed', (_p: unknown, sessionId: string, lines: unknown[]) => closed.push([sessionId, lines.length]));
+    panes.setWorking(66, false);
+    await wait(DEBOUNCE_MS + 150);
+    detector.stop();
+    assert.deepEqual(pushes, [], 'tour de quelques ms : pas de push');
+    assert.deepEqual(closed, [[SESSION, 2]]);
+  });
+
   it('front descendant sans tour clos : rien, c est un outil long qui rend la main', async () => {
     writeTranscript(pendingTool);
     const { panes, detector, events } = setup();

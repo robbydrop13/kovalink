@@ -109,6 +109,10 @@ export class TurnEndDetector extends EventEmitter {
       return;
     }
 
+    // Tout tour clos, quelle que soit sa duree : le pont Slack repond meme a un tour de
+    // 5 s. Le seuil ci-dessous ne concerne que la notification push.
+    this.emit('turn-closed', pane, sessionId, lines);
+
     const cfg = this.cfg();
     // C29 : seuil opposable, le pane doit avoir travaille assez longtemps pour que
     // Robin ait eu le temps de partir. Reglable dans `config.json`.

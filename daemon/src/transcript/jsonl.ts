@@ -487,3 +487,69 @@ export function aiTitleOf(lines: RawLine[]): string | null {
   }
   return null;
 }
+
+export interface FinalTurnText {
+  /** Texte du dernier message humain (prompt ou commande absorbee en cours de tour). */
+  anchor: string | null;
+  /** Horodatage de ce message humain, `null` si absent. */
+  anchorTs: string | null;
+  /**
+   * Reponse finale de l'assistant pour ce tour, en entier (pas le resume de 140
+   * caracteres) : les blocs `text` qui suivent le dernier `tool_use`, sinon le dernier
+   * bloc `text` non vide du tour. Vide si l'assistant n'a rien ecrit.
+   */
+  text: string;
+}
+
+/**
+ * Reponse complete du dernier tour, pour le pont Slack. Lecture seule, sur le meme tail
+ * borne que `analyzeTurnEnd`.
+ */
+export function finalTurnText(lines: RawLine[]): FinalTurnText {
+  const relevant = lines.filter(
+    (l) => !l.isSidechain && (isConversationLine(l) || queuedHumanCommand(l) !== null),
+  );
+  const ordered = sortAssistantBlocks(relevant);
+  let anchorAt = -1;
+  let anchor: string | null = null;
+  let anchorTs: string | null = null;
+  ordered.forEach((line, i) => {
+    const queued = queuedHumanCommand(line);
+    if (queued) {
+      const text = blocksOf(queued.prompt)
+        .filter((b): b is Extract<Block, { type: 'text' }> => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n');
+      anchorAt = i;
+      anchor = text;
+      anchorTs = line.timestamp ?? queued.timestamp ?? null;
+      return;
+    }
+    if (line.type !== 'user') return;
+    const blocks = blocksOf((line.message as RawMessage).content);
+    if (blocks.every((b) => b.type === 'tool_result')) return;
+    const text = blocks
+      .filter((b): b is Extract<Block, { type: 'text' }> => b.type === 'text')
+      .map((b) => b.text)
+      .join('\n');
+    if (classifySystemLine(line, text) !== null) return;
+    anchorAt = i;
+    anchor = text;
+    anchorTs = line.timestamp ?? null;
+  });
+
+  let afterTool: string[] = [];
+  let lastText = '';
+  for (const line of ordered.slice(anchorAt + 1)) {
+    if (line.type !== 'assistant') continue;
+    for (const b of blocksOf((line.message as RawMessage).content)) {
+      if (b.type === 'tool_use') afterTool = [];
+      if (b.type === 'text' && b.text.trim() !== '') {
+        afterTool.push(b.text.trim());
+        lastText = b.text.trim();
+      }
+    }
+  }
+  const text = afterTool.length > 0 ? afterTool.join('\n\n') : lastText;
+  return { anchor, anchorTs, text };
+}

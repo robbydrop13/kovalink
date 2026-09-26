@@ -18,6 +18,13 @@ export interface KovalinkConfig {
   denyWrite: string[];
   denyWriteRules: string[];
   denyRead: string[];
+  /** Pont Slack (`slack/`). Les jetons vivent dans le Trousseau, jamais ici. */
+  slack: {
+    /** Seul utilisateur Slack dont les messages sont executes. */
+    allowedUserId: string;
+    /** Apres ce delai sans fin de tour, un seul message « still running » part. */
+    jobTimeoutMs: number;
+  };
 }
 
 export const DEFAULT_CONFIG: KovalinkConfig = {
@@ -58,6 +65,10 @@ export const DEFAULT_CONFIG: KovalinkConfig = {
     'mode:executable',
   ],
   denyRead: ['~/.kovalink', '~/Library/Logs/Kova'],
+  slack: {
+    allowedUserId: 'U01DYDY2WR1',
+    jobTimeoutMs: 30 * 60_000,
+  },
 };
 
 /** `~` est resolu ici, une fois, jamais dans les comparateurs de chemin. */
@@ -75,6 +86,7 @@ export function loadConfig(): KovalinkConfig {
       ...DEFAULT_CONFIG,
       ...raw,
       push: { ...DEFAULT_CONFIG.push, ...(raw.push ?? {}) },
+      slack: { ...DEFAULT_CONFIG.slack, ...(raw.slack ?? {}) },
     };
   } catch {
     return { ...DEFAULT_CONFIG };

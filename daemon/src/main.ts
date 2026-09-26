@@ -39,6 +39,8 @@ import {
 } from './security/tls.js';
 import { loadMasterSecret } from './security/token.js';
 import { SleepAssertion } from './sleep.js';
+import { startSlack } from './slack/socket.js';
+import type { RawLine } from './transcript/jsonl.js';
 import { clearRuntimeState, initRuntimeState, updateRuntimeState } from './state.js';
 import { runStatus } from './status.js';
 import { TranscriptTailer } from './transcript/tailer.js';
@@ -388,6 +390,29 @@ async function run(): Promise<void> {
     if (!t.working) refs.sweep();
   });
 
+  // --- Pont Slack (`@kova <session> <message>`) ----------------------------
+  // Eteint sans jetons dans le Trousseau. Meme chemin d'ecriture que l'iPhone (KeyGate),
+  // meme detection de fin de tour et de question que les notifications.
+  const slack = startSlack({
+    allowedUserId: () => cfg().slack.allowedUserId,
+    jobTimeoutMs: () => cfg().slack.jobTimeoutMs,
+    panes: () => panes.all(),
+    pane: (paneId) => panes.get(paneId),
+    refresh: () => refreshLayout('slack'),
+    send: (paneId, text) => keygate.emitText(paneId, text, 'slack'),
+    currentQuestion: async (paneId) => {
+      const p = await prompts.current(paneId, panes.get(paneId)?.awaiting_since ?? null);
+      return p.state === 'parsed' ? p.question : null;
+    },
+  });
+  detector.on('turn-closed', (pane: Pane, _sessionId: string, lines: RawLine[]) => {
+    void slack.bridge?.onTurnClosed(pane, lines);
+  });
+  promptDetector.on('prompt', (prompt: AwaitingPrompt, pane: Pane) => {
+    void slack.bridge?.onPrompt(prompt, pane);
+  });
+  panes.on('close', (paneId: number) => slack.bridge?.onPaneClosed(paneId));
+
   ipc.start();
   // Rafraichissement de fond de l'etat Tailscale : jamais sur le chemin d'une requete.
   const stopPeerRefresh = startPeerRefresh(undefined, () => hub.pushLinkChanges({ status: ipc.state, pid: ipc.pid }));
@@ -579,6 +604,7 @@ async function run(): Promise<void> {
     hub.stopHeartbeat();
     stopPeerRefresh();
     detector.stop();
+    slack.stop();
     notifier.stop();
     promptDetector.stop();
     sleep.stop();
