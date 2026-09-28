@@ -31,6 +31,23 @@ function daysUntilExpiry(certPath: string): number {
   }
 }
 
+/**
+ * Vrai quand le certificat sur disque couvre bien `tsDns`.
+ *
+ * Un certificat non expire n'est pas pour autant le bon : il porte le nom MagicDNS
+ * pour lequel il a ete emis. Changer de Mac (ou renommer celui-ci) change ce nom, et
+ * `tailscale cert` ne repasse jamais par la seule condition d'expiration — le daemon
+ * demarrait sans rien dire et continuait de servir l'ancien nom, injoignable sous le
+ * nouveau. `checkHost` lit les SAN, pas seulement le CN.
+ */
+export function coversName(certPath: string, tsDns: string): boolean {
+  try {
+    return new X509Certificate(readFileSync(certPath)).checkHost(tsDns) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 /** Date d'expiration ISO du certificat sur disque, `null` s'il est illisible. */
 export function certExpiresAt(certPath = paths.certFile()): string | null {
   try {
@@ -57,8 +74,13 @@ export function ensureCertificate(tsDns: string, force = false): TlsMaterial {
   const certPath = paths.certFile();
   const keyPath = paths.keyFile();
 
-  const needs = force || !existsSync(certPath) || daysUntilExpiry(certPath) < RENEW_BELOW_DAYS;
+  const wrongName = existsSync(certPath) && !coversName(certPath, tsDns);
+  const needs =
+    force || !existsSync(certPath) || wrongName || daysUntilExpiry(certPath) < RENEW_BELOW_DAYS;
   if (needs) {
+    if (wrongName) {
+      logger.info('certificat emis pour un autre nom, reemission', { tsDns });
+    }
     const bin = tailscaleBin();
     if (!bin) {
       throw new CertificateError(
