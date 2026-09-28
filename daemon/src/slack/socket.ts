@@ -14,6 +14,8 @@ const AUTH_RETRY_MS = 5 * 60_000;
 export interface SlackTokens {
   bot: string;
   app: string;
+  /** Jeton utilisateur de Robin (`xoxp-`), optionnel : @kova dans ses DM avec d'autres. */
+  user: string | null;
 }
 
 function keychain(account: string): string | null {
@@ -35,7 +37,7 @@ export function readSlackTokens(): SlackTokens | null {
   const bot = keychain('bot-token');
   const app = keychain('app-token');
   if (!bot || !app) return null;
-  return { bot, app };
+  return { bot, app, user: keychain('user-token') };
 }
 
 /** Adaptateur `@slack/logger` -> journal du daemon (qui redige les jetons). */
@@ -59,7 +61,7 @@ function webApi(web: WebClient): SlackApi {
   const code = (e: unknown): string => (e as { data?: { error?: string } }).data?.error ?? '';
   return {
     post: async (channel, threadTs, text) => {
-      await web.chat.postMessage({ channel, thread_ts: threadTs, text, unfurl_links: false, unfurl_media: false });
+      await web.chat.postMessage({ channel, ...(threadTs ? { thread_ts: threadTs } : {}), text, unfurl_links: false, unfurl_media: false });
     },
     react: async (channel, ts, name) => {
       try {
@@ -81,6 +83,34 @@ function webApi(web: WebClient): SlackApi {
       return u?.profile?.display_name || u?.real_name || u?.name || null;
     },
   };
+}
+
+/**
+ * Chemin utilisateur : le jeton doit etre celui de Robin, et on a besoin du DM Robin <-> bot
+ * pour le distinguer de ses autres DM. Au moindre doute, chemin coupe (le bot marche seul).
+ */
+async function userPath(
+  token: string | null,
+  bot: WebClient,
+  robin: string,
+): Promise<{ web: WebClient; botDm: string } | null> {
+  if (!token) return null;
+  try {
+    const web = new WebClient(token, { logger: slackLogger() as never });
+    const auth = await web.auth.test();
+    if (auth.user_id !== robin) {
+      logger.warn('slack: user token is not Robin\'s, DM path off', { user: auth.user_id ?? null });
+      return null;
+    }
+    const dm = await bot.conversations.open({ users: robin });
+    const botDm = dm.channel?.id;
+    if (!botDm) throw new Error('conversations.open sans canal');
+    logger.info('slack: DM path on', { botDm });
+    return { web, botDm };
+  } catch (e) {
+    logger.warn('slack: DM path off', { err: (e as { data?: { error?: string } }).data?.error ?? (e as Error).message });
+    return null;
+  }
 }
 
 export interface SlackHandle {
@@ -132,7 +162,13 @@ export function startSlack(deps: Omit<BridgeDeps, 'api' | 'identity'>): SlackHan
       return;
     }
 
-    const bridge = new SlackBridge({ ...deps, api: webApi(web), identity });
+    const user = await userPath(tokens.user, web, deps.allowedUserId());
+    const bridge = new SlackBridge({
+      ...deps,
+      api: webApi(web),
+      userApi: user ? webApi(user.web) : null,
+      identity: { ...identity, botDm: user?.botDm ?? null },
+    });
     handle.bridge = bridge;
 
     const socket = new SocketModeClient({ appToken: tokens.app, logger: slackLogger(), autoReconnectEnabled: true });

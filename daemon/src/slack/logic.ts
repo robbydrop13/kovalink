@@ -73,13 +73,33 @@ export function authorizeEvent(envelope: SlackEnvelope, ctx: AuthContext): AuthD
   return { ok: true };
 }
 
+/** D'ou vient une commande : le bot la voit (mention, DM au bot) ou seul Robin la voit. */
+export type Route = 'bot' | 'user';
+
+export interface RouteContext {
+  botUserId: string;
+  /**
+   * DM entre Robin et le bot, si le jeton utilisateur est actif. `null` : pas de jeton
+   * utilisateur, seul le chemin bot existe (un `message` im est alors forcement le DM au bot).
+   */
+  botDm: string | null;
+}
+
 /**
- * Un DM au bot vient en `message` avec `channel_type: im`. Un `message` d'un autre type
- * de canal ne nous concerne pas (on n'y est abonne que pour les DM, mais on le verifie).
+ * - `app_mention` (canal ou le bot est invite) : bot.
+ * - `message` dans le DM au bot : bot.
+ * - `message` dans un autre DM ou un DM de groupe, qui mentionne le bot : user (le bot
+ *   n'y est pas, Slack ne l'y laisse pas entrer ; on repond avec le jeton de Robin).
+ * - Tout le reste (les messages de Juliette, ceux de Robin sans mention...) : `null`,
+ *   ignore sans bruit.
  */
-export function isRelevantEvent(ev: SlackEvent): boolean {
-  if (ev.type === 'app_mention') return true;
-  return ev.type === 'message' && ev.channel_type === 'im';
+export function routeEvent(ev: SlackEvent, ctx: RouteContext): Route | null {
+  if (ev.type === 'app_mention') return 'bot';
+  if (ev.type !== 'message') return null;
+  if (ctx.botDm === null) return ev.channel_type === 'im' ? 'bot' : null;
+  if (ev.channel === ctx.botDm) return 'bot';
+  if (ev.channel_type !== 'im' && ev.channel_type !== 'mpim') return null;
+  return new RegExp(`<@${ctx.botUserId}(?:\\|[^>]*)?>`).test(ev.text ?? '') ? 'user' : null;
 }
 
 // --- Commande ------------------------------------------------------------
@@ -229,6 +249,8 @@ export function slackToPlain(text: string, names: ReadonlyMap<string, string> = 
 
 export interface Origin {
   channel: string;
+  /** Vrai quand le bot n'est pas dans la conversation : on y repond au nom de Robin. */
+  asUser?: boolean;
   /** `thread_ts` de l'evenement, sinon son `ts` : c'est le fil ou l'on repond. */
   threadTs: string;
 }

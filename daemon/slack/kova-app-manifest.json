@@ -25,12 +25,25 @@
         "im:read",
         "im:write",
         "users:read"
+      ],
+      "user": [
+        "im:history",
+        "mpim:history",
+        "chat:write",
+        "reactions:write"
       ]
     }
   },
   "settings": {
     "event_subscriptions": {
-      "bot_events": ["app_mention", "message.im"]
+      "bot_events": [
+        "app_mention",
+        "message.im"
+      ],
+      "user_events": [
+        "message.im",
+        "message.mpim"
+      ]
     },
     "interactivity": {
       "is_enabled": false

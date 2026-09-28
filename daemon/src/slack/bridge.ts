@@ -11,12 +11,12 @@ import {
   formatReply,
   formatSessionList,
   formatUnresolved,
-  isRelevantEvent,
   mentionedUserIds,
   originMarker,
   paneMessage,
   parseCommand,
   resolveSession,
+  routeEvent,
   slackToPlain,
   type Origin,
   type SlackEnvelope,
@@ -33,7 +33,10 @@ export interface SlackApi {
 
 export interface BridgeDeps {
   api: SlackApi;
-  identity: { botUserId: string; teamId: string };
+  /** Jeton de Robin : repondre la ou le bot n'est pas (DM avec quelqu'un). Absent = chemin bot seul. */
+  userApi?: SlackApi | null;
+  /** `botDm` : DM Robin <-> bot, connu seulement quand `userApi` est actif. */
+  identity: { botUserId: string; teamId: string; botDm?: string | null };
   allowedUserId: () => string;
   jobTimeoutMs: () => number;
   panes: () => Pane[];
@@ -94,6 +97,13 @@ export class SlackBridge {
       logger.debug('slack: evenement deja traite', { eventId: envelope.event_id });
       return;
     }
+    const route = routeEvent(ev, {
+      botUserId: this.d.identity.botUserId,
+      botDm: this.d.userApi ? (this.d.identity.botDm ?? null) : null,
+    });
+    // Avant l'autorisation : les messages des autres dans les DM de Robin ne sont pas des
+    // tentatives, rien a journaliser.
+    if (route === null) return;
     const auth = authorizeEvent(envelope, { allowedUserId: this.d.allowedUserId(), teamId: this.d.identity.teamId });
     if (!auth.ok) {
       if (auth.notable) {
@@ -110,23 +120,23 @@ export class SlackBridge {
       }
       return;
     }
-    if (!isRelevantEvent(ev) || !ev.channel || !ev.ts) return;
+    if (!ev.channel || !ev.ts) return;
 
-    const origin: Origin = { channel: ev.channel, threadTs: ev.thread_ts ?? ev.ts };
+    const origin: Origin = { channel: ev.channel, threadTs: ev.thread_ts ?? ev.ts, asUser: route === 'user' };
     const cmd = parseCommand(ev.text ?? '', this.d.identity.botUserId);
     await this.d.refresh().catch(() => undefined);
 
     if (cmd.kind === 'list') {
-      await this.post(origin, formatSessionList(this.d.panes()));
+      await this.notice(origin, formatSessionList(this.d.panes()));
       return;
     }
     if (cmd.message === '') {
-      await this.post(origin, `Nothing to send to \`${cmd.session}\`. Usage: \`@kova <session> <message>\` or \`@kova list\``);
+      await this.notice(origin, `Nothing to send to \`${cmd.session}\`. Usage: \`@kova <session> <message>\` or \`@kova list\``);
       return;
     }
     const r = resolveSession(cmd.session, this.d.panes());
     if (!r.ok) {
-      await this.post(origin, formatUnresolved(cmd.session, r));
+      await this.notice(origin, formatUnresolved(cmd.session, r));
       return;
     }
 
@@ -177,7 +187,7 @@ export class SlackBridge {
     }
     const q = this.queues.get(job.paneId) ?? [];
     if (q.length >= MAX_QUEUE) {
-      void this.post(job.origin, `Queue full for \`${job.name}\` (${MAX_QUEUE} pending). Try again once it is done.`);
+      void this.notice(job.origin, `Queue full for \`${job.name}\` (${MAX_QUEUE} pending). Try again once it is done.`);
       void this.react(job, REACT.failed);
       return;
     }
@@ -191,7 +201,7 @@ export class SlackBridge {
     if (!pane) return this.fail(job, `Session \`${job.name}\` is gone from Kova.`);
     if (pane.awaiting) {
       await this.notifyAwaiting(job, await this.d.currentQuestion(job.paneId).catch(() => null));
-      await this.post(job.origin, 'Message not delivered. Answer in Kova, then send it again.');
+      await this.notice(job.origin, 'Message not delivered. Answer in Kova, then send it again.');
       return this.finish(job);
     }
     const wasWorking = pane.working;
@@ -205,7 +215,7 @@ export class SlackBridge {
     if (!res.applied) {
       if (res.reason === 'became_awaiting') {
         await this.notifyAwaiting(job, await this.d.currentQuestion(job.paneId).catch(() => null));
-        await this.post(job.origin, 'Message not delivered. Answer in Kova, then send it again.');
+        await this.notice(job.origin, 'Message not delivered. Answer in Kova, then send it again.');
         return this.finish(job);
       }
       return this.fail(job, `Delivery to \`${job.name}\` failed: ${res.reason ?? 'unknown reason'}`);
@@ -218,7 +228,7 @@ export class SlackBridge {
     await this.react(job, job.reaction);
     job.timer = setTimeout(() => {
       job.timer = null;
-      void this.post(job.origin, `Still running on \`${job.name}\`, check Kova. I will reply here when the turn ends.`);
+      void this.notice(job.origin, `Still running on \`${job.name}\`, check Kova. I will reply here when the turn ends.`);
     }, this.d.jobTimeoutMs());
     job.timer.unref?.();
     job.capTimer = setTimeout(() => {
@@ -244,7 +254,7 @@ export class SlackBridge {
 
   private async fail(job: Job, message: string): Promise<void> {
     logger.warn('slack: echec de livraison', { paneId: job.paneId });
-    await this.post(job.origin, message);
+    await this.notice(job.origin, message);
     if (job.reaction) await this.unreact(job, job.reaction);
     await this.react(job, REACT.failed);
     this.finish(job);
@@ -258,9 +268,13 @@ export class SlackBridge {
     if (!job || job.sentAt === null) return;
     const final = finalTurnText(lines);
     const anchorAt = final.anchorTs ? Date.parse(final.anchorTs) : NaN;
+    // Tour long (images en base64...) : le message humain sort du tail borne. Si tout le
+    // tail est posterieur a l'envoi, le tour ne peut etre que le notre.
+    const tailStart = Math.min(...lines.map((l) => (l.timestamp ? Date.parse(l.timestamp) : NaN)).filter(Number.isFinite));
     const ours =
       (final.anchor ?? '').includes(originMarker(job.origin)) ||
-      (Number.isFinite(anchorAt) && anchorAt >= job.sentAt - 1_000);
+      (Number.isFinite(anchorAt) && anchorAt >= job.sentAt - 1_000) ||
+      (final.anchor === null && Number.isFinite(tailStart) && tailStart >= job.sentAt - 1_000);
     if (!ours) {
       // Fin du tour d'AVANT (Mac ou iPhone) : notre message est encore en file chez Claude.
       logger.debug('slack: fin de tour etrangere au message slack', { paneId: pane.id });
@@ -287,7 +301,7 @@ export class SlackBridge {
     const queued = this.queues.get(paneId) ?? [];
     this.queues.delete(paneId);
     for (const q of queued) {
-      void this.post(q.origin, `Session \`${q.name}\` was closed in Kova. Message not delivered.`);
+      void this.notice(q.origin, `Session \`${q.name}\` was closed in Kova. Message not delivered.`);
       void this.react(q, REACT.failed);
     }
     if (job) void this.fail(job, `Session \`${job.name}\` was closed in Kova before the turn ended.`);
@@ -297,23 +311,43 @@ export class SlackBridge {
     const first = job.lastQuestion === null;
     job.lastQuestion = question ?? '';
     const q = question ? `\n> ${question.replace(/\n/g, '\n> ')}` : '';
-    await this.post(job.origin, `Session \`${job.name}\` is waiting for your input in Kova.${q}`);
+    await this.notice(job.origin, `Session \`${job.name}\` is waiting for your input in Kova.${q}`);
     if (first) await this.react(job, REACT.awaiting);
   }
 
   // --- Slack, sans jamais lever ----------------------------------------------------
 
+  /** Le bot n'est pas dans la conversation : Robin y parle en son nom. */
+  private apiFor(o: Origin): SlackApi {
+    return o.asUser && this.d.userApi ? this.d.userApi : this.d.api;
+  }
+
+  /** La reponse du tour : dans le fil d'origine, au nom de Robin si le bot n'y est pas. */
   private async post(o: Origin, text: string): Promise<void> {
     try {
-      await this.d.api.post(o.channel, o.threadTs, text);
+      await this.apiFor(o).post(o.channel, o.threadTs, text);
     } catch (e) {
       logger.warn('slack: envoi du message en echec', { channel: o.channel, err: (e as Error).message });
     }
   }
 
+  /**
+   * Messages du pont (erreurs, liste, attente...). Dans un DM avec quelqu'un, ils ne
+   * partent pas au nom de Robin sous les yeux de l'autre : ils vont dans le DM au bot.
+   */
+  private async notice(o: Origin, text: string): Promise<void> {
+    const botDm = this.d.identity.botDm;
+    if (!o.asUser || !botDm) return this.post(o, text);
+    try {
+      await this.d.api.post(botDm, '', `_About your @kova command in a DM:_ ${text}`);
+    } catch (e) {
+      logger.warn('slack: envoi du message en echec', { channel: botDm, err: (e as Error).message });
+    }
+  }
+
   private async react(job: Job, name: string): Promise<void> {
     try {
-      await this.d.api.react(job.origin.channel, job.msgTs, name);
+      await this.apiFor(job.origin).react(job.origin.channel, job.msgTs, name);
     } catch (e) {
       logger.debug('slack: reaction en echec', { name, err: (e as Error).message });
     }
@@ -321,7 +355,7 @@ export class SlackBridge {
 
   private async unreact(job: Job, name: string): Promise<void> {
     try {
-      await this.d.api.unreact(job.origin.channel, job.msgTs, name);
+      await this.apiFor(job.origin).unreact(job.origin.channel, job.msgTs, name);
     } catch (e) {
       logger.debug('slack: retrait de reaction en echec', { name, err: (e as Error).message });
     }

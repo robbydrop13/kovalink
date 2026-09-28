@@ -24,6 +24,7 @@ const {
   formatReply,
   Dedupe,
   CHUNK_MAX,
+  routeEvent,
 } = await import('../src/slack/logic.js');
 const { SlackBridge, REACT } = await import('../src/slack/bridge.js');
 const { toPane } = await import('../src/kova/panes.js');
@@ -281,7 +282,7 @@ interface Call {
   args: string[];
 }
 
-function harness(o: { panes?: Pane[]; send?: (paneId: number, text: string) => Promise<ActionResponse> } = {}) {
+function harness(o: { panes?: Pane[]; send?: (paneId: number, text: string) => Promise<ActionResponse>; userPath?: boolean } = {}) {
   const calls: Call[] = [];
   const sent: { paneId: number; text: string }[] = [];
   const store = new Map<number, Pane>((o.panes ?? [pane(1, { claude_session_name: 'claap-agent' })]).map((p) => [p.id, p]));
@@ -293,7 +294,15 @@ function harness(o: { panes?: Pane[]; send?: (paneId: number, text: string) => P
       unreact: async (c, ts, n) => void calls.push({ op: 'unreact', args: [c, ts, n] }),
       userName: async (id) => (id === 'U2' ? 'clement' : null),
     },
-    identity: { botUserId: BOT, teamId: TEAM },
+    userApi: o.userPath
+      ? {
+          post: async (c, t, text) => void calls.push({ op: 'post-as-robin', args: [c, t, text] }),
+          react: async (c, ts, n) => void calls.push({ op: 'react-as-robin', args: [c, ts, n] }),
+          unreact: async (c, ts, n) => void calls.push({ op: 'unreact-as-robin', args: [c, ts, n] }),
+          userName: async () => null,
+        }
+      : null,
+    identity: { botUserId: BOT, teamId: TEAM, botDm: o.userPath ? 'DBOT' : null },
     allowedUserId: () => ROBIN,
     jobTimeoutMs: () => 60_000,
     panes: () => [...store.values()],
@@ -359,6 +368,28 @@ describe('slack: pont', () => {
     assert.equal(h.calls.length, 1);
     await h.bridge.onTurnClosed(h.store.get(1) as Pane, h.turn(h.sent[0]?.text ?? '', 'la suite') as never);
     assert.equal(h.calls.filter((c) => c.op === 'post').length, 1);
+  });
+
+  it('tour long dont le message humain est sorti du tail : poste quand meme', async () => {
+    const h = harness();
+    await h.mention('claap-agent cree le ticket');
+    const at = new Date(h.tick(60_000)).toISOString();
+    const lines = [
+      { type: 'user', timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: 'img' }] } },
+      { type: 'assistant', timestamp: at, requestId: 'r', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Ticket created' }] } },
+    ];
+    await h.bridge.onTurnClosed(h.store.get(1) as Pane, lines as never);
+    assert.deepEqual(h.calls.find((c) => c.op === 'post')?.args, ['C1', '100.1', 'Ticket created']);
+  });
+
+  it('tail sans message humain mais anterieur a l\'envoi : ignore', async () => {
+    const h = harness();
+    await h.mention('claap-agent cree le ticket');
+    const lines = [
+      { type: 'assistant', timestamp: new Date(0).toISOString(), requestId: 'r', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'vieux' }] } },
+    ];
+    await h.bridge.onTurnClosed(h.store.get(1) as Pane, lines as never);
+    assert.equal(h.calls.filter((c) => c.op === 'post').length, 0);
   });
 
   it('pane en attente : pas de livraison, message et main levee', async () => {
@@ -444,5 +475,59 @@ describe('slack: pont', () => {
     h.bridge.onPaneClosed(1);
     await new Promise((r) => setImmediate(r));
     assert.match(h.calls.find((c) => c.op === 'post')?.args[2] ?? '', /closed in Kova/);
+  });
+});
+
+describe('slack: @kova dans les DM de Robin (jeton utilisateur)', () => {
+  const ctxOn = { botUserId: BOT, botDm: 'DBOT' };
+  it('route : mention, DM au bot, DM avec quelqu\'un', () => {
+    assert.equal(routeEvent({ type: 'app_mention' }, ctxOn), 'bot');
+    assert.equal(routeEvent({ type: 'message', channel_type: 'im', channel: 'DBOT', text: 'claap-agent x' }, ctxOn), 'bot');
+    assert.equal(routeEvent({ type: 'message', channel_type: 'im', channel: 'DJUL', text: `<@${BOT}> claap-agent x` }, ctxOn), 'user');
+    assert.equal(routeEvent({ type: 'message', channel_type: 'mpim', channel: 'GX', text: `<@${BOT}|kova> x` }, ctxOn), 'user');
+    assert.equal(routeEvent({ type: 'message', channel_type: 'im', channel: 'DJUL', text: 'jeudi 11h ?' }, ctxOn), null);
+    assert.equal(routeEvent({ type: 'message', channel_type: 'channel', channel: 'C1', text: `<@${BOT}> x` }, ctxOn), null);
+  });
+
+  it('route sans jeton utilisateur : comportement d\'origine', () => {
+    const off = { botUserId: BOT, botDm: null };
+    assert.equal(routeEvent({ type: 'message', channel_type: 'im', channel: 'DBOT', text: 'x' }, off), 'bot');
+    assert.equal(routeEvent({ type: 'message', channel_type: 'mpim', channel: 'GX', text: `<@${BOT}> x` }, off), null);
+  });
+
+  const dm = (h: ReturnType<typeof harness>, text: string, user = ROBIN) =>
+    h.bridge.handleEnvelope({
+      team_id: TEAM,
+      event_id: `Ev${Math.random()}`,
+      event: { type: 'message', channel_type: 'im', user, channel: 'DJUL', ts: '200.1', text },
+    });
+
+  it('reponse et reactions au nom de Robin, dans le fil du DM', async () => {
+    const h = harness({ userPath: true });
+    await dm(h, `<@${BOT}> claap-agent mets un 1:1 jeudi 11h`);
+    assert.equal(h.sent.length, 1);
+    assert.deepEqual(h.calls, [{ op: 'react-as-robin', args: ['DJUL', '200.1', REACT.delivered] }]);
+    await h.bridge.onTurnClosed(h.store.get(1) as Pane, h.turn(h.sent[0]?.text ?? '', 'Invite sent') as never);
+    assert.deepEqual(h.calls.slice(1), [
+      { op: 'post-as-robin', args: ['DJUL', '200.1', 'Invite sent'] },
+      { op: 'unreact-as-robin', args: ['DJUL', '200.1', REACT.delivered] },
+      { op: 'react-as-robin', args: ['DJUL', '200.1', REACT.done] },
+    ]);
+  });
+
+  it('erreur (session inconnue) : dans le DM au bot, jamais sous les yeux de l\'autre', async () => {
+    const h = harness({ userPath: true });
+    await dm(h, `<@${BOT}> inconnue fais un truc`);
+    assert.equal(h.calls.length, 1);
+    assert.equal(h.calls[0]?.op, 'post');
+    assert.equal(h.calls[0]?.args[0], 'DBOT');
+  });
+
+  it('messages de l\'autre personne, ou de Robin sans mention : ignores sans bruit', async () => {
+    const h = harness({ userPath: true });
+    await dm(h, 'hello Robin', 'UJULIETTE');
+    await dm(h, 'Top, jeudi 11h ?');
+    assert.equal(h.calls.length, 0);
+    assert.equal(h.sent.length, 0);
   });
 });

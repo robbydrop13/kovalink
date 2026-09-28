@@ -37,6 +37,30 @@ In a DM to the bot, the `@kova` prefix is optional (`claap-agent regarde mes mai
   never post to Slack.
 - Every accepted command is audited (`slack.command`: session, channel, ts, length).
 
+## @kova in Robin's DMs with other people
+
+Slack never lets an app into a 1:1 DM between two people, so `app_mention` never fires there.
+With Robin's user token (optional third keychain entry `user-token`), the app also receives
+Robin's DM and group DM messages (`message.im`, `message.mpim` user events):
+
+- Only Robin's messages that mention the bot are commands. Everything else in those DMs
+  (the other person's messages, Robin's messages without `@kova`) is dropped silently,
+  never logged.
+- The turn's answer and the reactions (⏳ then ✅) are posted **as Robin**, in the DM thread:
+  the bot is not in that conversation.
+- Bridge notices (unknown session, list, still running, waiting for input, errors) go to
+  Robin's DM with the bot, never in front of the other person.
+- The token must belong to `slack.allowedUserId` (checked with `auth.test` at boot),
+  otherwise the DM path stays off and the bot path works as before.
+
+Setup: update the app with the current manifest (it adds the user scopes and user events),
+reinstall, then copy the **User OAuth Token** (`xoxp-...`):
+```
+security add-generic-password -U -s kovalink-slack -a user-token -w "$(pbpaste)"
+launchctl kickstart -k gui/$(id -u)/io.claap.kovalinkd
+```
+The log then says `slack: DM path on`.
+
 ## Setup (once)
 
 1. Go to https://api.slack.com/apps, **Create New App**, **From a manifest**, pick the
