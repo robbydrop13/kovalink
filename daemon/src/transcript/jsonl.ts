@@ -418,6 +418,7 @@ export function analyzeTurnEnd(lines: RawLine[]): TurnEndAnalysis {
   let stopReason: string | null = null;
   let sawAssistant = false;
   let lastUserPromptAt = -1;
+  let lastAssistantAt = -1;
 
   conv.forEach((line, i) => {
     const blocks = blocksOf((line.message as RawMessage).content);
@@ -432,6 +433,7 @@ export function analyzeTurnEnd(lines: RawLine[]): TurnEndAnalysis {
       return;
     }
     sawAssistant = true;
+    lastAssistantAt = i;
     stopReason = (line.message as RawMessage).stop_reason ?? null;
     lastTs = line.timestamp ?? lastTs;
     for (const b of blocks) {
@@ -454,7 +456,10 @@ export function analyzeTurnEnd(lines: RawLine[]): TurnEndAnalysis {
     }
   }
 
-  const closed = sawAssistant && stopReason !== 'tool_use' && pendingToolUse.size === 0;
+  // Un message humain apres la derniere ligne assistant ouvre un tour : Claude Code
+  // l'ecrit des l'envoi, avant la premiere reponse.
+  const closed =
+    sawAssistant && lastUserPromptAt < lastAssistantAt && stopReason !== 'tool_use' && pendingToolUse.size === 0;
   return {
     closed,
     summary: summary.slice(0, TURN_END_SUMMARY_MAX),

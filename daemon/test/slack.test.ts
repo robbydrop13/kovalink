@@ -286,6 +286,8 @@ function harness(o: { panes?: Pane[]; send?: (paneId: number, text: string) => P
   const calls: Call[] = [];
   const sent: { paneId: number; text: string }[] = [];
   const store = new Map<number, Pane>((o.panes ?? [pane(1, { claude_session_name: 'claap-agent' })]).map((p) => [p.id, p]));
+  /** Fin du JSONL vue par le pont (sondage et `busy`). */
+  const jsonl: { lines: unknown[] } = { lines: [] };
   let clock = 1_000_000;
   const bridge = new SlackBridge({
     api: {
@@ -313,6 +315,7 @@ function harness(o: { panes?: Pane[]; send?: (paneId: number, text: string) => P
       return o.send ? o.send(paneId, text) : { applied: true };
     },
     currentQuestion: async () => 'Do you want to proceed?',
+    transcript: () => jsonl.lines as never,
     now: () => clock,
   });
   const mention = (text: string, extra: Record<string, unknown> = {}) =>
@@ -325,7 +328,16 @@ function harness(o: { panes?: Pane[]; send?: (paneId: number, text: string) => P
     { type: 'user', timestamp: ts, message: { role: 'user', content: anchor } },
     { type: 'assistant', requestId: 'r', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: reply }] } },
   ];
-  return { bridge, calls, sent, store, mention, turn, tick: (ms: number) => (clock += ms) };
+  /** Tour horodate comme dans un vrai JSONL : `lastTs` sert a ne voir chaque tour qu'une fois. */
+  const stamped = (anchor: string, reply: string) => {
+    const ts = new Date(clock).toISOString();
+    const [u, a] = turn(anchor, reply, ts);
+    return [u, { ...a, timestamp: ts }];
+  };
+  /** Tour en cours : message humain sans reponse. */
+  const open = (anchor: string) => [{ type: 'user', timestamp: new Date(clock).toISOString(), message: { role: 'user', content: anchor } }];
+  const settle = () => new Promise((r) => setImmediate(r));
+  return { bridge, calls, sent, store, jsonl, mention, turn, stamped, open, settle, tick: (ms: number) => (clock += ms) };
 }
 
 describe('slack: pont', () => {
@@ -360,14 +372,78 @@ describe('slack: pont', () => {
     assert.equal(h.calls.length, 0);
   });
 
-  it('fin du tour precedent (message en file chez Claude) : ignoree, on attend le notre', async () => {
-    const h = harness({ panes: [pane(1, { claude_session_name: 'claap-agent', working: true })] });
+  it('fin du tour precedent : ignoree, on attend le notre', async () => {
+    const h = harness();
+    h.jsonl.lines = h.stamped('message du mac', 'fini');
+    h.tick(10_000);
     await h.mention('claap-agent suite');
-    assert.deepEqual(h.calls, [{ op: 'react', args: ['C1', '100.1', REACT.queuedBehindWork] }]);
     await h.bridge.onTurnClosed(h.store.get(1) as Pane, h.turn('message du mac', 'fini', new Date(0).toISOString()) as never);
-    assert.equal(h.calls.length, 1);
+    await h.bridge.poll(1);
+    assert.equal(h.calls.filter((c) => c.op === 'post').length, 0);
     await h.bridge.onTurnClosed(h.store.get(1) as Pane, h.turn(h.sent[0]?.text ?? '', 'la suite') as never);
     assert.equal(h.calls.filter((c) => c.op === 'post').length, 1);
+  });
+
+  it('session en plein tour : le message attend la fin du tour, puis part', async () => {
+    const h = harness({ panes: [pane(1, { claude_session_name: 'claap-agent', working: true })] });
+    h.jsonl.lines = h.open('travail lance du mac');
+    await h.mention('claap-agent suite');
+    assert.equal(h.sent.length, 0, 'rien n est tape pendant le tour');
+    assert.deepEqual(h.calls, [{ op: 'react', args: ['C1', '100.1', REACT.queued] }]);
+    assert.deepEqual(h.bridge.pending(1), { active: true, queued: 0 });
+
+    await h.bridge.poll(1);
+    assert.equal(h.sent.length, 0, 'toujours en cours');
+
+    h.jsonl.lines = h.stamped('travail lance du mac', 'fini');
+    await h.bridge.poll(1);
+    assert.equal(h.sent.length, 1);
+    assert.match(h.sent[0]?.text ?? '', /^suite/);
+    assert.deepEqual(h.calls.slice(1), [
+      { op: 'unreact', args: ['C1', '100.1', REACT.queued] },
+      { op: 'react', args: ['C1', '100.1', REACT.delivered] },
+    ]);
+  });
+
+  it('sous-agent en fond (spinner allume, session libre) : livre, clot et enchaine, dans l ordre, sans doublon', async () => {
+    // Incident du 08/10 : `working` reste vrai tant qu'un sous-agent tourne, le front
+    // descendant ne vient jamais. Le JSONL, lui, dit le tour clos.
+    const h = harness({ panes: [pane(1, { claude_session_name: 'claap-agent', working: true })] });
+    h.jsonl.lines = h.stamped('ancien', 'ancien fini');
+    h.tick(10_000);
+    await h.mention('claap-agent un', { ts: '1.0' });
+    await h.mention('claap-agent deux', { ts: '2.0', thread_ts: '1.0' });
+    await h.mention('claap-agent trois', { ts: '3.0', thread_ts: '1.0' });
+    assert.equal(h.sent.length, 1, 'session libre malgre le spinner : livre tout de suite');
+    assert.deepEqual(h.bridge.pending(1), { active: true, queued: 2 });
+    assert.equal(h.calls.filter((c) => c.op === 'react' && c.args[2] === REACT.queued).length, 2);
+
+    // Le tour d'avant, deja clos, n'est pas le notre.
+    await h.bridge.poll(1);
+    assert.equal(h.calls.filter((c) => c.op === 'post').length, 0);
+
+    for (const [i, reply] of ['r1', 'r2', 'r3'].entries()) {
+      h.jsonl.lines = h.open(h.sent[i]?.text ?? '');
+      await h.bridge.poll(1);
+      h.tick(5_000);
+      h.jsonl.lines = h.stamped(h.sent[i]?.text ?? '', reply);
+      await h.bridge.poll(1);
+      await h.settle();
+      // Le front descendant finit par arriver : meme tour, rien ne repart.
+      await h.bridge.onTurnClosed(h.store.get(1) as Pane, h.jsonl.lines as never);
+      await h.bridge.poll(1);
+      await h.settle();
+      h.tick(1_000);
+    }
+    assert.deepEqual(
+      h.sent.map((s) => s.text.split('\n')[0]),
+      ['un', 'deux', 'trois'],
+    );
+    assert.deepEqual(
+      h.calls.filter((c) => c.op === 'post').map((c) => c.args[2]),
+      ['r1', 'r2', 'r3'],
+    );
+    assert.deepEqual(h.bridge.pending(1), { active: false, queued: 0 });
   });
 
   it('tour long dont le message humain est sorti du tail : poste quand meme', async () => {

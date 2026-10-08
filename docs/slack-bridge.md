@@ -25,15 +25,21 @@ In a DM to the bot, the `@kova` prefix is optional (`claap-agent regarde mes mai
   app, followed by a context line telling the agent the channel and thread, and that it
   can read the thread with `slk thread <channel> <ts>`.
 - Feedback, always in the thread of the message:
-  - `:hourglass_flowing_sand:` delivered (`:hourglass:` if the session was already busy,
-    Claude Code queues it);
+  - `:hourglass:` queued: the session is mid-turn, or another Slack message is in flight.
+    Nothing is typed into a busy session: the message goes in when the turn ends;
+  - `:hourglass_flowing_sand:` delivered;
   - the final assistant text of the turn is posted when the turn ends, then
     `:white_check_mark:`;
   - `:raising_hand:` and "Session X is waiting for your input in Kova" when a permission
     prompt shows up;
   - `:x:` plus the error when delivery fails.
-- One Slack command in flight per session, up to 5 queued. After 30 min without a turn
-  end, one "still running, check Kova" message. Turns started on the Mac or the iPhone
+- One Slack command in flight per session, up to 5 queued, delivered in order. After 30 min
+  without a turn end, one "still running, check Kova" message.
+- Busy or idle: Kova's `working` (title spinner) stays on while a background subagent runs,
+  even when the session is back at its prompt. So "busy" is `working` AND the transcript
+  turn still open (no final assistant answer yet), and the end of a Slack turn is read from
+  the transcript every 3 s, on top of the `working` falling edge. The queue lives in the
+  daemon's memory: a daemon restart drops queued messages. Turns started on the Mac or the iPhone
   never post to Slack.
 - Every accepted command is audited (`slack.command`: session, channel, ts, length).
 

@@ -1,10 +1,11 @@
 // Pont Slack : etat des commandes en cours. Aucune E/S directe : Slack passe par
 // `SlackApi` (bouchonnable), l'ecriture dans le pane par `send` (KeyGate.emitText, le
-// meme chemin que l'iPhone), la fin de tour par `onTurnClosed` (TurnEndDetector).
+// meme chemin que l'iPhone), la fin de tour par `onTurnClosed` (TurnEndDetector, ou le
+// sondage du JSONL de `poll`).
 import type { ActionResponse, Pane, Prompt } from '@kovalink/protocol';
 import { audit } from '../audit.js';
 import { logger } from '../logger.js';
-import { finalTurnText, type RawLine } from '../transcript/jsonl.js';
+import { analyzeTurnEnd, finalTurnText, type RawLine } from '../transcript/jsonl.js';
 import {
   authorizeEvent,
   Dedupe,
@@ -47,16 +48,24 @@ export interface BridgeDeps {
   send: (paneId: number, text: string) => Promise<ActionResponse>;
   /** Question en attente sur le pane, si elle est lisible. */
   currentQuestion: (paneId: number) => Promise<string | null>;
+  /** Fin bornee du JSONL de la session du pane, vide si inconnue. */
+  transcript: (paneId: number) => RawLine[];
   now?: () => number;
 }
 
 export const MAX_QUEUE = 5;
 /** Au dela, on cesse de suivre un tour : la file ne doit jamais rester bloquee. */
 export const HARD_CAP_MS = 6 * 60 * 60_000;
+/**
+ * Sondage du JSONL tant qu'un message Slack attend ou tourne sur un pane. Le spinner de
+ * Kova (`working`) reste allume tant qu'un sous-agent tourne en fond, session pourtant
+ * libre : son front descendant ne suffit pas a dater la fin du tour.
+ */
+export const POLL_MS = 3_000;
 
 export const REACT = {
   delivered: 'hourglass_flowing_sand',
-  queuedBehindWork: 'hourglass',
+  queued: 'hourglass',
   done: 'white_check_mark',
   awaiting: 'raising_hand',
   failed: 'x',
@@ -75,6 +84,9 @@ interface Job {
   lastQuestion: string | null;
   timer: NodeJS.Timeout | null;
   capTimer: NodeJS.Timeout | null;
+  poll: NodeJS.Timeout | null;
+  /** `lastTs` du dernier tour clos vu par le sondage : chaque tour n'est examine qu'une fois. */
+  seenTs?: string | null;
 }
 
 export class SlackBridge {
@@ -82,6 +94,8 @@ export class SlackBridge {
   private readonly queues = new Map<number, Job[]>();
   private readonly dedupe = new Dedupe();
   private readonly names = new Map<string, string>();
+  /** `lastTs` du dernier tour qui a clos un message, par pane : le sondage et le front descendant le voient tous deux. */
+  private readonly lastClosed = new Map<number, string>();
   private readonly now: () => number;
 
   constructor(private readonly d: BridgeDeps) {
@@ -153,6 +167,7 @@ export class SlackBridge {
       lastQuestion: null,
       timer: null,
       capTimer: null,
+      poll: null,
     };
     audit({
       deviceId: 'slack',
@@ -193,6 +208,7 @@ export class SlackBridge {
     }
     q.push(job);
     this.queues.set(job.paneId, q);
+    await this.markQueued(job);
   }
 
   private async start(job: Job): Promise<void> {
@@ -204,7 +220,16 @@ export class SlackBridge {
       await this.notice(job.origin, 'Message not delivered. Answer in Kova, then send it again.');
       return this.finish(job);
     }
-    const wasWorking = pane.working;
+    // Tour en cours : le texte tape maintenant se perdrait. On attend la fin du tour.
+    if (this.busy(pane)) {
+      await this.markQueued(job);
+      this.arm(job);
+      return;
+    }
+    await this.deliver(job);
+  }
+
+  private async deliver(job: Job): Promise<void> {
     job.sentAt = this.now();
     let res: ActionResponse;
     try {
@@ -224,7 +249,8 @@ export class SlackBridge {
     // retire, rien a armer.
     if (this.active.get(job.paneId) !== job) return;
     job.delivered = true;
-    job.reaction = wasWorking ? REACT.queuedBehindWork : REACT.delivered;
+    if (job.reaction) await this.unreact(job, job.reaction);
+    job.reaction = REACT.delivered;
     await this.react(job, job.reaction);
     job.timer = setTimeout(() => {
       job.timer = null;
@@ -237,13 +263,57 @@ export class SlackBridge {
       this.finish(job);
     }, HARD_CAP_MS);
     job.capTimer.unref?.();
+    this.arm(job);
+  }
+
+  /** Session occupee : une question attend, ou le spinner tourne ET le JSONL dit le tour ouvert. */
+  private busy(pane: Pane): boolean {
+    if (pane.awaiting) return true;
+    if (!pane.working) return false;
+    return !analyzeTurnEnd(this.d.transcript(pane.id)).closed;
+  }
+
+  private async markQueued(job: Job): Promise<void> {
+    if (job.reaction === REACT.queued) return;
+    job.reaction = REACT.queued;
+    await this.react(job, REACT.queued);
+  }
+
+  private arm(job: Job): void {
+    if (job.poll) return;
+    job.poll = setInterval(() => void this.poll(job.paneId), POLL_MS);
+    job.poll.unref?.();
+  }
+
+  /**
+   * Minuteur de `arm` : livre le message en attente des que la session se libere, puis
+   * clot le tour des que le JSONL le dit clos. Public pour les tests.
+   */
+  async poll(paneId: number): Promise<void> {
+    const job = this.active.get(paneId);
+    const pane = this.d.pane(paneId);
+    // La fermeture du pane passe par `onPaneClosed`.
+    if (!job || !pane) return;
+    if (!job.delivered) {
+      // `sentAt` pose : livraison deja en cours.
+      if (job.sentAt === null && !this.busy(pane)) await this.deliver(job);
+      return;
+    }
+    if (pane.awaiting) return;
+    const lines = this.d.transcript(paneId);
+    const a = analyzeTurnEnd(lines);
+    if (!a.closed || a.lastTs === job.seenTs) return;
+    job.seenTs = a.lastTs;
+    await this.onTurnClosed(pane, lines);
   }
 
   private finish(job: Job): void {
     if (job.timer) clearTimeout(job.timer);
     if (job.capTimer) clearTimeout(job.capTimer);
+    if (job.poll) clearInterval(job.poll);
     job.timer = null;
     job.capTimer = null;
+    job.poll = null;
     if (this.active.get(job.paneId) !== job) return;
     this.active.delete(job.paneId);
     const q = this.queues.get(job.paneId);
@@ -266,6 +336,9 @@ export class SlackBridge {
   async onTurnClosed(pane: Pane, lines: RawLine[]): Promise<void> {
     const job = this.active.get(pane.id);
     if (!job || job.sentAt === null) return;
+    // Meme tour vu deux fois (sondage puis front descendant) : il a deja clos un message.
+    const turnTs = analyzeTurnEnd(lines).lastTs;
+    if (turnTs !== null && this.lastClosed.get(pane.id) === turnTs) return;
     const final = finalTurnText(lines);
     const anchorAt = final.anchorTs ? Date.parse(final.anchorTs) : NaN;
     // Tour long (images en base64...) : le message humain sort du tail borne. Si tout le
@@ -280,6 +353,7 @@ export class SlackBridge {
       logger.debug('slack: fin de tour etrangere au message slack', { paneId: pane.id });
       return;
     }
+    if (turnTs !== null) this.lastClosed.set(pane.id, turnTs);
     this.finish(job);
     for (const chunk of formatReply(final.text)) await this.post(job.origin, chunk);
     if (job.reaction) await this.unreact(job, job.reaction);
@@ -300,6 +374,7 @@ export class SlackBridge {
     const job = this.active.get(paneId);
     const queued = this.queues.get(paneId) ?? [];
     this.queues.delete(paneId);
+    this.lastClosed.delete(paneId);
     for (const q of queued) {
       void this.notice(q.origin, `Session \`${q.name}\` was closed in Kova. Message not delivered.`);
       void this.react(q, REACT.failed);
@@ -370,6 +445,7 @@ export class SlackBridge {
     for (const job of this.active.values()) {
       if (job.timer) clearTimeout(job.timer);
       if (job.capTimer) clearTimeout(job.capTimer);
+      if (job.poll) clearInterval(job.poll);
     }
   }
 }

@@ -20,7 +20,7 @@ import { LAYOUT_POLL_MS, LayoutGate } from './kova/layoutPoll.js';
 import { purgeOrphanRaws, RAW_PURGE_INTERVAL_MS, realRawPurgeDeps } from './kova/rawPurge.js';
 import { logger } from './logger.js';
 import { runPair } from './pair.js';
-import { paths } from './paths.js';
+import { paths, transcriptPath } from './paths.js';
 import { answerPrompt } from './prompt/answer.js';
 import { PromptDetector, type AwaitingPrompt } from './prompt/detector.js';
 import { PromptRefs } from './prompt/refs.js';
@@ -43,6 +43,7 @@ import { startSlack } from './slack/socket.js';
 import type { RawLine } from './transcript/jsonl.js';
 import { clearRuntimeState, initRuntimeState, updateRuntimeState } from './state.js';
 import { runStatus } from './status.js';
+import { readTailLines } from './transcript/session.js';
 import { TranscriptTailer } from './transcript/tailer.js';
 import { TurnEndDetector, type TurnEndPrompt } from './turnEnd.js';
 import { Hub } from './server/hub.js';
@@ -403,6 +404,11 @@ async function run(): Promise<void> {
     currentQuestion: async (paneId) => {
       const p = await prompts.current(paneId, panes.get(paneId)?.awaiting_since ?? null);
       return p.state === 'parsed' ? p.question : null;
+    },
+    transcript: (paneId) => {
+      const p = panes.get(paneId);
+      const sessionId = p?.agent_session_id ?? p?.claude_session_id;
+      return p?.agent === 'claude' && sessionId ? readTailLines(transcriptPath(p.cwd, sessionId)) : [];
     },
   });
   detector.on('turn-closed', (pane: Pane, _sessionId: string, lines: RawLine[]) => {

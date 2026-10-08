@@ -367,6 +367,15 @@ describe('confirmation de fin de tour par le JSONL (D1)', () => {
     assert.equal(a.summary, '11 tests passent.');
   });
 
+  it('un message humain apres la derniere reponse ouvre un nouveau tour', () => {
+    const a = analyzeTurnEnd([
+      user('premier'),
+      assistant('req_A', 0, [{ type: 'text', text: 'fait' }], 'end_turn'),
+      user('second', 'u2'),
+    ]);
+    assert.equal(a.closed, false);
+  });
+
   it('tronque le resume a 140 caracteres', () => {
     const a = analyzeTurnEnd([
       user('vas-y'),
