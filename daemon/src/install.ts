@@ -43,8 +43,11 @@ function renderPlist(nodePath: string, script: string, home: string): string {
 
   <key>RunAtLoad</key><true/>
 
-  <key>KeepAlive</key>
-  <dict><key>SuccessfulExit</key><false/><key>Crashed</key><true/></dict>
+  <!-- Relance inconditionnelle. Un KeepAlive conditionnel laissait launchd ignorer
+       une sortie propre sur SIGTERM, et le daemon restait a terre : vu le 10/10/2026,
+       Robin s'est retrouve sans acces a son Mac depuis son telephone pendant une journee.
+       Ce service doit remonter seul, y compris quand personne n'est devant la machine. -->
+  <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
 
   <!-- Session graphique : le trousseau doit etre deverrouille, et le daemon n'a aucun
