@@ -8,6 +8,10 @@ import {
   TURNS_PAGE_SIZE,
   TURNS_QUERY,
   type ActionResponse,
+  type AskAnswerRequest,
+  type AskSnoozeRequest,
+  type AskSnoozeResponse,
+  type AsksResponse,
   type KovaLaunchResponse,
   type KovaNewTabRequest,
   type KovaNewTabResponse,
@@ -262,6 +266,43 @@ export function postText(
  */
 export function postKovaLaunch(timeoutMs = 8000): Promise<KovaLaunchResponse> {
   return request(ROUTES.kovaLaunch, { method: 'POST', timeoutMs });
+}
+
+// --- Questions des agents (`kova ask`) -------------------------------------
+// Lire la carte, repondre, remettre a plus tard. Pas de file d'attente locale
+// (`db/outbox`) contrairement aux reponses de prompt : une question se repond en la
+// regardant, et un echec se dit sur place. Rejouer une reponse dix minutes plus tard, sur
+// une question peut etre deja reglee sur le Mac, serait pire que la redemander.
+
+/** La carte telle qu'elle est maintenant. Le WebSocket la diffuse aussi a chaque changement. */
+export function fetchAsks(timeoutMs = 6000): Promise<AsksResponse> {
+  return request(ROUTES.asks, { timeoutMs });
+}
+
+/**
+ * Repondre. `action` est l'un des `buttons` de la question, jamais une chaine libre : le
+ * daemon et Kova le refusent tous deux, parce que ce mot est celui que l'agent relit.
+ */
+export function postAskAnswer(
+  askId: string,
+  body: AskAnswerRequest,
+  timeoutMs = 10_000,
+): Promise<{ ok: boolean }> {
+  return request(ROUTES.askAnswer(askId), { method: 'POST', body, timeoutMs });
+}
+
+/** Remettre a plus tard. Kova plafonne le delai a 24 h, il ne le refuse pas. */
+export function postAskSnooze(
+  askId: string,
+  seconds: number,
+  nonce: string,
+  timeoutMs = 8000,
+): Promise<AskSnoozeResponse> {
+  return request(ROUTES.askSnooze(askId), {
+    method: 'POST',
+    body: { seconds, nonce } satisfies AskSnoozeRequest,
+    timeoutMs,
+  });
 }
 
 /** Les commandes `/` de Claude Code visibles depuis le pane, pour l'autocomplétion. */

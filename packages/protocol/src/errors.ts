@@ -8,6 +8,9 @@ export const ERROR_CODES = [
   // 404 sur `POST /v1/kova/tabs/:tabId/reorder` : l'onglet n'est pas dans l'index du daemon.
   'TAB_NOT_FOUND',
   'SESSION_NOT_FOUND',
+  // 404 sur `POST /v1/asks/:askId/...` : la question n'est plus sur la carte de Kova
+  // (repondue sur le Mac entre temps, ou Kova a redemarre sans elle).
+  'ASK_NOT_FOUND',
   'IPC_TIMEOUT',
   'IPC_UNSUPPORTED',
   // 501 : le Kova installe sur le Mac ne connait pas la commande (`move-tab` est arrivee

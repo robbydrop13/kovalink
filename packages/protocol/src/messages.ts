@@ -1,3 +1,4 @@
+import type { AskItem, AskSnoozeChoice } from './ask.js';
 import type { ErrorCode } from './errors.js';
 import type { LinkInfo } from './link.js';
 import type { KeyName } from './keys.js';
@@ -210,6 +211,17 @@ export interface PromptMsg {
   t: 'prompt';
   prompt: Prompt;
 }
+/**
+ * Les questions des agents en attente sur la carte de Kova, diffusees a chaque
+ * changement et a l'abonnement. Le client REMPLACE sa liste, il ne fusionne pas : une
+ * question reglee sur le Mac disparait de la liste, donc de l'ecran.
+ */
+export interface AsksMsg {
+  t: 'asks';
+  asks: AskItem[];
+  snoozeChoices: AskSnoozeChoice[];
+  supported: boolean;
+}
 export interface PaneScreenMsg {
   t: 'pane.screen.ok';
   reqId: string;
@@ -244,6 +256,7 @@ export type S2C =
   | PanesSnapshot
   | PaneEvent
   | PromptMsg
+  | AsksMsg
   | PaneScreenMsg
   | SessionSnapshot
   | SessionAppend

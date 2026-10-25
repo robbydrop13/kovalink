@@ -15,6 +15,7 @@ import { loadCredentials, rotateToken } from '@/store/credentials';
 import { useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { usePrompts } from '@/store/prompts';
+import { useAsks } from '@/store/asks';
 import { useReads } from '@/store/reads';
 import { useReorder } from '@/store/reorder';
 import { staleMarks } from '@/features/sessions/unread';
@@ -106,6 +107,11 @@ function handle(msg: S2C): void {
         useReads.getState().forget([msg.paneId]);
         usePrompts.getState().keepOnly(usePanes.getState().panes.map((p) => p.id));
       }
+      break;
+    case 'asks':
+      // Remplacement, jamais une fusion : une question reglee sur le Mac disparait de la
+      // liste du daemon et doit disparaitre de l'ecran.
+      useAsks.getState().applySnapshot(msg.asks, msg.snoozeChoices, msg.supported);
       break;
     case 'prompt': {
       usePrompts.getState().setPrompt(msg.prompt);

@@ -16,6 +16,7 @@ import { UploadStore } from './fs/uploads.js';
 import { KovaIpc } from './kova/ipc.js';
 import { KeyGate } from './kova/keygate.js';
 import { PaneStore, type WorkingTransition } from './kova/panes.js';
+import { ASK_POLL_MS, AskBoard } from './kova/asks.js';
 import { LAYOUT_POLL_MS, LayoutGate } from './kova/layoutPoll.js';
 import { purgeOrphanRaws, RAW_PURGE_INTERVAL_MS, realRawPurgeDeps } from './kova/rawPurge.js';
 import { logger } from './logger.js';
@@ -117,6 +118,7 @@ async function run(): Promise<void> {
   const refs = new PromptRefs();
   const prompts = new PromptState(ipc, refs);
   const tailer = new TranscriptTailer();
+  const asks = new AskBoard(ipc);
   // Le tailer sert de PREUVE de soumission a KeyGate : un message dans le JSONL est un
   // message que Claude a lu. Il est construit avant, pour cette seule raison.
   const keygate = new KeyGate(ipc, panes, prompts, tailer);
@@ -133,6 +135,7 @@ async function run(): Promise<void> {
     keygate,
     prompts,
     refs,
+    asks,
     // Seul chemin vers `KeyGate.emitAnswer` : relecture, hash, awaitingSince, index.
     answer: (req, deviceId) => answerPrompt({ panes, prompts, keygate, nonces }, req, deviceId),
     tailer,
@@ -187,6 +190,26 @@ async function run(): Promise<void> {
   const layoutTimer = setInterval(() => void refreshLayout('sondage'), LAYOUT_POLL_MS);
   layoutTimer.unref?.();
   services.refreshLayout = refreshLayout;
+
+  /**
+   * Questions des agents (`kova ask`). Kova n'emet aucun evenement quand une question
+   * arrive, ni quand elle est repondue sur le Mac : on sonde sa carte. Une question qui
+   * devient visible (posee, ou de retour d'un report) part en notification, une seule
+   * fois, parce que la porte de diffusion d'`AskBoard` ne la signale qu'au front.
+   */
+  const refreshAsks = async (reason: string): Promise<void> => {
+    const { changed, appeared } = await asks.refresh();
+    if (!changed) return;
+    hub.pushAsks();
+    logger.debug('questions des agents relues', { reason, n: asks.snapshot().asks.length });
+    for (const ask of appeared) {
+      logger.info('question d\'un agent', { askId: ask.id, from: ask.from, waiting: ask.waiting });
+      void push.sendAsk(ask, badge());
+    }
+  };
+  const askTimer = setInterval(() => void refreshAsks('sondage'), ASK_POLL_MS);
+  askTimer.unref?.();
+  services.refreshAsks = refreshAsks;
 
   /** Relecture complete de `list-panes`, puis diffusion. Jamais sur le chemin d'une requete. */
   const refreshPanes = async (reason: string): Promise<void> => {
@@ -295,7 +318,9 @@ async function run(): Promise<void> {
       // 5 s), le sondage suivant recalculait la MEME signature qu'avant la coupure,
       // repartait aussitot, et la liste des panes restait vide indefiniment.
       layout.reset();
+      asks.reset();
       hub.pushPanesSnapshot();
+      hub.pushAsks();
       sleep.reconcile(false);
       if (n > 0) logger.info('kova absent, liste des panes videe', { panes: n });
     }
@@ -607,6 +632,7 @@ async function run(): Promise<void> {
     clearInterval(certTimer);
     clearInterval(rawPurgeTimer);
     clearInterval(layoutTimer);
+    clearInterval(askTimer);
     hub.stopHeartbeat();
     stopPeerRefresh();
     detector.stop();

@@ -1,9 +1,11 @@
 import {
   APP_URL_SCHEME,
+  askDeepLinkPath,
   categoryForPrompt,
   DEFAULT_PUSH_CATEGORY,
   NOTIFICATION_CATEGORY,
   promptDeepLinkPath,
+  type AskItem,
   type NotificationCategory,
   type Pane,
   type Prompt,
@@ -103,6 +105,52 @@ export function buildPayload(
       deepLinkPath: promptDeepLinkPath(promptRef),
       deepLink: `${APP_URL_SCHEME}:/${promptDeepLinkPath(promptRef)}`,
       targetCategory: categoryForPrompt(prompt),
+    },
+  };
+}
+
+/**
+ * Banniere d'une question d'agent (`kova ask`).
+ *
+ * La SEULE charge utile sans `promptRef`, et c'est ce qui la fait marcher : la NSE
+ * n'agit que sur une charge qui en porte une, donc elle rend celle ci telle quelle.
+ * Titre et corps sont donc definitifs ici, et la categorie aussi : `KL_ASK`, dont
+ * `Ouvrir` est la seule action, parce que les boutons viennent de l'agent et changent
+ * d'une question a l'autre.
+ *
+ * Rien de la question ne voyage (A14) : le nom de l'agent est celui de son dossier, du
+ * meme ordre que le titre d'onglet des autres bannieres, et la question se lit dans
+ * l'app, sur le canal chiffre.
+ *
+ * `collapseId` par question : une banniere vivante par question, remplacee quand elle
+ * revient d'un report.
+ */
+export function buildAskPayload(
+  ask: AskItem,
+  expoPushToken: string,
+  awaitingCount: number,
+): ExpoPushMessage {
+  return {
+    to: expoPushToken,
+    title: ask.from,
+    body: ask.waiting ? 'Is waiting for your answer' : 'Asked you a question',
+    sound: 'default',
+    priority: 'high',
+    // Une question posee a Robin est du N1 : elle sonne, heures calmes comprises,
+    // exactement comme un prompt de permission (`deliveryFor`, `!validation`).
+    interruptionLevel: 'active',
+    categoryId: NOTIFICATION_CATEGORY.ASK,
+    mutableContent: true,
+    ttl: 600,
+    collapseId: `ask-${ask.id}`,
+    badge: awaitingCount,
+    data: {
+      kind: 'ask',
+      tab: ask.from,
+      issuedAt: Date.now(),
+      deepLinkPath: askDeepLinkPath(ask.id),
+      deepLink: `${APP_URL_SCHEME}:/${askDeepLinkPath(ask.id)}`,
+      targetCategory: NOTIFICATION_CATEGORY.ASK,
     },
   };
 }
@@ -231,12 +279,7 @@ export class PushSender {
     ctx: SuppressionContext,
     awaitingCount = 0,
   ): Promise<number> {
-    const devices = loadDevices();
-    const paired = Object.values(devices).filter((d) => !d.revoked);
-    const targets = paired.filter(
-      (d): d is DeviceRecord & { expoPushToken: string } =>
-        typeof d.expoPushToken === 'string' && d.expoPushToken.length > 0,
-    );
+    const { paired, targets } = this.recipients();
     if (targets.length === 0) {
       // Un iPhone en Expo Go n'a pas de jeton push : sans cette ligne, une fin de tour
       // detectee ne laissait AUCUNE trace de ce qu'elle etait devenue (CA-12).
@@ -245,7 +288,7 @@ export class PushSender {
         kind: prompt.state === 'turn_end' ? 'turn_end' : 'awaiting',
         categoryId: categoryForPrompt(prompt),
         reason: 'aucun_jeton_push',
-        pairedDevices: paired.length,
+        pairedDevices: paired,
       });
       return 0;
     }
@@ -263,6 +306,71 @@ export class PushSender {
       return 0;
     }
 
+    return this.dispatch(expo, messages, routed, { paneId: pane.id });
+  }
+
+  /**
+   * Destinataires : les appareils apparies, non revoques, qui ont un jeton push. Un
+   * iPhone en Expo Go n'en a pas. Le nombre d'apparies est rendu avec eux parce qu'il
+   * va au journal quand il n'y a aucun destinataire : « 0 sur 1 » et « 0 sur 0 » ne
+   * decrivent pas la meme panne.
+   */
+  private recipients(): { paired: number; targets: (DeviceRecord & { expoPushToken: string })[] } {
+    const paired = Object.values(loadDevices()).filter((d) => !d.revoked);
+    const targets = paired.filter(
+      (d): d is DeviceRecord & { expoPushToken: string } =>
+        typeof d.expoPushToken === 'string' && d.expoPushToken.length > 0,
+    );
+    return { paired: paired.length, targets };
+  }
+
+  /**
+   * Question d'un agent sur la carte de Kova (`kova ask`).
+   *
+   * Aucune des trois regles anti-bruit ne s'applique : `onlyValidations` ne peut pas la
+   * supprimer (c'en est une), les heures calmes ne la passent pas en passif (comme un
+   * prompt de permission), et le plafond horaire est par pane alors qu'une question n'en
+   * a pas. Une question est rare et quelqu'un attend derriere.
+   */
+  async sendAsk(ask: AskItem, awaitingCount = 0): Promise<number> {
+    const { paired, targets } = this.recipients();
+    if (targets.length === 0) {
+      logger.info('push sans destinataire', {
+        askId: ask.id,
+        kind: 'ask',
+        categoryId: NOTIFICATION_CATEGORY.ASK,
+        reason: 'aucun_jeton_push',
+        pairedDevices: paired,
+      });
+      return 0;
+    }
+    const messages: ExpoPushMessage[] = [];
+    const routed = new Map<string, string>();
+    for (const device of targets) {
+      messages.push(buildAskPayload(ask, device.expoPushToken, awaitingCount));
+      routed.set(device.expoPushToken, device.deviceId);
+    }
+    let expo: ExpoLike;
+    try {
+      expo = await this.client();
+    } catch (e) {
+      logger.warn('envoi push en echec', { askId: ask.id, stage: 'sdk', err: (e as Error).message });
+      return 0;
+    }
+    return this.dispatch(expo, messages, routed, { askId: ask.id });
+  }
+
+  /**
+   * Transport : les lots vers Expo, une ligne de journal par emission, et les tickets
+   * relus 15 minutes plus tard. Commun aux prompts et aux questions d'agent, pour que
+   * les deux laissent exactement la meme trace.
+   */
+  private async dispatch(
+    expo: ExpoLike,
+    messages: ExpoPushMessage[],
+    routed: Map<string, string>,
+    about: { paneId: number } | { askId: string },
+  ): Promise<number> {
     let sent = 0;
     for (const chunk of expo.chunkPushNotifications(messages as never)) {
       try {
@@ -284,7 +392,7 @@ export class PushSender {
           const m = messagesSent[i];
           if (!m) return;
           const entry = {
-            paneId: pane.id,
+            ...about,
             deviceId: owners[i],
             kind: m.data.kind,
             categoryId: m.data.targetCategory,

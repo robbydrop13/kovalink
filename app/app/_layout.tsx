@@ -77,6 +77,8 @@ export default function RootLayout() {
           <Stack.Screen name="pair" options={{ animation: 'fade' }} />
           <Stack.Screen name="session/[paneId]" />
           <Stack.Screen name="prompt/[promptRef]" options={{ animation: 'fade' }} />
+          {/* La question d'un agent : une feuille, comme les autres gestes qui repondent. */}
+          <Stack.Screen name="ask/[askId]" options={{ presentation: 'modal' }} />
           <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
           {/* Les deux palettes de Kova : Cmd+O (projets récents, puis `new-tab` avec
               `claude`, PRD A9) et Cmd+P (tous les panes). Modales : balayage pour fermer. */}

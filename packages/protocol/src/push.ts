@@ -27,7 +27,20 @@ export function sessionDeepLinkPath(paneId: number): string {
  * `aggregate` : plafond horaire atteint, la banniere ne porte aucune reference de
  * prompt utile et ouvre la liste filtree sur EN ATTENTE (PRD 4.4).
  */
-export type PushKind = 'turn_end' | 'awaiting' | 'done' | 'closed' | 'reconnect' | 'aggregate';
+export type PushKind =
+  | 'turn_end'
+  | 'awaiting'
+  | 'done'
+  | 'closed'
+  | 'reconnect'
+  | 'aggregate'
+  /**
+   * Question d'un agent (`kova ask`). La SEULE charge utile sans `promptRef` : la NSE
+   * en exige un et rend la notification telle quelle sans lui, ce qui est exactement
+   * ce qu'il faut ici. Elle porte donc deja sa categorie et son texte definitifs, et
+   * rien de la question elle meme.
+   */
+  | 'ask';
 
 /**
  * Charge utile `data` d'une notification (le `userInfo` cote iOS).
@@ -42,8 +55,16 @@ export type PushKind = 'turn_end' | 'awaiting' | 'done' | 'closed' | 'reconnect'
  */
 export interface PushPayload {
   kind: PushKind;
-  /** Reference opaque, valable jusqu'a resolution du prompt ou 10 minutes (R3). */
-  promptRef: string;
+  /**
+   * Reference opaque, valable jusqu'a resolution du prompt ou 10 minutes (R3).
+   *
+   * ABSENTE pour `kind: 'ask'`, et c'est voulu des deux cotes : la NSE n'agit que sur
+   * une charge qui en porte une (sans elle, elle rend la notification telle quelle,
+   * deja ecrite), et l'action rapide de l'app ne repond qu'a un prompt. Une chaine
+   * vide ne ferait pas l'affaire : elle passerait les deux gardes et la NSE afficherait
+   * « la question n'a pas pu etre recuperee » sur une banniere parfaitement lisible.
+   */
+  promptRef?: string;
   /** Nom du projet, deja present dans le titre. Sert de sous-titre de repli a la NSE. */
   project?: string;
   /** Titre de l'onglet Kova. Jamais l'`ai-title`, qui est genere depuis le contenu. */

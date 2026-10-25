@@ -326,11 +326,14 @@ export class Hub {
         if (client.resumeEtag !== null && client.resumeEtag === panes.etag) {
           client.resumeEtag = null;
           this.send(client, { t: 'ack', reqId: msg.id });
-          // Les panes sont a jour, pas forcement les fins de tour survenues hors ligne.
+          // Les panes sont a jour ; les questions des agents et les fins de tour
+          // survenues hors ligne, non. L'etag ne couvre que la liste des panes.
+          this.send(client, this.asksSnapshot());
           return this.replayPrompts((m) => this.send(client, m));
         }
         client.resumeEtag = null;
         this.send(client, this.panesSnapshot());
+        this.send(client, this.asksSnapshot());
         return this.replayPrompts((m) => this.send(client, m));
       }
 
@@ -577,6 +580,16 @@ export class Hub {
   /** Pour les tests : les prompts qui seraient rejoues. */
   replayablePrompts(): Prompt[] {
     return [...this.lastPrompts.values()];
+  }
+
+  asksSnapshot(): S2C {
+    const { asks, snoozeChoices, supported } = this.services.asks.snapshot();
+    return { t: 'asks', asks, snoozeChoices, supported };
+  }
+
+  /** Les questions des agents ont change : tout le monde remplace sa liste. */
+  pushAsks(): void {
+    this.broadcast(this.asksSnapshot(), (c) => c.panesSubscribed);
   }
 
   pushPaneEvent(event: Extract<S2C, { t: 'pane.event' }>): void {

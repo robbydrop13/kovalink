@@ -11,6 +11,7 @@ import {
   KEY_NAMES,
   NOTIFICATION_ACTION,
   NOTIFICATION_CATEGORIES,
+  NOTIFICATION_CATEGORY,
   NOTIFICATION_CATEGORY_ACTIONS,
   parseAnswerActionId,
   type Prompt,
@@ -57,7 +58,15 @@ describe('catalogue des categories de notification (R1)', () => {
         'KL_CLOSED',
         'KL_RECONNECT',
         'KL_AGGREGATE',
+        'KL_ASK',
       ],
+    );
+  });
+
+  it('une question d agent n a que Ouvrir : ses boutons viennent de l agent', () => {
+    assert.deepEqual(
+      NOTIFICATION_CATEGORY_ACTIONS[NOTIFICATION_CATEGORY.ASK].map((a) => a.identifier),
+      [NOTIFICATION_ACTION.open],
     );
   });
 
@@ -65,7 +74,7 @@ describe('catalogue des categories de notification (R1)', () => {
     for (const file of sourceFiles(SRC_DIR)) {
       const src = readFileSync(file, 'utf8');
       assert.equal(
-        /['"]KL_(TURN_END|AWAITING_2|AWAITING_3|AWAITING_BLIND|DONE|CLOSED|RECONNECT)['"]/.test(src),
+        /['"]KL_(TURN_END|AWAITING_2|AWAITING_3|AWAITING_BLIND|DONE|CLOSED|RECONNECT|ASK)['"]/.test(src),
         false,
         `${file} redeclare un identifiant de categorie`,
       );

@@ -12,6 +12,10 @@ import {
   TURNS_QUERY,
   TURN_END_SUMMARY_MAX,
   WS_CLOSE_CODE,
+  type AskAnswerRequest,
+  type AskSnoozeRequest,
+  type AskSnoozeResponse,
+  type AsksResponse,
   type ErrorCode,
   type ErrorPayload,
   type KovaLaunchResponse,
@@ -39,6 +43,7 @@ import {
 } from '@kovalink/protocol';
 import { audit } from '../audit.js';
 import { consumePairing, readPairing } from '../pairing.js';
+import { AskError } from '../kova/asks.js';
 import { ForbiddenError } from '../kova/keygate.js';
 import { IpcError } from '../kova/ipc.js';
 import { logger } from '../logger.js';
@@ -848,6 +853,84 @@ export async function createHttpServer(
     if (!out.ok) return fail(reply, out.status, out.code, out.message);
     return out.response;
   });
+
+  // --- Questions des agents (`kova ask`) -------------------------------------
+  // Une question posee par un agent sur la carte de Kova. Lire la liste, repondre,
+  // remettre a plus tard. Ce n'est pas une ecriture dans un pane : c'est Kova qui porte
+  // la reponse a l'agent, par le chemin exact de sa carte, donc pas `KeyGate`.
+
+  /** La carte, telle qu'elle est en ce moment. Meme seau que les lectures de panes. */
+  app.get(ROUTE_PATTERNS.asks, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'panes')) return fail(reply, 429, 'RATE_LIMITED', 'too many ask reads');
+    const out: AsksResponse = services.asks.snapshot();
+    return out;
+  });
+
+  /**
+   * Repondre. `action` doit etre un des boutons de CETTE question : c'est ce mot que
+   * l'agent relit, et il finit retape dans un terminal, donc le client choisit, il
+   * n'ecrit pas. Idempotence par nonce, comme les autres ecritures : une file d'envoi
+   * rejouee ne doit pas repondre deux fois.
+   */
+  app.post<{ Params: { askId: string }; Body: Partial<AskAnswerRequest> }>(
+    ROUTE_PATTERNS.askAnswer,
+    async (req, reply) => {
+      const deviceId = req.deviceId ?? '';
+      if (!services.rate.allow(deviceId, 'text')) return fail(reply, 429, 'RATE_LIMITED', 'too many answers');
+      const nonce = req.body?.nonce;
+      if (typeof nonce === 'string' && nonce.length > 0 && !services.nonces.reserve(nonce)) {
+        audit({ deviceId, action: 'ask.answer', result: 'denied', detail: 'duplicate' });
+        return fail(reply, 409, 'BAD_REQUEST', 'duplicate nonce');
+      }
+      const askId = req.params.askId;
+      try {
+        await services.asks.answer(askId, req.body?.action, req.body?.text);
+        audit({
+          deviceId,
+          action: 'ask.answer',
+          result: 'ok',
+          // Le texte libre ne va PAS au journal, seulement sa longueur : c'est du
+          // contenu, comme celui d'un message (A14).
+          detail: `ask=${askId} action=${String(req.body?.action)} len=${(req.body?.text ?? '').length}`,
+        });
+        await services.refreshAsks?.('answer');
+        return { ok: true };
+      } catch (e) {
+        if (typeof nonce === 'string') services.nonces.release(nonce);
+        if (e instanceof AskError) {
+          const status = e.code === 'ASK_NOT_FOUND' ? 404 : e.code === 'KOVA_TOO_OLD' ? 501 : 400;
+          audit({ deviceId, action: 'ask.answer', result: 'denied', detail: `ask=${askId} ${e.code}` });
+          return fail(reply, status, e.code, e.message);
+        }
+        throw e;
+      }
+    },
+  );
+
+  /** Remettre a plus tard. Kova plafonne le delai a 24 h, il ne le refuse pas. */
+  app.post<{ Params: { askId: string }; Body: Partial<AskSnoozeRequest> }>(
+    ROUTE_PATTERNS.askSnooze,
+    async (req, reply) => {
+      const deviceId = req.deviceId ?? '';
+      if (!services.rate.allow(deviceId, 'text')) return fail(reply, 429, 'RATE_LIMITED', 'too many snoozes');
+      const askId = req.params.askId;
+      try {
+        const snoozedUntilMs = await services.asks.snooze(askId, req.body?.seconds);
+        audit({ deviceId, action: 'ask.snooze', result: 'ok', detail: `ask=${askId} seconds=${String(req.body?.seconds)}` });
+        await services.refreshAsks?.('snooze');
+        const out: AskSnoozeResponse = { snoozedUntilMs };
+        return out;
+      } catch (e) {
+        if (e instanceof AskError) {
+          const status = e.code === 'ASK_NOT_FOUND' ? 404 : e.code === 'KOVA_TOO_OLD' ? 501 : 400;
+          audit({ deviceId, action: 'ask.snooze', result: 'denied', detail: `ask=${askId} ${e.code}` });
+          return fail(reply, status, e.code, e.message);
+        }
+        throw e;
+      }
+    },
+  );
 
   // --- Mode vocal ------------------------------------------------------------
   // Corps audio brut, borne a 10 Mo AVANT lecture complete : un type non audio ou une

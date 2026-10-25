@@ -1,5 +1,6 @@
 import { NONCE_TTL_MS } from '@kovalink/protocol';
 import type { KovalinkConfig } from '../config.js';
+import type { AskBoard } from '../kova/asks.js';
 import type { KovaIpc } from '../kova/ipc.js';
 import type { KeyGate } from '../kova/keygate.js';
 import type { PaneStore } from '../kova/panes.js';
@@ -58,6 +59,8 @@ export interface Services {
   keygate: KeyGate;
   prompts: PromptState;
   refs: PromptRefs;
+  /** Les questions des agents (`kova ask`) lues sur la carte de Kova. */
+  asks: AskBoard;
   /** `answerPrompt()` lie a ses dependances : le SEUL chemin vers `KeyGate.emitAnswer`. */
   answer: (req: AnswerRequest, deviceId?: string) => Promise<AnswerResult>;
   tailer: TranscriptTailer;
@@ -73,4 +76,10 @@ export interface Services {
    * l'optionnel : les harnais de test n'en ont pas.
    */
   refreshLayout?: (reason: string) => Promise<void>;
+  /**
+   * Relecture immediate de la carte des questions puis diffusion, la meme que le
+   * sondage de 3 s. Une route qui vient de repondre l'appelle pour que les autres
+   * appareils voient la question disparaitre tout de suite. Pose par `main.ts`.
+   */
+  refreshAsks?: (reason: string) => Promise<void>;
 }

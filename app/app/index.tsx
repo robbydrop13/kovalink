@@ -46,6 +46,7 @@ import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { createScrollLock } from '@/features/sessions/scrollLock';
 import { isDegraded, useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
+import { dueAsks, nextAsk, useAsks } from '@/store/asks';
 import { isAging, usePrompts } from '@/store/prompts';
 import { forceReconnect } from '@/net/connection';
 import { fetchPanes, fetchSessions, postKovaLaunch, postSplit } from '@/net/http';
@@ -56,6 +57,9 @@ import { ErrorScreen } from '@/ui/ErrorScreen';
 import { t } from '@/i18n/en';
 
 export default function SessionsScreen() {
+  const asks = useAsks((s) => s.asks);
+  const pendingAsk = nextAsk(asks);
+  const waitingAsks = dueAsks(asks).length;
   const insets = useSafeAreaInsets();
   const boot = useBootState();
   const bootError = useBootError();
@@ -425,6 +429,18 @@ export default function SessionsScreen() {
 
       {/* Bandeau discret et non bloquant : tout le reste de l'app fonctionne normalement. */}
       {!pushAvailable ? <Banner text={PUSH_UNAVAILABLE_LABEL} /> : null}
+
+      {/* Les questions des agents (`kova ask`) : quelqu'un attend derriere, donc ce
+          bandeau passe avant la liste. Les questions remises a plus tard n'y comptent
+          pas, c'est tout l'interet du report. */}
+      {pendingAsk ? (
+        <Banner
+          tone="warn"
+          text={t.askBanner(waitingAsks)}
+          actionLabel={t.askBannerAction}
+          onAction={() => router.push(`/ask/${pendingAsk.id}`)}
+        />
+      ) : null}
 
       {!kovaDown && panes.length > 0 ? (
         <View style={styles.searchRow}>

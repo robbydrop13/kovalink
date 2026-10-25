@@ -24,6 +24,7 @@ const { SleepAssertion } = await import('../src/sleep.js');
 const { AuthFailures, RateLimiter } = await import('../src/server/rate.js');
 const { NonceStore } = await import('../src/server/services.js');
 const { PromptRefs } = await import('../src/prompt/refs.js');
+const { AskBoard } = await import('../src/kova/asks.js');
 const { DEFAULT_CONFIG, loadConfig, saveConfig } = await import('../src/config.js');
 const { loadDevices, saveDevices } = await import('../src/security/token.js');
 const { projectSlug } = await import('../src/paths.js');
@@ -170,6 +171,7 @@ function harness() {
     answer: async () => ({ applied: false, reason: 'not_awaiting' }) as never,
     prompts: {} as never,
     refs: new PromptRefs(),
+    asks: new AskBoard({ request: async () => ({ ok: false, error: 'unknown command: list-asks' }) } as never),
     tailer,
     sleep,
     rate: new RateLimiter(),

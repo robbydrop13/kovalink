@@ -95,6 +95,14 @@ export const ROUTES = {
    */
   kovaSessions: '/v1/kova/sessions',
   kovaResume: '/v1/kova/resume',
+  /**
+   * Les questions des agents (`kova ask`) et les deux gestes qui les reglent. Ce n'est
+   * pas une ecriture dans un pane : Kova repond a l'agent par le chemin exact de sa
+   * carte, donc pas `KeyGate`. Trois routes, auditees.
+   */
+  asks: '/v1/asks',
+  askAnswer: (askId: string): string => `/v1/asks/${encodeURIComponent(askId)}/answer`,
+  askSnooze: (askId: string): string => `/v1/asks/${encodeURIComponent(askId)}/snooze`,
   ws: '/ws',
 
   // --- Bloc C, les fichiers ---------------------------------------------
@@ -152,6 +160,9 @@ export const ROUTE_PATTERNS = {
   kovaSplit: '/v1/kova/split',
   kovaSessions: '/v1/kova/sessions',
   kovaResume: '/v1/kova/resume',
+  asks: '/v1/asks',
+  askAnswer: '/v1/asks/:askId/answer',
+  askSnooze: '/v1/asks/:askId/snooze',
   ws: '/ws',
   fsList: '/v1/fs/list',
   fsRead: '/v1/fs/read',

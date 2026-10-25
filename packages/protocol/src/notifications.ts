@@ -35,6 +35,13 @@ export const NOTIFICATION_CATEGORY = {
    * banniere vivante, `Ouvrir` pour seule action.
    */
   AGGREGATE: 'KL_AGGREGATE',
+  /**
+   * Un agent a pose une question sur la carte de Kova (`kova ask`). `Ouvrir` pour
+   * seule action : les boutons sont ceux que l'agent declare, ils changent d'une
+   * question a l'autre, et les libelles d'une categorie iOS sont figes a
+   * l'enregistrement. On ouvre donc l'ecran de la question, ou ils sont lus.
+   */
+  ASK: 'KL_ASK',
 } as const;
 
 export type NotificationCategory =
@@ -117,6 +124,7 @@ export const NOTIFICATION_CATEGORY_ACTIONS: Record<NotificationCategory, readonl
   [NOTIFICATION_CATEGORY.CLOSED]: [OPEN],
   [NOTIFICATION_CATEGORY.RECONNECT]: [OPEN],
   [NOTIFICATION_CATEGORY.AGGREGATE]: [OPEN],
+  [NOTIFICATION_CATEGORY.ASK]: [OPEN],
 };
 
 /**

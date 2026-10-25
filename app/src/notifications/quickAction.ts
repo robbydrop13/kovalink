@@ -53,7 +53,9 @@ function deepLinkFor(data: PushPayload): string {
     data.deepLinkPath ??
     (data.paneId !== undefined
       ? sessionDeepLinkPath(data.paneId)
-      : promptDeepLinkPath(data.promptRef));
+      : data.promptRef
+        ? promptDeepLinkPath(data.promptRef)
+        : '/');
   try {
     return Linking.createURL(path);
   } catch {
@@ -82,6 +84,7 @@ async function openDeepLink(data: PushPayload): Promise<void> {
  */
 async function resolvePaneId(data: PushPayload): Promise<number | null> {
   if (typeof data.paneId === 'number') return data.paneId;
+  if (!data.promptRef) return null;
   try {
     const prompt = await fetchPrompt(data.promptRef, 3000);
     return prompt.paneId;
@@ -105,13 +108,18 @@ export async function handleNotificationResponse(
   const data = response.notification.request.content.data as unknown as PushPayload;
   const actionId = response.actionIdentifier;
 
-  if (!data || typeof data.promptRef !== 'string') return;
+  if (!data) return;
 
-  // Tap sur le corps de la bannière : ouverture par défaut d'iOS.
+  // Tap sur le corps de la bannière : ouverture par défaut d'iOS. Testé AVANT la
+  // référence de prompt : une question d'agent (`kind: 'ask'`) n'en porte pas, et la
+  // garde d'origine la rendait muette au tap, son seul geste.
   if (actionId === Notifications.DEFAULT_ACTION_IDENTIFIER || actionId === NOTIFICATION_ACTION.open) {
     await openDeepLink(data);
     return;
   }
+
+  // Tout ce qui suit répond à un prompt : sans référence opaque, rien à faire.
+  if (typeof data.promptRef !== 'string' || data.promptRef.length === 0) return;
 
   if (actionId === NOTIFICATION_ACTION.interrupt) {
     const paneId = await resolvePaneId(data);
