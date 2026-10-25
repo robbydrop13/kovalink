@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
+// AVANT tout import du daemon : sans ce dossier, le journal du test s'ecrit dans le
+// vrai `~/.kovalink/logs/kovalinkd.log` de la machine.
+process.env['KOVALINK_HOME'] = mkdtempSync(join(tmpdir(), 'kovalink-asks-'));
 process.env['KOVALINK_QUIET'] = '1';
 
 const { AskBoard, AskError, asksSignature, mapAsk, newlyDue } = await import('../src/kova/asks.js');
@@ -132,6 +138,17 @@ describe('questions des agents : le tableau', () => {
     assert.equal(board.snapshot().supported, false);
     // Le sondage suivant ne rediffuse pas la meme mauvaise nouvelle.
     assert.equal((await board.refresh()).changed, false);
+  });
+
+  it('un unknown command RESOLU (et non rejete) vaut aussi supported:false', async () => {
+    // `KovaIpc.request` resout une reponse `ok:false` au lieu de la rejeter : c'est par
+    // la que passe un vrai Kova trop ancien, et le traiter comme une panne laissait
+    // `supported` a vrai pour toujours.
+    const board = new AskBoard({
+      request: async () => ({ ok: false, error: 'unknown command: list-asks' }),
+    } as never);
+    assert.equal((await board.refresh()).changed, true);
+    assert.equal(board.snapshot().supported, false);
   });
 
   it('une coupure de Kova ne change rien : la liste tient jusqu au retour', async () => {

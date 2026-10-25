@@ -14,7 +14,7 @@
 // c'est `supported: false`, jamais une liste vide, qui se lirait « aucune question ».
 import { ASK_TEXT_MAX, type AskItem, type AskSnoozeChoice, type AsksResponse } from '@kovalink/protocol';
 import { logger } from '../logger.js';
-import { IpcError, type KovaIpc } from './ipc.js';
+import { IpcError, mapIpcError, type KovaIpc, type KovaResponse } from './ipc.js';
 
 /**
  * Cadence de relecture de la carte. Kova n'emet aucun evenement quand une question
@@ -23,6 +23,19 @@ import { IpcError, type KovaIpc } from './ipc.js';
  * borne le retard d'une notification a ce que personne ne remarque.
  */
 export const ASK_POLL_MS = 3_000;
+
+/**
+ * Une reponse `ok:false` de Kova, traduite.
+ *
+ * `KovaIpc.request` RESOUT ces reponses, il ne les rejette pas : seul `expectOk` jette.
+ * Les traiter comme une panne quelconque (un `new Error` attrape et ignore) avait un
+ * effet mesure sur la machine : le Kova qui tournait ne connaissait pas `list-asks`, il
+ * repondait `unknown command`, et `supported` restait vrai pour toujours. Le telephone
+ * affichait donc « aucune question » au lieu de « ce Kova ne les connait pas encore ».
+ */
+function ipcErrorFrom(res: KovaResponse): IpcError {
+  return new IpcError(mapIpcError(res.error ?? ''), res.error ?? 'erreur IPC');
+}
 
 export class AskError extends Error {
   constructor(
@@ -92,6 +105,18 @@ export function newlyDue(before: AskItem[], after: AskItem[]): AskItem[] {
   return after.filter((a) => a.due && !wasDue.has(a.id));
 }
 
+/**
+ * Un refus de Kova sur un geste, avec sa cause reelle : une commande inconnue est un
+ * Kova trop ancien, tout le reste est une question qui n'est plus sur sa carte.
+ */
+function refusal(res: KovaResponse, fallback: string): AskError {
+  const code = mapIpcError(res.error ?? '');
+  return new AskError(
+    code === 'IPC_UNSUPPORTED' ? 'KOVA_TOO_OLD' : 'ASK_NOT_FOUND',
+    res.error ?? fallback,
+  );
+}
+
 /** Etat des questions cote daemon : une lecture, deux gestes, une porte de diffusion. */
 export class AskBoard {
   private asks: AskItem[] = [];
@@ -124,7 +149,7 @@ export class AskBoard {
     let raw: unknown;
     try {
       const res = await this.ipc.request({ cmd: 'list-asks' });
-      if (!res.ok) throw new Error(res.error ?? 'list-asks refused');
+      if (!res.ok) throw ipcErrorFrom(res);
       raw = res.data;
     } catch (e) {
       if (e instanceof IpcError && e.code === 'IPC_UNSUPPORTED') {
@@ -173,7 +198,7 @@ export class AskBoard {
       throw new AskError('BAD_REQUEST', `text is longer than ${ASK_TEXT_MAX} bytes`);
     }
     const res = await this.ipc.request({ cmd: 'answer-ask', id: askId, action, text: body });
-    if (!res.ok) throw new AskError('ASK_NOT_FOUND', res.error ?? 'Kova refused the answer');
+    if (!res.ok) throw refusal(res, 'Kova refused the answer');
     // La carte du Mac a change : on ne laisse pas le telephone attendre le sondage.
     await this.refresh();
   }
@@ -185,7 +210,7 @@ export class AskBoard {
       throw new AskError('BAD_REQUEST', 'seconds must be a positive number');
     }
     const res = await this.ipc.request({ cmd: 'snooze-ask', id: askId, seconds: Math.round(seconds) });
-    if (!res.ok) throw new AskError('ASK_NOT_FOUND', res.error ?? 'Kova refused the snooze');
+    if (!res.ok) throw refusal(res, 'Kova refused the snooze');
     const data = (typeof res.data === 'object' && res.data !== null ? res.data : {}) as Record<string, unknown>;
     const until = data['snoozed_until'];
     await this.refresh();

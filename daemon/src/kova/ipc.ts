@@ -19,8 +19,14 @@ export class IpcError extends Error {
   }
 }
 
-/** V3 : `error` est une chaine libre sans code machine. Table de correspondance. */
-function mapIpcError(raw: string): ErrorCode {
+/**
+ * V3 : `error` est une chaine libre sans code machine. Table de correspondance.
+ *
+ * Exportee parce que `request` RESOUT une reponse `ok:false` au lieu de la rejeter :
+ * tout appelant qui n'utilise pas `expectOk` doit traduire lui meme, et il n'existe
+ * qu'une seule table pour le faire.
+ */
+export function mapIpcError(raw: string): ErrorCode {
   if (/^not found/i.test(raw)) return 'PANE_NOT_FOUND';
   if (/^unknown command/i.test(raw)) return 'IPC_UNSUPPORTED';
   if (/^invalid JSON/i.test(raw)) return 'INTERNAL';
