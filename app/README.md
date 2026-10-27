@@ -178,9 +178,29 @@ Le script est à **sourcer**, pas à exécuter, sous zsh ou bash. Il échoue pro
 `asc-api.json` manque ; sans `expo-token`, il prévient et `eas login` reste possible.
 Vérification : `source app/scripts/eas-env.sh && npx eas-cli whoami`.
 
-`runtimeVersion.policy` vaut `fingerprint` : l'empreinte inclut la NSE, la Share Extension et
-les config plugins, donc une mise à jour OTA ne peut pas s'appliquer à un build natif
-incompatible. Une politique `appVersion` provoquerait des crashs au lancement.
+`runtimeVersion.policy` vaut **`appVersion`** (depuis le premier commit), pas `fingerprint` :
+la version d'exécution est la `version` d'`app.json`, donc toute mise à jour OTA est servie à
+tout build natif qui porte la même (1.1.0 aujourd'hui). Rien ne vérifie la compatibilité du
+natif : une OTA qui a besoin d'un natif plus récent (NSE, Share Extension, config plugin)
+part quand même vers l'ancien build et peut planter au lancement. D'où la règle : une OTA ne
+porte que du JS. Un changement natif demande un build, et un bump de `version` pour que
+l'ancien build cesse de recevoir les mises à jour du nouveau.
+
+Publier une OTA (le jeton est hors dépôt, voir le tableau plus haut) :
+
+```bash
+nvm use 22
+source app/scripts/eas-env.sh          # à sourcer sans pipe, sinon l'export est perdu
+cd app && npm run ota -- --message "..." --non-interactive --environment preview
+```
+
+Vérifier sans le téléphone que le serveur la servira bien, en se faisant passer pour lui :
+
+```bash
+curl -sI -H 'expo-platform: ios' -H 'expo-runtime-version: 1.1.0' \
+     -H 'expo-channel-name: preview' -H 'expo-protocol-version: 1' \
+     https://u.expo.dev/3e16872a-0904-422b-9459-fcb90ed2f95d
+```
 
 ## Mode vocal
 
