@@ -54,6 +54,12 @@ export const ROUTES = {
    * avec la cle lue sur le Mac. La cle ne quitte jamais le Mac, l'audio n'y reste pas.
    */
   transcribe: '/v1/transcribe',
+  /**
+   * Dictee en direct : le daemon lit la cle AssemblyAI dans le trousseau du Mac et rend un
+   * jeton temporaire, avec l'URL WebSocket complete (modele, langues, glossaire). L'iPhone
+   * envoie le PCM directement a AssemblyAI : la cle ne quitte jamais le Mac.
+   */
+  voiceStreamToken: '/v1/voice/stream-token',
   paneScreen: (paneId: number): string => `/v1/panes/${paneId}/screen`,
   /**
    * Les commandes `/` que Claude Code accepte dans ce pane : integrees, puis celles du
@@ -149,6 +155,7 @@ export const ROUTE_PATTERNS = {
    * avec la cle lue sur le Mac. La cle ne quitte jamais le Mac, l'audio n'y reste pas.
    */
   transcribe: '/v1/transcribe',
+  voiceStreamToken: '/v1/voice/stream-token',
   paneScreen: '/v1/panes/:paneId/screen',
   paneCommands: '/v1/panes/:paneId/commands',
   paneStartClaude: '/v1/panes/:paneId/start-claude',
@@ -442,4 +449,20 @@ export interface TranscribeResponse {
   text: string;
   language: string | null;
   durationMs: number | null;
+}
+
+/** Format audio attendu par la dictee en direct : PCM 16 bits little endian, mono. */
+export const VOICE_STREAM_SAMPLE_RATE = 16_000;
+
+/**
+ * Reponse de `POST /v1/voice/stream-token`. `wsUrl` est pret a ouvrir tel quel (jeton,
+ * modele, langues, glossaire et format audio deja dans la requete) ; le jeton doit ouvrir
+ * la WebSocket avant `expiresAt` (ms epoch), la session elle meme peut durer plus.
+ */
+export interface VoiceStreamTokenResponse {
+  wsUrl: string;
+  sampleRate: number;
+  expiresAt: number;
+  /** Nombre de termes du glossaire envoyes, pour le diagnostic. */
+  keyterms: number;
 }
