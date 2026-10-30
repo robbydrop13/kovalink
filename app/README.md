@@ -204,6 +204,15 @@ curl -sI -H 'expo-platform: ios' -H 'expo-runtime-version: 1.1.0' \
 
 ## Mode vocal
 
+**Dictée en direct (30/10/2026).** Un appui sur le micro ouvre d'abord une dictée en
+direct : le daemon rend un jeton AssemblyAI temporaire (`POST /v1/voice/stream-token`, la
+clé reste dans le trousseau du Mac), l'iPhone envoie le PCM 16 kHz du micro
+(`AudioStream` d'`expo-audio`, déjà dans le build 1.1.0) directement à AssemblyAI, et les
+mots s'écrivent dans le champ pendant que Robin parle : en gris tant qu'ils ne sont pas
+confirmés, en blanc ensuite, dévoilés un par un. Stop met le texte dans le champ, éditable
+avant Send. Sans la route (vieux daemon) ou sans clé, le chemin Whisper ci-dessous reprend
+sans rien dire. Modèle, langues et glossaire : `daemon/README.md`, section Dictée en direct.
+
 Le bouton micro de la barre de message enregistre tant qu'on le maintient (niveau et
 durée affichés, glisser vers la gauche annule), envoie l'audio au daemon à la relâche, et
 le texte transcrit remplace le contenu du champ : Robin relit et appuie sur Send. La

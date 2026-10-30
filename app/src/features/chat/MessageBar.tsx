@@ -10,6 +10,9 @@
 // rangée d'enregistrement de l'app Claude (14 septembre) : `x` annule, une forme d'onde
 // suit la voix, un petit chrono, `square` arrête et transcrit dans le champ, `arrow-up`
 // arrête, transcrit et envoie d'un coup. Le texte déjà tapé reste visible au-dessus.
+// En direct (30 octobre) les mots s'écrivent DANS le champ pendant que Robin parle, les mots
+// non encore confirmés en gris ; quand le direct manque, l'enregistrement m4a et Whisper
+// reprennent exactement l'ancien chemin.
 // Verrouillée par un prompt parsé, la carte reste la même, grisée, l'explication à la
 // place du placeholder.
 //
@@ -20,7 +23,7 @@
 // La barre mesure sa hauteur et la donne au parent (`onHeight`) : le fil garde un padding
 // bas égal, et rien ne la chevauche jamais.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, AppState, type LayoutChangeEvent, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Animated, AppState, type LayoutChangeEvent, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import type { Prompt } from '@/protocol';
 import { t } from '@/i18n/en';
 import { colors, layout, space } from '@/theme';
@@ -32,7 +35,18 @@ import { ImpactStyle, NotifyType, impact, notify } from '@/utils/haptics';
 import { AttachmentStrip, askAttachmentSource } from './AttachmentViews';
 import type { Attachment } from './attachments';
 import { barAction, canEdit, micState, type BarAction } from './barAction';
-import { MAX_RECORD_MS, discardRecording, startRecording, transcribeRecording, VoiceError, type RecorderHandle } from './voice';
+import {
+  MAX_RECORD_MS,
+  discardRecording,
+  LiveUnavailableError,
+  startLiveDictation,
+  startRecording,
+  transcribeRecording,
+  VoiceError,
+  type LiveDictationHandle,
+  type RecorderHandle,
+} from './voice';
+import { reveal, wordCount, type LiveRender } from './liveTranscript';
 import { WAVE_BARS, WAVE_LOUD, levelRatio, levelsToBars, pushLevel } from './waveform';
 import { SlashSuggestions, useSlashCommands } from './SlashSuggestions';
 import { applyCommand, slashQuery } from './slashCommands';
@@ -64,6 +78,13 @@ const LEVEL_POLL_MS = 100;
 const WAVE_HEIGHT = 24;
 
 type VoiceEnd = 'cancel' | 'stop' | 'send';
+const REVEAL_STEP_MS = 80;
+const REVEAL_MAX_LAG = 8;
+
+/** Dicter la suite d'un texte : une seule espace entre les deux, jamais de blanc en trop. */
+function mergedText(existing: string, dictated: string): string {
+  return existing.trim().length > 0 ? `${existing.trimEnd()} ${dictated}` : dictated;
+}
 
 /** La forme d'onde : des `View` fines, redessinées à la cadence du sondage du niveau. */
 function Waveform({ levels, seconds }: { levels: readonly number[]; seconds: number }) {
@@ -145,7 +166,15 @@ export function MessageBar({
   const [recording, setRecording] = useState(false);
   const [recordMs, setRecordMs] = useState(0);
   const [levels, setLevels] = useState<number[]>([]);
+  /** Texte du direct affiché pendant la dictée, `null` hors direct (ou en Whisper). */
+  const [live, setLive] = useState<LiveRender | null>(null);
   const recorder = useRef<RecorderHandle | null>(null);
+  const liveDictation = useRef<LiveDictationHandle | null>(null);
+  /** Vrai pendant l'ouverture du direct (jeton, socket) : un second appui ne lance rien. */
+  const starting = useRef(false);
+  const liveScroll = useRef<ScrollView | null>(null);
+  /** Mots du direct déjà dévoilés : ils apparaissent un par un, pas par paquets. */
+  const [shownWords, setShownWords] = useState(0);
 
   const locked = isComposerLocked(prompt);
   const faceId = requiresFaceIdForText(prompt);
@@ -210,11 +239,53 @@ export function MessageBar({
     }
   };
 
-  // --- Enregistrement vocal ------------------------------------------------------------
-  // Trois sorties : `cancel` jette l'audio, `stop` transcrit dans le champ, `send` transcrit
-  // puis envoie. `finish` est aussi appelé hors gestes (durée maximale, passage en arrière
-  // plan) : ces appels passent par la ref pour lire l'état du dernier rendu.
+  // --- Dictée vocale -------------------------------------------------------------------
+  // Trois sorties : `cancel` jette, `stop` met le texte dans le champ, `send` l'envoie.
+  // `finish` est aussi appelé hors gestes (durée maximale, passage en arrière plan) : ces
+  // appels passent par la ref pour lire l'état du dernier rendu. Le direct et Whisper
+  // sortent par le même chemin.
+  const finishLive = async (h: LiveDictationHandle, end: VoiceEnd): Promise<void> => {
+    liveDictation.current = null;
+    const ms = h.durationMs();
+    setRecording(false);
+    if (end === 'cancel') {
+      h.cancel();
+      setLive(null);
+      notify(NotifyType.Error);
+      onNotice(t.voiceCancelled);
+      return;
+    }
+    // L'affichage du direct reste en place pendant l'attente des derniers mots : rien ne saute.
+    setTranscribing(true);
+    try {
+      const text = (await h.stop()).trim();
+      if (ms < MIN_RECORD_MS) {
+        onNotice(t.voiceTooShort);
+        return;
+      }
+      if (text.length === 0) {
+        onNotice(t.voiceEmpty);
+        return;
+      }
+      notify(NotifyType.Success);
+      const merged = mergedText(value, text);
+      setValue(merged);
+      if (end === 'send') void send(merged);
+    } catch (e) {
+      notify(NotifyType.Error);
+      onNotice(e instanceof VoiceError ? e.message : t.voiceFailed(e instanceof Error ? e.message : String(e)));
+    } finally {
+      setTranscribing(false);
+      setLive(null);
+    }
+  };
+
   const finish = async (end: VoiceEnd): Promise<void> => {
+    const liveHandle = liveDictation.current;
+    if (liveHandle) {
+      await finishLive(liveHandle, end);
+      return;
+    }
     const h = recorder.current;
     if (!h) return;
     recorder.current = null;
@@ -240,8 +311,7 @@ export function MessageBar({
         return;
       }
       notify(NotifyType.Success);
-      // Dicter la suite d'un texte : le transcrit s'ajoute à ce qui est déjà là.
-      const merged = value.trim().length > 0 ? `${value.trimEnd()} ${res.text}` : res.text;
+      const merged = mergedText(value, res.text);
       setValue(merged);
       if (end === 'send') void send(merged);
     } catch (e) {
@@ -257,24 +327,56 @@ export function MessageBar({
   });
 
   const micStart = async (): Promise<void> => {
-    if (recording || transcribing) return;
+    if (recording || transcribing || starting.current) return;
+    starting.current = true;
     try {
-      recorder.current = await startRecording();
-      impact(ImpactStyle.Light);
-      setRecordMs(0);
-      setLevels([]);
-      setRecording(true);
-    } catch (e) {
-      recorder.current = null;
-      onNotice(e instanceof VoiceError ? e.message : t.voiceFailed(e instanceof Error ? e.message : String(e)));
+      await startVoice();
+    } finally {
+      starting.current = false;
     }
+  };
+
+  const startVoice = async (): Promise<void> => {
+    // Le direct d'abord ; en repli silencieux, l'enregistrement m4a d'avant.
+    let liveMode = true;
+    try {
+      liveDictation.current = await startLiveDictation(
+        (text) => setLive(text),
+        (cause) => {
+          // Panne du direct : ce qui est acquis rentre dans le champ comme sur Stop, et la
+          // cause s'affiche après les notices de `finish` pour ne pas être écrasée.
+          void finishRef.current('stop').then(() => onNotice(t.voiceStreamLost(cause)));
+        },
+      );
+    } catch (e) {
+      liveDictation.current = null;
+      if (!(e instanceof LiveUnavailableError)) {
+        onNotice(e instanceof VoiceError ? e.message : t.voiceFailed(e instanceof Error ? e.message : String(e)));
+        return;
+      }
+      liveMode = false;
+      try {
+        recorder.current = await startRecording();
+      } catch (fallback) {
+        recorder.current = null;
+        const cause = fallback instanceof Error ? fallback.message : String(fallback);
+        onNotice(fallback instanceof VoiceError ? fallback.message : t.voiceFailed(cause));
+        return;
+      }
+    }
+    impact(ImpactStyle.Light);
+    setRecordMs(0);
+    setLevels([]);
+    setShownWords(0);
+    setLive(liveMode ? { settled: '', pending: '' } : null);
+    setRecording(true);
   };
 
   // Chrono et forme d'onde à 10 Hz ; la durée maximale arrête comme un appui sur Stop.
   useEffect(() => {
     if (!recording) return;
     const timer = setInterval(() => {
-      const h = recorder.current;
+      const h = liveDictation.current ?? recorder.current;
       if (!h) return;
       const ms = h.durationMs();
       setRecordMs(ms);
@@ -296,6 +398,25 @@ export function MessageBar({
   const seconds = Math.floor(recordMs / 1000);
   const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   const canAttach = editable;
+
+  // Dévoilement mot à mot : un mot de plus toutes les 80 ms tant que le texte reçu est en
+  // avance, avec un rattrapage si le retard dépasse huit mots. Une révision qui raccourcit
+  // le texte ramène le compteur à la nouvelle longueur.
+  const liveTotal = live ? wordCount(live) : 0;
+  const shown = Math.min(shownWords, liveTotal);
+  useEffect(() => {
+    if (live === null || shown >= liveTotal) return;
+    const timer = setTimeout(() => setShownWords(Math.max(shown + 1, liveTotal - REVEAL_MAX_LAG)), REVEAL_STEP_MS);
+    return () => clearTimeout(timer);
+  }, [live, liveTotal, shown]);
+  // À l'arrêt, plus rien n'est retenu : tout le texte reçu s'affiche pendant l'attente.
+  const liveShownRender = live ? (recording ? reveal(live, shown) : live) : null;
+
+  // Le direct s'affiche comme une transcription live : la valeur tapée puis le texte acquis
+  // en couleur normale, les mots en cours en gris.
+  const liveHead = liveShownRender ? [value.trimEnd(), liveShownRender.settled].filter((s) => s.length > 0).join(' ') : '';
+  const livePending = liveShownRender?.pending ?? '';
+  const liveShown = live !== null && (liveHead.length > 0 || livePending.length > 0);
 
   return (
     <View style={styles.wrap} onLayout={(e: LayoutChangeEvent) => onHeight?.(e.nativeEvent.layout.height)}>
@@ -329,20 +450,49 @@ export function MessageBar({
               </View>
             ) : null}
 
-        {/* Étage 1 : le texte, toute la largeur. Reste visible, figé, pendant l'enregistrement. */}
-        <TextInput
-          style={[styles.field, locked && styles.fieldLocked]}
-          value={value}
-          onChangeText={setValue}
-          editable={editable}
-          placeholder={placeholder}
-          placeholderTextColor={colors.text.tertiary}
-          multiline
-          scrollEnabled
-          keyboardType="default"
-          keyboardAppearance="dark"
-          accessibilityLabel={t.composerFieldA11y}
-        />
+        {/* Étage 1 : le texte, toute la largeur. Pendant un direct la dictée s'écrit ici au fil
+            des mots, sinon le champ reste figé pendant l'enregistrement. */}
+        {live !== null ? (
+          <ScrollView
+            ref={liveScroll}
+            style={[styles.field, styles.fieldLive]}
+            onContentSizeChange={() => liveScroll.current?.scrollToEnd({ animated: false })}
+            accessible
+            accessibilityLabel={t.composerFieldA11y}
+          >
+            <Txt variant="body" color={colors.text.primary} style={styles.liveText}>
+              {!liveShown ? (
+                <Txt variant="body" color={colors.text.tertiary} style={styles.liveText}>
+                  {placeholder}
+                </Txt>
+              ) : (
+                <>
+                  {liveHead}
+                  {liveHead.length > 0 && livePending.length > 0 ? ' ' : ''}
+                  {livePending.length > 0 ? (
+                    <Txt variant="body" color={colors.text.tertiary} style={styles.liveText}>
+                      {livePending}
+                    </Txt>
+                  ) : null}
+                </>
+              )}
+            </Txt>
+          </ScrollView>
+        ) : (
+          <TextInput
+            style={[styles.field, locked && styles.fieldLocked]}
+            value={value}
+            onChangeText={setValue}
+            editable={editable}
+            placeholder={placeholder}
+            placeholderTextColor={colors.text.tertiary}
+            multiline
+            scrollEnabled
+            keyboardType="default"
+            keyboardAppearance="dark"
+            accessibilityLabel={t.composerFieldA11y}
+          />
+        )}
 
         {recording ? (
           /* Étage 2, en enregistrement : annuler, forme d'onde, chrono, arrêter, envoyer. */
@@ -441,6 +591,9 @@ const styles = StyleSheet.create({
     paddingBottom: space[3],
   },
   fieldLocked: { color: colors.text.disabled },
+  /** Le direct reprend la boîte du champ ; seule la couleur des mots encore ouverts change. */
+  fieldLive: { flexGrow: 0 },
+  liveText: { fontSize: 17, lineHeight: LINE_HEIGHT },
   tools: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingTop: space[1] },
   tool: {
     width: ACTION_SIZE,

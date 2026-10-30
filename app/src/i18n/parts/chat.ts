@@ -15,6 +15,10 @@ export const chat = {
   voiceTooShort: 'Too short, talk a little longer before stopping',
   voiceEmpty: 'Nothing was recognized',
   voiceFailed: (cause: string) => `Transcription failed. ${cause}`,
+  /** Le direct a lâché en cours de route : les mots déjà acquis restent dans le champ. */
+  voiceStreamLost: (cause: string) => `Live dictation stopped. ${cause}`,
+  voiceStreamClosed: 'the connection closed',
+  voiceStreamNoAnswer: 'the live service did not answer',
   chatThinking: 'Thinking…',
   chatRunningTool: (tool: string) => `Running ${tool}…`,
   systemLabel: 'System',
