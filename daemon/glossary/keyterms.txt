@@ -2,9 +2,24 @@
 # important au moins important : seuls les 100 premiers partent, 50 caracteres max par terme.
 # Lu a chaque dictee, sans redemarrer le daemon. Mise a jour et sources : daemon/README.md.
 
-# Produits et outils de Robin (les plus deformes sans glossaire)
+# Produits Claap et leur vocabulaire. L'ordre compte : mesure du 30/10, "AI fields" n'est
+# reconnu qu'en tete de liste, pas en 39e position.
 Claap
 ClaapAgent
+AI fields
+views
+magic clips
+bot recorder
+desktop app
+webapp
+transcript
+dashboards
+deal
+CRM
+MCP
+Claapers
+
+# Outils de Robin (les plus deformes sans glossaire)
 lemlist
 lempire
 Kova
@@ -38,20 +53,6 @@ WhatsApp
 Google Meet
 Expo
 TestFlight
-
-# Vocabulaire produit Claap
-AI fields
-views
-magic clips
-bot recorder
-desktop app
-webapp
-transcript
-dashboards
-deal
-CRM
-MCP
-Claapers
 
 # Personnes (orthographes que le modele ne devine pas)
 Adonai
