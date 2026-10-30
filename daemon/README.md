@@ -253,6 +253,42 @@ bouton micro de l'app l'affiche tel quel. Une cle refusee par OpenAI (401) rend 
 `503 TRANSCRIPTION_UNAVAILABLE` ; tout autre echec (audio invalide, 5xx, reseau, delai)
 est relaye mot pour mot en `502 TRANSCRIPTION_FAILED`.
 
+## Dictee en direct (AssemblyAI)
+
+L'app enregistre en continu et envoie le PCM 16 kHz mono directement a AssemblyAI. Le
+daemon ne transporte pas l'audio : sur `POST /v1/voice/stream-token`, il echange la cle du
+trousseau contre un jeton de streaming de 60 s et rend l'URL WebSocket complete (jeton,
+modele `universal-3-6-pro`, langues `fr` et `en`, glossaire, `pcm_s16le`). Une session
+peut durer jusqu'a 15 minutes, l'app doit donc ouvrir l'URL avant expiration du jeton. Le
+jeton et l'URL ne sont jamais journalises ; l'audit ne garde que le nombre de termes.
+
+**La cle ne quitte jamais le Mac.** Elle vit dans le trousseau macOS, service
+`assemblyai-api-key`. Pour l'ajouter (`-w` sans valeur demande la cle, elle ne passe pas
+par l'historique du shell) :
+
+```bash
+security add-generic-password -s assemblyai-api-key -a kovalink -w
+```
+
+Le daemon la lit au premier jeton, puis la garde en memoire. Sans cle, la route rend
+`503 TRANSCRIPTION_UNAVAILABLE` ; une cle refusee (401 ou 403) aussi. Tout autre echec
+(5xx, reseau, delai de 10 s) rend `502 TRANSCRIPTION_FAILED`.
+
+Le glossaire est `daemon/glossary/keyterms.txt` (surchargeable par
+`KOVALINK_KEYTERMS_FILE`), relu a chaque demande : aucun redemarrage n'est necessaire.
+Un terme par ligne, les plus importants d'abord, les lignes vides et celles qui commencent
+par `#` ignorees, 100 termes au plus et 50 caracteres par terme. Il part dans le champ
+`keyterms_prompt` de l'URL, jamais dans le journal.
+
+Mettre le glossaire a jour : ajouter le terme a sa place dans le classement (un nom que la
+dictee ecorche passe devant un mot qu'elle reconnait deja), retirer d'abord les termes du
+bas si la liste depasse 100, puis dicter une phrase qui le contient pour verifier. La
+version du 30/10/2026 vient des messages de Robin dans `~/.claude/projects/*/*.jsonl`
+(termes en majuscule, en anglais ou en camelCase les plus frequents), des fiches
+`Claap/context/people/` et du vocabulaire produit de la prod. Les termes courants que le
+modele reconnait seul (session, ticket, message) n'y sont pas : ils pousseraient le
+francais vers l'anglais sans rien corriger.
+
 ## Tests
 
 ```bash

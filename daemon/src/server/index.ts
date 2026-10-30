@@ -37,6 +37,7 @@ import {
   TRANSCRIBE_MAX_BYTES,
   TRANSCRIBE_MIME_TYPES,
   type TranscribeResponse,
+  type VoiceStreamTokenResponse,
   type KovaSessionsResponse,
   type Prompt,
   type Turn,
@@ -68,6 +69,7 @@ import { ManageError, closePane, renameCommand, renameTab, sanitizeSessionName, 
 import { reorderPane, reorderTab } from '../kova/reorder.js';
 import { markPaneRead } from '../kova/read.js';
 import { TranscriptionError, transcribe } from '../voice/whisper.js';
+import { mintStreamToken } from '../voice/assemblyai.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { registerMiraRoutes } from './miraRoutes.js';
 import { Hub, type Socket } from './hub.js';
@@ -967,6 +969,34 @@ export async function createHttpServer(
       }
       audit({ deviceId, action: 'voice.transcribe', bytes: audio.length, result: 'error', detail: (e as Error).message });
       return fail(reply, 502, 'TRANSCRIPTION_FAILED', (e as Error).message);
+    }
+  });
+
+  // Dictee en direct : le daemon echange la cle du trousseau contre un jeton AssemblyAI
+  // de 60 s, puis rend l'URL WebSocket complete. L'iPhone streame le PCM directement a
+  // AssemblyAI : la cle ne quitte jamais le Mac. Le journal ne garde ni le jeton ni l'URL.
+  app.post(ROUTE_PATTERNS.voiceStreamToken, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'text')) return fail(reply, 429, 'RATE_LIMITED', 'too many stream tokens');
+    try {
+      const res: VoiceStreamTokenResponse = await mintStreamToken();
+      audit({ deviceId, action: 'voice.stream-token', result: 'ok', detail: `keyterms=${res.keyterms}` });
+      return res;
+    } catch (err) {
+      if (err instanceof TranscriptionError) {
+        const denied = err.code === 'TRANSCRIPTION_UNAVAILABLE';
+        audit({
+          deviceId,
+          action: 'voice.stream-token',
+          result: denied ? 'denied' : 'error',
+          detail: err.code,
+        });
+        return fail(reply, denied ? 503 : 502, err.code, err.message);
+      }
+      // Message inconnu : jamais rejoue dans le journal ni dans la reponse, il pourrait
+      // porter l'URL ou le jeton.
+      audit({ deviceId, action: 'voice.stream-token', result: 'error', detail: 'unexpected' });
+      return fail(reply, 502, 'TRANSCRIPTION_FAILED', 'live dictation failed');
     }
   });
 

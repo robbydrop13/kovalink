@@ -1,0 +1,113 @@
+# Glossaire de la dictee en direct (AssemblyAI keyterms_prompt). Un terme par ligne, du plus
+# important au moins important : seuls les 100 premiers partent, 50 caracteres max par terme.
+# Lu a chaque dictee, sans redemarrer le daemon. Mise a jour et sources : daemon/README.md.
+
+# Produits et outils de Robin (les plus deformes sans glossaire)
+Claap
+ClaapAgent
+lemlist
+lempire
+Kova
+KovaLink
+Mira
+omp
+DeepSeek
+OpenRouter
+Claude Code
+Fable
+Linear
+Notion
+Slack
+HubSpot
+Intercom
+Metabase
+Amplitude
+Figma
+GitHub
+Vercel
+Supabase
+Gladia
+AssemblyAI
+Granola
+Gong
+Attio
+Recall
+MeetingBaaS
+Qonto
+WhatsApp
+Google Meet
+Expo
+TestFlight
+
+# Vocabulaire produit Claap
+AI fields
+views
+magic clips
+bot recorder
+desktop app
+webapp
+transcript
+dashboards
+deal
+CRM
+MCP
+Claapers
+
+# Personnes (orthographes que le modele ne devine pas)
+Adonai
+Francisco
+Antonio
+Mariano
+Peter
+Anthony
+Mickael
+Maël
+Oriane
+Kévin
+Domitille
+Thibaut
+Adriano
+Ilias
+Gwenn
+Daniele
+Doni
+Laurent
+Patrick
+Juliette
+Enzo
+Cindy
+Yann
+
+# Clients et partenaires
+Dust
+Skello
+AB Tasty
+DataCamp
+Primelis
+Infopro
+Ignify
+Salesforce
+Pipedrive
+Aircall
+Ringover
+
+# Jargon de travail
+steerco
+Retreat
+earn-out
+ARR
+NRR
+OKR
+PR
+QA
+OTA
+worktree
+merge
+rebase
+push
+build
+preview
+rollout
+feature flag
+Open loops
+warroom
