@@ -35,16 +35,21 @@ final class WatchRelay: NSObject, WCSessionDelegate {
 
     func configure(baseUrl: String, token: String) {
         guard let data = try? JSONEncoder().encode(Config(baseUrl: baseUrl, token: token)) else { return }
-        clear()
-        let item: [String: Any] = [
+        let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Self.keychainService,
             kSecAttrAccount as String: Self.keychainAccount,
-            // Lisible iPhone verrouillé (après le premier déverrouillage), jamais sauvegardé ailleurs.
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecValueData as String: data,
         ]
-        SecItemAdd(item as CFDictionary, nil)
+        // Mise à jour en place : jamais d'instant sans jeton entre un effacement et un ajout.
+        var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query
+            // Lisible iPhone verrouillé (après le premier déverrouillage), jamais sauvegardé ailleurs.
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            item[kSecValueData as String] = data
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        if status != errSecSuccess { log.error("keychain write failed \(status)") }
     }
 
     func clear() {
@@ -92,12 +97,25 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         // le processus en vie jusqu'à la réponse. `performExpiringActivity` est sûr depuis la
         // file de WatchConnectivity, contrairement à `UIApplication.shared`.
         log.notice("message for \(target, privacy: .public)")
-        ProcessInfo.processInfo.performExpiringActivity(withReason: "watch-relay") { [log] expired in
-            guard !expired else { return }
+        // Une seule réponse à la montre, quel que soit le chemin (réponse du Mac ou temps
+        // d'arrière-plan retiré par iOS).
+        let lock = NSLock()
+        var answered = false
+        let answer: ([String: Any]) -> Void = { [log] reply in
+            lock.lock()
+            defer { lock.unlock() }
+            guard !answered else { return }
+            answered = true
+            log.notice("reply ok=\(reply["ok"] as? Bool ?? false)")
+            replyHandler(reply)
+        }
+        ProcessInfo.processInfo.performExpiringActivity(withReason: "watch-relay") { expired in
+            guard !expired else {
+                return answer(["ok": false, "error": "iPhone ran out of background time, retry"])
+            }
             let done = DispatchSemaphore(value: 0)
             self.post(session: target, text: text, nonce: nonce) { reply in
-                log.notice("reply ok=\(reply["ok"] as? Bool ?? false)")
-                replyHandler(reply)
+                answer(reply)
                 done.signal()
             }
             done.wait()

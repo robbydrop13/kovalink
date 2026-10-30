@@ -28,6 +28,8 @@ struct ContentView: View {
                     ForEach(targets, id: \.self) { Text($0).tag($0) }
                 }
                 .pickerStyle(.navigationLink)
+                // Autre destinataire, autre message : un doublon ne doit pas passer pour livré.
+                .onChange(of: target) { _, _ in nonce = UUID().uuidString }
 
                 TextField("Dictate", text: $text, axis: .vertical)
                     .lineLimit(1...8)
@@ -91,6 +93,8 @@ struct ContentView: View {
             switch outcome {
             case .delivered(let session):
                 WKInterfaceDevice.current().play(.success)
+                // Robin a pu redicter pendant l'attente : on n'efface que ce qui est parti.
+                guard text.trimmingCharacters(in: .whitespacesAndNewlines) == message else { return }
                 text = ""
                 state = .sent(session)
             case .failed(let reason):
