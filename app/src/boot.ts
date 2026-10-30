@@ -13,7 +13,7 @@ import { create } from 'zustand';
 
 import { bootLog, bootWarn, pushAvailable } from '@/env';
 import { t } from '@/i18n/en';
-import { loadCredentials } from '@/store/credentials';
+import { loadCredentials, syncWatchRelay } from '@/store/credentials';
 import { usePanes } from '@/store/panes';
 import { useDrafts } from '@/store/drafts';
 import { useReads } from '@/store/reads';
@@ -98,6 +98,10 @@ export async function runBoot(): Promise<void> {
       finish('unpaired');
       return;
     }
+
+    // La montre relaie par le natif : il doit connaître le jeton en cours même si
+    // l'appairage date d'avant le build qui l'embarque.
+    syncWatchRelay(creds);
 
     // 3. Cache local des panes. La liste doit être visible avant le réseau.
     await attempt('panes cache', () => usePanes.getState().hydrate());

@@ -6,6 +6,7 @@
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { DEFAULT_PORT } from '@/protocol';
+import { clearWatchRelay, configureWatchRelay } from '../../modules/watch-relay';
 
 const SERVICE = 'io.claap.kovalink';
 
@@ -98,15 +99,36 @@ export async function saveCredentials(c: Credentials): Promise<void> {
       'keychain did not keep the credentials (expo-secure-store wrote without error but the read-back is empty)',
     );
   }
+  syncWatchRelay(readBack);
+}
+
+/**
+ * Copie l'adresse du Mac et le jeton au relais natif de la montre (`modules/watch-relay`).
+ * Appelé au démarrage, à l'appairage et à chaque rotation : le relais garde toujours le
+ * jeton en cours. Jamais bloquant, un échec natif ne doit pas casser l'app.
+ */
+export function syncWatchRelay(c: Credentials): void {
+  try {
+    configureWatchRelay(`https://${c.tsDns}:${c.port}`, c.token);
+  } catch {
+    /* build sans montre, ou trousseau natif indisponible : la montre dira d'ouvrir l'app */
+  }
 }
 
 /** Renouvellement silencieux du jeton, envoyé par le daemon dans `hello.ok` à J-15. */
 export async function rotateToken(token: string): Promise<void> {
   await SecureStore.setItemAsync(KEYS.token, token, opts());
+  const c = await loadCredentials();
+  if (c) syncWatchRelay(c);
 }
 
 export async function clearCredentials(): Promise<void> {
   await Promise.all(
     Object.values(KEYS).map((k) => SecureStore.deleteItemAsync(k, opts()).catch(() => undefined)),
   );
+  try {
+    clearWatchRelay();
+  } catch {
+    /* idem syncWatchRelay */
+  }
 }
