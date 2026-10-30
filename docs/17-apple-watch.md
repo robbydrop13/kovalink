@@ -18,6 +18,8 @@ Kova, `claap-agent` ou `perso-agent`. Rien de plus en v1.
   ```
   EAS crée alors le bundle `io.claap.kovalink.watch` et son profil avec la clé App Store
   Connect.
+- Après l'installation du 1.2.0, une OTA doit viser le canal `production` et la version
+  d'exécution 1.2.0. `npm run ota` publie sur `preview`, que le build de Robin n'écoute pas.
 - Limite connue : si l'écriture dans Kova dépasse 12 s, un nouvel essai depuis la montre
   peut répondre « Delivered » (nonce déjà réservé) alors que le premier envoi échoue ensuite.
 
