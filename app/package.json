@@ -9,7 +9,7 @@
     "check": "npm run typecheck && npm run lint && npm test",
     "eas-build-post-install": "npx tsc -b --force ../packages/protocol && test -f ../packages/protocol/dist/index.js",
     "lint": "eslint .",
-    "ota": "eas update --channel preview",
+    "ota": "eas update --channel production",
     "protocol:sync": "npm --prefix .. run build",
     "start": "npm run protocol:sync && expo start --go --clear",
     "test": "node --import ./test/register.mjs --test test/*.test.ts && bash scripts/check-i18n.sh && bash scripts/check-icons.sh",

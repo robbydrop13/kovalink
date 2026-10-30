@@ -159,7 +159,7 @@ eas build -p ios --profile development     # client de développement, installé
 eas build -p ios --profile preview         # TestFlight interne, canal rapide
 eas build -p ios --profile production      # TestFlight interne
 eas submit -p ios --latest
-eas update --channel preview               # OTA
+eas update --channel production            # OTA, le canal des builds installés
 ```
 
 ### Secrets EAS : hors du dépôt, dans `~/.kovalink`
@@ -186,19 +186,22 @@ part quand même vers l'ancien build et peut planter au lancement. D'où la règ
 porte que du JS. Un changement natif demande un build, et un bump de `version` pour que
 l'ancien build cesse de recevoir les mises à jour du nouveau.
 
-Publier une OTA (le jeton est hors dépôt, voir le tableau plus haut) :
+Publier une OTA (le jeton est hors dépôt, voir le tableau plus haut). Les builds installés
+sur l'iPhone de Robin viennent du profil `production` et écoutent le canal `production` :
+une OTA publiée sur `preview` ne lui arrive jamais (incident du 30/10/2026). Publier depuis
+un code dont la `version` d'`app.json` est celle du build installé.
 
 ```bash
 nvm use 22
 source app/scripts/eas-env.sh          # à sourcer sans pipe, sinon l'export est perdu
-cd app && npm run ota -- --message "..." --non-interactive --environment preview
+cd app && npm run ota -- --message "..." --non-interactive --environment production
 ```
 
 Vérifier sans le téléphone que le serveur la servira bien, en se faisant passer pour lui :
 
 ```bash
 curl -sI -H 'expo-platform: ios' -H 'expo-runtime-version: 1.1.0' \
-     -H 'expo-channel-name: preview' -H 'expo-protocol-version: 1' \
+     -H 'expo-channel-name: production' -H 'expo-protocol-version: 1' \
      https://u.expo.dev/3e16872a-0904-422b-9459-fcb90ed2f95d
 ```
 
