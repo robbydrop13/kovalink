@@ -3,6 +3,24 @@
 Demande de Robin (30/10/2026) : sur la montre, dicter un message qui arrive dans une session
 Kova, `claap-agent` ou `perso-agent`. Rien de plus en v1.
 
+## État (30/10/2026)
+
+- Code sur `main` (local, non poussé), daemon redéployé avec `POST /v1/sessions/text`.
+- Vérifié : tests daemon (`sessiontext.test.ts`), typecheck de l'app, build Xcode iPhone +
+  montre, aller-retour montre, iPhone (app fermée, réveillée en arrière-plan), réponse du
+  relais, en simulateur. Pas vérifié : l'envoi jusqu'au Mac depuis un vrai iPhone.
+- Build EAS 1.2.0 bloqué par Apple : le compte Claap doit accepter le nouveau Program
+  License Agreement (seul l'Account Holder, Thomas Hernandez, peut le faire sur
+  developer.apple.com). Ensuite :
+  ```bash
+  nvm use 22 && source app/scripts/eas-env.sh
+  cd app && npx eas-cli build -p ios --profile production --non-interactive --auto-submit
+  ```
+  EAS crée alors le bundle `io.claap.kovalink.watch` et son profil avec la clé App Store
+  Connect.
+- Limite connue : si l'écriture dans Kova dépasse 12 s, un nouvel essai depuis la montre
+  peut répondre « Delivered » (nonce déjà réservé) alors que le premier envoi échoue ensuite.
+
 ## Parcours
 
 1. Ouvrir KovaLink sur la montre. La cible affichée est la dernière choisie (`claap-agent`
