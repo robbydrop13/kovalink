@@ -9,15 +9,10 @@ Kova, `claap-agent` ou `perso-agent`. Rien de plus en v1.
 - Vérifié : tests daemon (`sessiontext.test.ts`), typecheck de l'app, build Xcode iPhone +
   montre, aller-retour montre, iPhone (app fermée, réveillée en arrière-plan), réponse du
   relais, en simulateur. Pas vérifié : l'envoi jusqu'au Mac depuis un vrai iPhone.
-- Build EAS 1.2.0 bloqué par Apple : le compte Claap doit accepter le nouveau Program
-  License Agreement (seul l'Account Holder, Thomas Hernandez, peut le faire sur
-  developer.apple.com). Ensuite :
-  ```bash
-  nvm use 22 && source app/scripts/eas-env.sh
-  cd app && npx eas-cli build -p ios --profile production --non-interactive --auto-submit
-  ```
-  EAS crée alors le bundle `io.claap.kovalink.watch` et son profil avec la clé App Store
-  Connect.
+- Build 1.2.0 (18) sur TestFlight depuis le 30/10 à 23:18, en test interne. Le contrat Apple a
+  été accepté par Thomas le 30/10. Le premier build avec une nouvelle cible demande un passage
+  interactif d'`eas build` (création du profil de provisionnement), les suivants passent en
+  `--non-interactive`.
 - Après l'installation du 1.2.0, une OTA doit viser la version d'exécution 1.2.0 (canal
   `production`, celui de `npm run ota` depuis 4413568).
 - Limite connue : si l'écriture dans Kova dépasse 12 s, un nouvel essai depuis la montre
