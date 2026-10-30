@@ -125,3 +125,19 @@ test('reveal shows settled words first, then pending ones, never more than given
   assert.deepEqual(reveal(r, 3), { settled: 'Salut Francisco,', pending: 'peux-tu' });
   assert.equal(reveal(r, 9), r);
 });
+
+test('finalText keeps the unconfirmed tail of an open turn when transcript lags behind words', () => {
+  const s = applyMessage(emptyLiveState(), {
+    type: 'Turn',
+    turn_order: 0,
+    end_of_turn: false,
+    transcript: 'je vais',
+    words: [
+      { text: 'je', word_is_final: true },
+      { text: 'vais', word_is_final: true },
+      { text: 'au', word_is_final: false },
+      { text: 'bureau', word_is_final: false },
+    ],
+  });
+  assert.equal(finalText(s), 'je vais au bureau');
+});

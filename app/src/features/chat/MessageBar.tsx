@@ -367,6 +367,15 @@ export function MessageBar({
     impact(ImpactStyle.Light);
     setRecordMs(0);
     setLevels([]);
+    // Passée en arrière plan pendant l'ouverture : on ne démarre pas une dictée invisible.
+    if (AppState.currentState !== 'active') {
+      liveDictation.current?.cancel();
+      liveDictation.current = null;
+      const h = recorder.current;
+      recorder.current = null;
+      if (h) void h.stop().then(({ uri }) => discardRecording(uri), () => undefined);
+      return;
+    }
     setShownWords(0);
     setLive(liveMode ? { settled: '', pending: '' } : null);
     setRecording(true);
@@ -385,6 +394,18 @@ export function MessageBar({
     }, LEVEL_POLL_MS);
     return () => clearInterval(timer);
   }, [recording]);
+
+  // Le composer disparaît (retour à la liste) : micro et socket se coupent avec lui.
+  useEffect(
+    () => () => {
+      liveDictation.current?.cancel();
+      liveDictation.current = null;
+      const h = recorder.current;
+      recorder.current = null;
+      if (h) void h.stop().then(({ uri }) => discardRecording(uri), () => undefined);
+    },
+    [],
+  );
 
   // L'app passe en arrière plan pendant un enregistrement : on arrête et on transcrit.
   useEffect(() => {

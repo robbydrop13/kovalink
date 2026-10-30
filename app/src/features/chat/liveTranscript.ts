@@ -131,7 +131,11 @@ export function finalText(state: LiveState): string {
   for (const turn of state.finals) pushText(parts, turn.transcript);
   const partial = state.partial;
   if (partial) {
-    pushText(parts, partial.transcript.length > 0 ? partial.transcript : partial.words.map((w) => w.text).join(' '));
+    // Selon le modèle, `transcript` porte tout le tour ou seulement ses mots confirmés : on
+    // garde la version la plus longue en mots.
+    const fromWords = partial.words.map((w) => w.text).join(' ');
+    const longer = words(fromWords).length > words(partial.transcript).length ? fromWords : partial.transcript;
+    pushText(parts, longer);
   }
   return parts.join(' ');
 }

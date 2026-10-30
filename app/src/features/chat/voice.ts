@@ -243,7 +243,9 @@ export async function startLiveDictation(
 
   const stream = new Stream({ sampleRate: VOICE_STREAM_SAMPLE_RATE, channels: 1, encoding: 'int16' }) as LiveAudioStream;
   const queue: ArrayBuffer[] = [];
-  const startedAt = Date.now();
+  let startedAt = Date.now();
+  /** Le micro ne livre pas 16 kHz (convertisseur natif indisponible) : rien ne part. */
+  let badRate = false;
   let state: LiveState = emptyLiveState();
   let level: number | null = null;
   let socket: WebSocket | null = null;
@@ -267,6 +269,12 @@ export async function startLiveDictation(
           ? (raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer)
           : null;
     if (ended || !data) return;
+    // L'URL annonce 16 kHz : un autre débit donnerait un texte absurde dans le champ.
+    if (typeof buffer.sampleRate === 'number' && buffer.sampleRate !== VOICE_STREAM_SAMPLE_RATE) {
+      badRate = true;
+      if (socketOpen) fail(t.voiceFailed(`microphone at ${buffer.sampleRate} Hz`));
+      return;
+    }
     level = levelDb(data);
     if (socketOpen && socket) {
       try {
@@ -328,6 +336,8 @@ export async function startLiveDictation(
     if (fields.type === 'Termination') {
       terminated = true;
       signalClosed();
+      // Fin décidée par le service en pleine dictée (durée maximale) : comme une panne.
+      if (!ended) fail(t.voiceStreamClosed);
       return;
     }
     if (typeof fields.error === 'string' && fields.error.length > 0) {
@@ -342,6 +352,7 @@ export async function startLiveDictation(
 
   try {
     await stream.start();
+    startedAt = Date.now();
   } catch (e) {
     releaseStream();
     throw new VoiceError('failed', t.voiceFailed(e instanceof Error ? e.message : String(e)));
@@ -351,7 +362,10 @@ export async function startLiveDictation(
     token = await streamToken(creds);
   } catch (e) {
     releaseStream();
-    throw e;
+    // Seul un refus d'appairage se montre ; un daemon lent, un 5xx ou le réseau laissent
+    // Whisper prendre le relais.
+    if (e instanceof HttpError && (e.status === 401 || e.status === 403)) throw e;
+    throw new LiveUnavailableError();
   }
 
   try {
@@ -362,6 +376,10 @@ export async function startLiveDictation(
       const timer = setTimeout(() => reject(new Error(t.voiceStreamNoAnswer)), CONNECT_TIMEOUT_MS);
       ws.onopen = () => {
         clearTimeout(timer);
+        if (badRate) {
+          reject(new Error(t.voiceStreamNoAnswer));
+          return;
+        }
         socketOpen = true;
         for (const buffer of queue) {
           try {
