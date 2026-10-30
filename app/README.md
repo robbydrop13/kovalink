@@ -180,7 +180,7 @@ Vérification : `source app/scripts/eas-env.sh && npx eas-cli whoami`.
 
 `runtimeVersion.policy` vaut **`appVersion`** (depuis le premier commit), pas `fingerprint` :
 la version d'exécution est la `version` d'`app.json`, donc toute mise à jour OTA est servie à
-tout build natif qui porte la même (1.1.0 aujourd'hui). Rien ne vérifie la compatibilité du
+tout build natif qui porte la même (1.2.0 aujourd'hui). Rien ne vérifie la compatibilité du
 natif : une OTA qui a besoin d'un natif plus récent (NSE, Share Extension, config plugin)
 part quand même vers l'ancien build et peut planter au lancement. D'où la règle : une OTA ne
 porte que du JS. Un changement natif demande un build, et un bump de `version` pour que
