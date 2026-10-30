@@ -33,6 +33,7 @@ import {
   type ReorderRequest,
   type PaneSessionNameRequest,
   type PaneSessionNameResponse,
+  type SessionTextRequest,
   type PaneCommandsResponse,
   TRANSCRIBE_MAX_BYTES,
   TRANSCRIBE_MIME_TYPES,
@@ -68,6 +69,7 @@ import { NEW_TAB_COMMAND, launchInFreshPane, resumeSession, startClaudeInPane } 
 import { ManageError, closePane, renameCommand, renameTab, sanitizeSessionName, setBookmark } from '../kova/manage.js';
 import { reorderPane, reorderTab } from '../kova/reorder.js';
 import { markPaneRead } from '../kova/read.js';
+import { sendToSession } from '../kova/sessionText.js';
 import { TranscriptionError, transcribe } from '../voice/whisper.js';
 import { mintStreamToken } from '../voice/assemblyai.js';
 import { registerFsRoutes } from './fsRoutes.js';
@@ -511,6 +513,46 @@ export async function createHttpServer(
       }
     },
   );
+
+  /**
+   * Envoi par nom de session, pour la montre : elle ne connait pas les paneId. Memes
+   * gardes que paneText, le pane etant resolu par `resolveSession` (nom ou prefixe unique).
+   */
+  app.post<{ Body: Partial<SessionTextRequest> }>(ROUTE_PATTERNS.sessionText, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'text')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many sends');
+    }
+    const { session, text, nonce } = req.body ?? {};
+    if (
+      typeof session !== 'string' ||
+      session.length === 0 ||
+      typeof text !== 'string' ||
+      text.length === 0 ||
+      typeof nonce !== 'string' ||
+      nonce.length === 0
+    ) {
+      return fail(reply, 400, 'BAD_REQUEST', 'session, text and nonce required');
+    }
+    if (!services.nonces.reserve(nonce)) return { applied: false, reason: 'duplicate' };
+    try {
+      const res = await sendToSession(
+        {
+          panes: () => services.panes.all(),
+          emitText: (id, t, d) => services.keygate.emitText(id, t, d),
+        },
+        session,
+        text,
+        deviceId,
+      );
+      if (!res.applied) services.nonces.release(nonce);
+      return res;
+    } catch (e) {
+      services.nonces.release(nonce);
+      if (e instanceof ForbiddenError) return fail(reply, 403, e.code, e.message);
+      throw e;
+    }
+  });
 
   /**
    * Repondre a un prompt parse (C1, C20).

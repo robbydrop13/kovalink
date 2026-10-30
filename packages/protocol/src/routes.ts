@@ -20,6 +20,11 @@ export const ROUTES = {
   paneInterrupt: (paneId: number): string => `/v1/panes/${paneId}/interrupt`,
   paneText: (paneId: number): string => `/v1/panes/${paneId}/text`,
   /**
+   * Envoi par nom de session, pour la montre : elle ne connait pas les paneId. Memes
+   * gardes que paneText.
+   */
+  sessionText: '/v1/sessions/text',
+  /**
    * Gestion depuis l'app, les memes gestes que sur le Mac : fermer (le seul geste
    * destructeur, confirme cote app), renommer l'onglet (`set-tab-title`, titre assaini
    * cote daemon), favori (`~/.config/kova/bookmarks.json`, ecriture atomique).
@@ -143,6 +148,7 @@ export const ROUTE_PATTERNS = {
   paneAnswer: '/v1/panes/:paneId/answer',
   paneInterrupt: '/v1/panes/:paneId/interrupt',
   paneText: '/v1/panes/:paneId/text',
+  sessionText: '/v1/sessions/text',
   paneClose: '/v1/panes/:paneId/close',
   paneTitle: '/v1/panes/:paneId/title',
   paneRead: '/v1/panes/:paneId/read',
@@ -417,6 +423,19 @@ export interface PaneSessionNameRequest {
 }
 
 export type PaneSessionNameResponse = ActionResponse & { name: string };
+
+/** Corps de `POST /v1/sessions/text` : la montre ne connait que le nom de session. */
+export interface SessionTextRequest {
+  session: string;
+  text: string;
+  nonce: string;
+}
+
+/** Reponse de `POST /v1/sessions/text` : `session` et `names` eclairent un refus. */
+export interface SessionTextResponse extends ActionResponse {
+  session?: string;
+  names?: string[];
+}
 
 /**
  * Corps de `POST /v1/kova/tabs/:tabId/reorder` et de `POST /v1/panes/:paneId/reorder` : le

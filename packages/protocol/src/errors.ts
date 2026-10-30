@@ -77,6 +77,10 @@ export type ActionReason =
    */
   | 'ipc_timeout'
   | 'forbidden'
+  /** `POST /v1/sessions/text` : aucun pane ne porte ce nom. */
+  | 'unknown_session'
+  /** `POST /v1/sessions/text` : plusieurs panes repondent a ce nom ou prefixe. */
+  | 'ambiguous_session'
   | 'kova_down';
 
 /**
