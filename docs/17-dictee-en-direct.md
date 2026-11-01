@@ -34,5 +34,5 @@ jour : `daemon/README.md`.
 
 ## Ce qui reste
 
-- Test reel par Robin sur l'iPhone (voix reelle, bruit, longues dictees).
+- Rien de bloquant : Robin a teste sur son iPhone, "ca fonctionne" (01/11/2026).
 - La montre (`kovalink-watch`) peut reutiliser la route de jeton en v2.
