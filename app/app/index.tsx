@@ -648,9 +648,9 @@ const styles = StyleSheet.create({
   titleRow: { minHeight: layout.navBarHeight, flexDirection: 'row', alignItems: 'center', gap: space[3] },
   title: { flexShrink: 1 },
   content: { paddingHorizontal: layout.screenPaddingH, paddingTop: space[2] },
-  groups: { gap: space[6] },
-  // Le libellé garde 8 pt avec son groupe malgré les 20 pt entre frères.
-  windowLabel: { letterSpacing: 0.6, marginTop: space[2], marginBottom: space[3] - space[6] },
+  groups: { gap: space[4] },
+  // Le libellé garde 8 pt avec son groupe malgré les 12 pt entre frères.
+  windowLabel: { letterSpacing: 0.6, marginTop: space[2], marginBottom: space[3] - space[4] },
   searchRow: { paddingHorizontal: layout.screenPaddingH, paddingVertical: space[3], gap: space[2] },
   summaryRow: { flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 24 },
   sortToggle: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[2], paddingVertical: 2, borderRadius: radius.sm },

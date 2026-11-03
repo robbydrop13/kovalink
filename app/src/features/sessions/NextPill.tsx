@@ -1,9 +1,9 @@
-// Le bouton flottant de Cmd+J (docs/16, retouche du 12 septembre) : un rond de 44 pt en
-// bas à droite, icône `skip-forward` seule et badge du compte, au dessus de la barre de
-// message ; le fil garde un padding bas égal pour que sa dernière ligne reste lisible.
-// Rond accent tant qu'il reste du non lu, neutre pour `Next idle`, `check-circle` 1 600 ms
-// quand le dernier non lu vient d'être lu. Masqué par le parent (clavier, brouillon,
-// envoi). Appui long : la palette Unread.
+// La pastille de Cmd+J (proto, vue Panes du téléphone) : un galet accent à rayon complet,
+// icône play, mot `Next` 15 Semibold blanc, badge rond blanc à texte accent. Elle flotte
+// au dessus du fil ; `docked`, elle prend place dans un en-tête et ne change que sa pose.
+// Mode neutre pour `Next idle`, `check-circle` 1 600 ms quand le dernier non lu vient
+// d'être lu. Masquée par le parent (clavier, brouillon, envoi). Appui long : la palette
+// Unread.
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { t } from '@/i18n/en';
@@ -14,6 +14,8 @@ import { NotifyType, notify } from '@/utils/haptics';
 import type { NextState } from './useNextTarget';
 
 const CAUGHT_UP_MS = 1600;
+/** Texte du proto : la pastille ne porte pas d'autre mot. */
+const NEXT_LABEL = 'Next';
 
 export type PillMode = 'next' | 'caughtUp' | 'idle';
 
@@ -57,7 +59,8 @@ export function NextPill({
   if (mode === null) return null;
 
   const badge = mode === 'next' ? state.unreadCount : mode === 'idle' ? state.idleCount : 0;
-  const tint = mode === 'next' ? colors.accent.primary : mode === 'idle' ? colors.text.secondary : colors.status.success;
+  const accent = mode === 'next';
+  const tint = mode === 'next' ? colors.text.onFill : mode === 'idle' ? colors.text.secondary : colors.status.success;
   const dest = state.target ? t.nextPillHint(state.target.entry.group.title, state.target.entry.pane.title ?? state.target.entry.pane.agent ?? '') : '';
 
   return (
@@ -70,12 +73,23 @@ export function NextPill({
         onPress={onPress}
         onLongPress={onLongPress}
         delayLongPress={500}
-        style={({ pressed }) => [styles.round, mode === 'next' && styles.roundNext, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.pill,
+          mode === 'caughtUp' && styles.pillCaughtUp,
+          accent && styles.pillAccent,
+          badge > 0 ? styles.pillBadged : null,
+          pressed && styles.pressed,
+        ]}
       >
-        <Icon name={mode === 'caughtUp' ? 'check-circle' : 'skip-forward'} size={20} color={mode === 'next' ? colors.text.onFill : tint} />
+        <Icon name={mode === 'caughtUp' ? 'check-circle' : 'play'} size={mode === 'caughtUp' ? 16 : 12} color={tint} />
+        {mode === 'caughtUp' ? null : (
+          <Txt variant="calloutStrong" color={tint}>
+            {NEXT_LABEL}
+          </Txt>
+        )}
         {badge > 0 ? (
-          <View style={[styles.badge, mode === 'idle' ? styles.badgeIdle : styles.badgeNext]}>
-            <Txt variant="caption" color={mode === 'idle' ? colors.text.secondary : colors.text.onFill}>
+          <View style={[styles.badge, accent ? styles.badgeAccent : styles.badgeIdle]}>
+            <Txt variant="footnote" color={accent ? colors.accent.primary : colors.text.secondary}>
               {badge}
             </Txt>
           </View>
@@ -85,18 +99,20 @@ export function NextPill({
   );
 }
 
-/** Hauteur du bouton rond plus sa marge : le fil garde ce padding bas. */
+/** Hauteur du bouton plus sa marge : le fil garde ce padding bas. */
 export const NEXT_BUTTON_SPACE = 44 + space[4];
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', right: space[5], bottom: space[4] },
   docked: { position: 'relative', right: 0, bottom: 0 },
-  round: {
-    width: 44,
+  pill: {
     height: 44,
-    borderRadius: radius.full,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
+    paddingLeft: space[4],
+    paddingRight: space[4],
+    borderRadius: radius.full,
     backgroundColor: colors.bg.overlay,
     borderWidth: 1,
     borderColor: colors.border.strong,
@@ -105,21 +121,18 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
   },
-  roundNext: { backgroundColor: colors.accent.primary, borderColor: colors.accent.primary },
+  pillAccent: { backgroundColor: colors.accent.primary, borderColor: colors.accent.primary },
+  pillCaughtUp: { width: 44, paddingLeft: 0, paddingRight: 0, justifyContent: 'center' },
+  pillBadged: { paddingRight: space[2] },
   pressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
   badge: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    minWidth: 22,
+    height: 22,
+    borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 5,
-    borderWidth: 2,
-    borderColor: colors.bg.base,
+    paddingHorizontal: space[2],
   },
-  badgeNext: { backgroundColor: colors.accent.primary },
+  badgeAccent: { backgroundColor: colors.text.onFill },
   badgeIdle: { backgroundColor: colors.bg.pressed },
 });

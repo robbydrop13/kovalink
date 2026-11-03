@@ -1,9 +1,11 @@
-// Un onglet Kova et ses panes, comme dans la barre d'onglets du Mac : barre de couleur à
-// gauche (les six couleurs Kova, 0 rouge à 5 violet), nom de l'onglet, marque `actif`
-// pour l'onglet au premier plan, puis les panes dans l'ordre. Un pane qui attend garde sa
-// carte, à sa place dans l'onglet, jamais extrait dans une section à part. Un tap sur
-// l'en-tête replie ou déplie les panes ; replié, l'en-tête garde un résumé (nombre de
-// panes, point ambre si un pane attend, bleu si un pane travaille).
+// Un onglet Kova et ses panes, comme la vue Panes du téléphone (P03) : une carte du design
+// system, fond bg1, bord b3 de 1 px, rayon 12, posée dans la marge de 16 de l'écran.
+// L'en-tête porte le point de couleur de l'onglet (8 pt), son nom, le nombre de panes à
+// droite et le chevron de repli. Aucune teinte de la couleur d'onglet sur la carte.
+//
+// Un tap sur l'en-tête replie ou déplie les panes ; replié, l'en-tête garde un résumé
+// (nombre de panes, point ambre si un pane attend, bleu si un pane travaille). Un pane qui
+// attend garde sa carte, à sa place dans l'onglet, jamais extrait dans une section à part.
 //
 // Tenir une ligne 300 ms la soulève : on la glisse à un autre rang de l'onglet, le Mac
 // suit. Tenir la partie gauche de l'en-tête soulève l'onglet entier (geste porté par
@@ -24,6 +26,9 @@ import { reorderAccessibility, type ReorderActions } from './reorderAccessibilit
 import { collapsedSummary, type TabGroup } from './tabGroups';
 import { DragItem, useDragReorder } from './useDragReorder';
 import { t } from '@/i18n/en';
+
+/** Rayon de la carte d'onglet du design system (proto : 12). */
+const CARD_RADIUS = 12;
 
 interface Props {
   group: TabGroup;
@@ -122,11 +127,12 @@ export function TabGroupView({
         interruptLabel={interruptLabel(pane.id)}
         onInterrupt={() => onInterrupt(pane.id)}
         reorder={paneReorder(index)}
+        last={index === group.panes.length - 1}
       />
     );
   const paneDrag = useDragReorder<number>({
     keys,
-    gap: space[3],
+    gap: 0,
     radius: radius.md,
     enabled: canDrag && !dragLocked,
     ghost: (id) => {
@@ -143,28 +149,22 @@ export function TabGroupView({
       <Txt variant="calloutStrong" color={colors.text.primary} numberOfLines={1} style={styles.title}>
         {group.title}
       </Txt>
-      <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.text.secondary} />
+      <View style={styles.spacer} />
       {summary ? (
-        <View style={styles.summary}>
+        <>
           {summary.awaiting ? <View style={[styles.stateDot, { backgroundColor: colors.status.awaiting }]} /> : null}
           {summary.working ? <View style={[styles.stateDot, { backgroundColor: colors.status.working }]} /> : null}
-          <Txt variant="caption" color={colors.text.tertiary}>
-            {t.tabCollapsedCount(summary.count)}
-          </Txt>
-        </View>
+        </>
       ) : null}
-      {group.active ? (
-        <View style={styles.activeChip}>
-          <Txt variant="caption" color={colors.text.secondary}>
-            {t.tabActiveChip}
-          </Txt>
-        </View>
-      ) : null}
+      <Txt variant="footnote" color={colors.text.tertiary} numberOfLines={1}>
+        {t.tabCollapsedCount(group.panes.length)}
+      </Txt>
+      <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.text.tertiary} />
     </>
   );
   return (
     <View
-      style={[styles.group, { borderLeftColor: tint }]}
+      style={styles.group}
       accessibilityLabel={t.tabGroupAccessibilityLabel(group.tabIndex + 1, group.title, group.active, group.panes.length)}
     >
       <Pressable
@@ -192,11 +192,11 @@ export function TabGroupView({
           onPress={onAddPane}
           style={({ pressed }) => [styles.add, pressed && styles.addPressed]}
         >
-          <Icon name="plus" size={16} color={colors.text.secondary} />
+          <Icon name="plus" size={16} color={colors.text.tertiary} />
         </Pressable>
       </Pressable>
       {collapsed ? null : (
-        <View style={styles.panes}>
+        <View>
           {paneDrag.placeholder}
           {group.panes.map((pane: Pane, index: number) => (
             <DragItem key={pane.id} list={paneDrag} id={pane.id}>
@@ -218,36 +218,30 @@ export function TabGroupView({
 
 const styles = StyleSheet.create({
   group: {
-    borderLeftWidth: 3,
-    borderRadius: radius.sm,
-    paddingLeft: space[4],
-    gap: space[3],
+    backgroundColor: colors.bg.raised,
+    borderWidth: 1,
+    borderColor: colors.border.subtle,
+    borderRadius: CARD_RADIUS,
   },
-  header: { flexDirection: 'row', alignItems: 'center', minHeight: 32, borderRadius: radius.sm },
-  headerPressed: { backgroundColor: colors.bg.pressed },
+  header: { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
+  headerPressed: {
+    backgroundColor: colors.bg.pressed,
+    borderTopLeftRadius: CARD_RADIUS,
+    borderTopRightRadius: CARD_RADIUS,
+  },
   /** La zone de prise : tout l'en-tête sauf le `+`. */
-  grab: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 32 },
-  dot: { width: 10, height: 10, borderRadius: 5 },
+  grab: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[3], minHeight: 44, paddingLeft: space[4] },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  title: { flexShrink: 1 },
+  spacer: { flex: 1 },
+  stateDot: { width: 6, height: 6, borderRadius: 3 },
   add: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.bg.raised,
-    marginRight: space[1],
-    marginLeft: space[3],
+    marginRight: space[2],
   },
   addPressed: { backgroundColor: colors.bg.pressed },
-  title: { flexShrink: 1 },
-  summary: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  stateDot: { width: 6, height: 6, borderRadius: 3 },
-  activeChip: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.border.strong,
-  },
-  panes: { gap: space[3] },
 });

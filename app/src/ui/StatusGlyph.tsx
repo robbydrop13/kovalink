@@ -1,22 +1,21 @@
-// Glyphe d'état, en icônes Feather : chaque état reste décodable par la FORME, pas
-// seulement par la couleur (P4) : `pause-circle` pour `awaiting`, `activity` qui pulse
-// pour `working`, `circle` creux pour `idle`, `x-circle` pour `closed`.
+// Point d'état : 8 pt, dans la couleur de l'état (P03, vue Panes du proto). La forme ne
+// distingue plus les états (plus d'icône Feather) : le mot d'état écrit à côté dit lequel.
+// `working` pulse, comme avant.
 import { useEffect, useState } from 'react';
 import { Animated } from 'react-native';
 import { colors, motion } from '@/theme';
 import { t } from '@/i18n/en';
-import { Icon } from './Icon';
 
 export type AgentState = 'awaiting' | 'working' | 'idle' | 'closed';
 
-const ICON = {
-  awaiting: { name: 'pause-circle', color: colors.status.awaiting },
-  working: { name: 'activity', color: colors.status.working },
-  idle: { name: 'circle', color: colors.status.idle },
-  closed: { name: 'x-circle', color: colors.status.closed },
-} as const;
+const DOT_COLOR: Record<AgentState, string> = {
+  awaiting: colors.status.awaiting,
+  working: colors.status.working,
+  idle: colors.status.idle,
+  closed: colors.status.closed,
+};
 
-export function StatusGlyph({ state, size = 14 }: { state: AgentState; size?: 12 | 14 | 16 | 20 | 24 }) {
+export function StatusGlyph({ state, size = 8 }: { state: AgentState; size?: number }) {
   const [pulse] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
@@ -39,7 +38,17 @@ export function StatusGlyph({ state, size = 14 }: { state: AgentState; size?: 12
         : state === 'closed'
           ? t.glyphClosed
           : t.glyphIdle;
-  const icon = <Icon name={ICON[state].name} size={size} color={ICON[state].color} accessibilityLabel={label} />;
-  if (state !== 'working') return icon;
-  return <Animated.View style={{ opacity: pulse }}>{icon}</Animated.View>;
+  return (
+    <Animated.View
+      accessible
+      accessibilityLabel={label}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: DOT_COLOR[state],
+        opacity: pulse,
+      }}
+    />
+  );
 }
