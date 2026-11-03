@@ -104,8 +104,7 @@ struct KovaLinkWidgetView: View {
             Text("KovaLink")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .widgetAccentable()
-            Text(verbatim: asksLine)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+            asksLine.font(.system(size: 13, weight: .medium, design: .rounded))
             if counts.errors > 0 {
                 Text(verbatim: counts.errors == 1 ? "1 error" : "\(counts.errors) errors")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -124,21 +123,14 @@ struct KovaLinkWidgetView: View {
             .font(.system(size: 13, weight: .semibold, design: .rounded))
     }
 
-    private var asksLine: String {
-        guard counts.asks > 0 else { return "0 asks" }
-        guard counts.oldestAt > 0 else { return "\(counts.asks) asks" }
-        return "\(counts.asks) asks · oldest \(Self.age(since: counts.oldestAt))"
-    }
-
-    /// « 4m », « 2h », « 1d », « now » sous la minute.
-    static func age(since epoch: Int, now: Date = .now) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince1970) - epoch)
-        switch seconds {
-        case ..<60: return "now"
-        case ..<3_600: return "\(seconds / 60)m"
-        case ..<86_400: return "\(seconds / 3_600)h"
-        default: return "\(seconds / 86_400)d"
-        }
+    /// « 3 asks · oldest 4m » : l'âge est une date relative rendue par SwiftUI, qui la
+    /// rafraîchit toute seule. Le calculer en texte le figeait jusqu'au rechargement
+    /// suivant (15 min).
+    private var asksLine: Text {
+        guard counts.asks > 0 else { return Text(verbatim: "0 asks") }
+        guard counts.oldestAt > 0 else { return Text(verbatim: "\(counts.asks) asks") }
+        let oldest = Date(timeIntervalSince1970: TimeInterval(counts.oldestAt))
+        return Text(verbatim: "\(counts.asks) asks · oldest ") + Text(oldest, style: .relative)
     }
 }
 

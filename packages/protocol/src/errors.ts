@@ -53,12 +53,18 @@ export const ERROR_CODES = [
   // (404), ou `routinectl` a echoue (502). Son message reste sur le Mac : il porte des
   // chemins que le telephone n'a pas a voir.
   'ROUTINE_NOT_FOUND',
+  // `run` sur une routine suspendue (409, `routinectl run` sort 0 sans rien lancer) ou
+  // second geste pour le meme nom pendant que le premier tourne (409).
+  'ROUTINE_PAUSED',
+  'ROUTINE_BUSY',
   'ROUTINE_ERROR',
   // Equipe d'agents : le nom est hors format ou absent de `team list --json` (404),
-  // la session n'est pas fermee (409), ou `team` a echoue (502). Sa sortie reste sur
-  // le Mac : elle porte des chemins que le telephone n'a pas a voir.
+  // la session n'est pas fermee (409), une reouverture tourne deja pour ce nom (409),
+  // ou `team` a echoue (502). Sa sortie reste sur le Mac : elle porte des chemins que
+  // le telephone n'a pas a voir.
   'AGENT_NOT_FOUND',
   'AGENT_NOT_CLOSED',
+  'AGENT_BUSY',
   'AGENT_ERROR',
   'INTERNAL',
 ] as const;

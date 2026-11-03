@@ -178,6 +178,32 @@ describe('reopenAgent', () => {
     assert.deepEqual(h.calls, [['list', '--json'], ['reopen', 'perso-agent']]);
   });
 
+  it('refuse une seconde reouverture du meme nom pendant que la premiere tourne', async () => {
+    let release!: () => void;
+    const running = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const calls: string[][] = [];
+    const exec: Exec = async (argv) => {
+      calls.push(argv);
+      if (argv[0] === 'list') return { code: 0, stdout: JSON.stringify(RAW), stderr: '' };
+      started();
+      await running;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+
+    const first = reopenAgent(exec, 'byok');
+    await reached;
+    assert.deepEqual(await reopenAgent(exec, 'byok'), { applied: false, reason: 'busy' });
+    release();
+    assert.deepEqual(await first, { applied: true });
+    assert.deepEqual(calls, [['list', '--json'], ['reopen', 'byok']]);
+  });
+
   it('un roster sans argv pour cette session rend team_failed, sans commande devinee', async () => {
     const h = fake({
       managers: [],

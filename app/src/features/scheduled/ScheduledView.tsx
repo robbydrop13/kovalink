@@ -17,7 +17,7 @@ import { ErrorScreen } from '@/ui/ErrorScreen';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt, interFamily } from '@/ui/Txt';
 import { TAB_BAR_HEIGHT } from '@/features/home/TabBar';
-import { postRoutinePause, postRoutineResume, postRoutineRun } from '@/net/http';
+import { HttpError, postRoutinePause, postRoutineResume, postRoutineRun } from '@/net/http';
 import { ImpactStyle, impact } from '@/utils/haptics';
 import { useClock } from '@/utils/useClock';
 import { t } from '@/i18n/en';
@@ -82,14 +82,22 @@ export function ScheduledView() {
       impact(ImpactStyle.Medium);
       await reload();
     } catch (e) {
-      const why = e instanceof Error ? e.message : String(e);
-      setNotice(
-        action === 'run'
-          ? t.scheduledRunFailed(why)
-          : action === 'pause'
-            ? t.scheduledPauseFailed(why)
-            : t.scheduledResumeFailed(why),
-      );
+      // Deux refus qui ne sont pas des pannes : la routine a ete suspendue entre temps,
+      // ou un geste tourne deja pour ce nom.
+      if (e instanceof HttpError && e.code === 'ROUTINE_PAUSED') {
+        setNotice(t.scheduledRunPaused);
+      } else if (e instanceof HttpError && e.code === 'ROUTINE_BUSY') {
+        setNotice(t.scheduledBusy);
+      } else {
+        const why = e instanceof Error ? e.message : String(e);
+        setNotice(
+          action === 'run'
+            ? t.scheduledRunFailed(why)
+            : action === 'pause'
+              ? t.scheduledPauseFailed(why)
+              : t.scheduledResumeFailed(why),
+        );
+      }
     } finally {
       setPending(null);
     }
@@ -214,12 +222,16 @@ export function ScheduledView() {
                             : t.scheduledLastRun(lastRunOf(routine).label, lastWords(routine.last.end, now))}
                         </Txt>
 
-                        <Button
-                          label={busy && pending?.action === 'run' ? t.scheduledSending : t.scheduledRunNow}
-                          height={40}
-                          disabled={locked || routine.running}
-                          onPress={() => confirm(routine, 'run')}
-                        />
+                        {/* `routinectl run` sort 0 sans rien lancer sur une routine
+                            suspendue : le geste n'a de sens qu'une fois reprise. */}
+                        {routine.enabled ? (
+                          <Button
+                            label={busy && pending?.action === 'run' ? t.scheduledSending : t.scheduledRunNow}
+                            height={40}
+                            disabled={locked || routine.running}
+                            onPress={() => confirm(routine, 'run')}
+                          />
+                        ) : null}
                         <View style={styles.secondaryActions}>
                           <Button
                             kind="secondary"

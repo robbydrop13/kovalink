@@ -2,6 +2,7 @@
 // ici : la liste ne fuit aucun chemin, les gestes envoient exactement la bonne commande,
 // et un nom douteux ne part jamais vers le processus.
 import assert from 'node:assert/strict';
+import { homedir } from 'node:os';
 import { describe, it } from 'node:test';
 import {
   RoutineError,
@@ -166,6 +167,44 @@ describe('les trois gestes', () => {
     assert.deepEqual(h.calls, [['list', '--json'], ['run', 'tri-inbox']]);
   });
 
+  it('run sur une routine suspendue est refuse, sans lancer quoi que ce soit', async () => {
+    const h = fake();
+    assert.deepEqual(await runRoutine(h.exec, 'weekday-brief'), { applied: false, reason: 'paused' });
+    assert.deepEqual(h.calls, [['list', '--json']]);
+  });
+
+  it('pause et resume restent permis sur une routine suspendue', async () => {
+    const h = fake();
+    assert.deepEqual(await resumeRoutine(h.exec, 'weekday-brief'), { applied: true });
+    assert.deepEqual(h.calls, [['list', '--json'], ['enable', 'weekday-brief']]);
+  });
+
+  it('refuse un second geste pour le meme nom pendant que le premier tourne', async () => {
+    let release!: () => void;
+    const running = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const calls: string[][] = [];
+    const exec: Exec = async (argv) => {
+      calls.push(argv);
+      if (argv[0] === 'list') return { code: 0, stdout: JSON.stringify(RAW), stderr: '' };
+      started();
+      await running;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+
+    const first = runRoutine(exec, 'tri-inbox');
+    await reached;
+    assert.deepEqual(await pauseRoutine(exec, 'tri-inbox'), { applied: false, reason: 'busy' });
+    release();
+    assert.deepEqual(await first, { applied: true });
+    assert.deepEqual(calls, [['list', '--json'], ['run', 'tri-inbox']]);
+  });
+
   it('pause envoie disable, resume envoie enable', async () => {
     const pause = fake();
     assert.deepEqual(await pauseRoutine(pause.exec, 'tri-inbox'), { applied: true });
@@ -226,6 +265,17 @@ describe('routineLog', () => {
   it('un journal deja plus court est rendu tel quel', async () => {
     const h = fake(RAW, (argv) => (argv[0] === 'logs' ? { code: 0, stdout: 'a\nb\nc\n', stderr: '' } : undefined));
     assert.deepEqual(await routineLog(h.exec, 'tri-inbox'), { lines: ['a', 'b', 'c'] });
+  });
+
+  it('ramene le dossier personnel a ~ sur chaque ligne', async () => {
+    const home = homedir();
+    const output = `cwd=${home}/AI directory/Perso\n${home}/.local/bin/tool --flag\nnothing to hide\n`;
+    const h = fake(RAW, (argv) => (argv[0] === 'logs' ? { code: 0, stdout: output, stderr: '' } : undefined));
+    assert.deepEqual((await routineLog(h.exec, 'tri-inbox')).lines, [
+      'cwd=~/AI directory/Perso',
+      '~/.local/bin/tool --flag',
+      'nothing to hide',
+    ]);
   });
 
   it('un nom inconnu leve unknown_routine sans lire le journal', async () => {

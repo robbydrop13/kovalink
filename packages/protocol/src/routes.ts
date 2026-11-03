@@ -551,12 +551,17 @@ export interface RoutinesResponse {
   routines: Routine[];
 }
 
-/** Raison d'un refus sur les routes de routines. */
-export type RoutineActionReason = 'unknown_routine' | 'routinectl_failed';
+/**
+ * Raison d'un refus sur les routes de routines. `paused` : `run` sur une routine
+ * suspendue (`routinectl run` sort 0 sans rien lancer) ; `busy` : un autre geste tourne
+ * deja pour ce nom.
+ */
+export type RoutineActionReason = 'unknown_routine' | 'paused' | 'busy' | 'routinectl_failed';
 
 /**
  * Reponse des trois gestes (`run`, `pause`, `resume`). `applied:false` porte toujours sa
- * raison, comme `ActionResponse` : nom inconnu (404) ou `routinectl` en echec (502).
+ * raison, comme `ActionResponse` : nom inconnu (404), routine suspendue ou geste deja en
+ * cours (409), ou `routinectl` en echec (502).
  */
 export interface RoutineActionResponse {
   applied: boolean;
@@ -595,12 +600,13 @@ export interface AgentsRosterResponse {
   otherOpen: string[];
 }
 
-/** Raison d'un refus sur `POST /v1/agents/:name/reopen`. */
-export type AgentActionReason = 'unknown_agent' | 'not_closed' | 'team_failed';
+/** Raison d'un refus sur `POST /v1/agents/:name/reopen`. `busy` : une reouverture tourne deja. */
+export type AgentActionReason = 'unknown_agent' | 'not_closed' | 'busy' | 'team_failed';
 
 /**
  * Reponse de `POST /v1/agents/:name/reopen`. `applied:false` porte toujours sa raison :
- * nom inconnu (404), session pas fermee (409) ou `team` en echec (502).
+ * nom inconnu (404), session pas fermee ou reouverture deja en cours (409) ou `team` en
+ * echec (502).
  */
 export interface AgentActionResponse {
   applied: boolean;

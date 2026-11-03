@@ -30,7 +30,7 @@ import { usePanes } from '@/store/panes';
 import { useClock } from '@/utils/useClock';
 import { shortAgeMs } from '@/utils/time';
 import { ImpactStyle, impact } from '@/utils/haptics';
-import { postAgentReopen } from '@/net/http';
+import { HttpError, postAgentReopen } from '@/net/http';
 import { t } from '@/i18n/en';
 import {
   rosterRows,
@@ -323,8 +323,9 @@ export function AgentsView() {
         await reload();
       }
     } catch (e) {
-      const why = e instanceof Error ? e.message : String(e);
-      setNotice(t.agentsOpenFailed(why));
+      // `busy` : une reouverture tourne deja pour ce nom, ce n'est pas une panne du Mac.
+      if (e instanceof HttpError && e.code === 'AGENT_BUSY') setNotice(t.agentsBusy);
+      else setNotice(t.agentsOpenFailed(e instanceof Error ? e.message : String(e)));
     } finally {
       setPending(null);
     }

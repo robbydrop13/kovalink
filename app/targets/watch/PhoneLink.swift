@@ -7,17 +7,25 @@ import WidgetKit
 /// Message envoyé : `kind=send`, `session`, `text`, `nonce`. Réponse : `ok`, puis `session`
 /// (le nom résolu) ou `error` (une phrase lisible, déjà rédigée par l'iPhone).
 final class PhoneLink: NSObject, ObservableObject, WCSessionDelegate {
+    /// Une seule instance, et c'est elle qui porte le délégué `WCSession` : elle doit vivre
+    /// dès le lancement du processus, y compris quand iOS réveille l'app en arrière-plan
+    /// sans créer de vue.
+    static let shared = PhoneLink()
+
     enum Outcome: Equatable {
         case delivered(session: String)
         case failed(String)
     }
 
-    override init() {
-        super.init()
-        if WCSession.isSupported() {
-            WCSession.default.delegate = self
-            WCSession.default.activate()
-        }
+    private var activated = false
+
+    /// Démarre WatchConnectivity une fois : l'app delegate l'appelle au lancement, la vue
+    /// se contente de lire l'instance partagée.
+    func start() {
+        guard WCSession.isSupported(), !activated else { return }
+        activated = true
+        WCSession.default.delegate = self
+        WCSession.default.activate()
     }
 
     /// Juste après le lancement, WatchConnectivity met plusieurs secondes à voir l'iPhone
@@ -62,13 +70,20 @@ final class PhoneLink: NSObject, ObservableObject, WCSessionDelegate {
     private static let countsKey = "watch.counts"
     private static let countsAtKey = "watch.counts.at"
 
-    /// `[asks, errors, ended, oldestAt]`, exactement la forme envoyée par l'iPhone : jamais
-    /// un mot, ni question, ni nom. `oldestAt` vaut 0 quand rien n'attend.
+    /// `[asks, errors, ended, oldestAt]` et, depuis la version qui date ses envois, un
+    /// cinquième entier `at` : l'instant où l'iPhone a composé ces nombres. Un envoi sans
+    /// `at` (iPhone plus ancien) prend l'heure de réception.
+    ///
+    /// Le contexte de WatchConnectivity peut arriver en retard : un `at` plus vieux que
+    /// celui déjà en place est ignoré, sinon un état ancien écraserait un plus récent.
     private func storeCounts(_ raw: Any?) {
-        guard let payload = raw as? [Int], payload.count == 4 else { return }
+        guard let payload = raw as? [Int], payload.count == 4 || payload.count == 5 else { return }
+        let stamp = payload.count == 5 ? payload[4] : Int(Date().timeIntervalSince1970)
         let defaults = UserDefaults(suiteName: Self.sharedSuite) ?? .standard
-        defaults.set(payload, forKey: Self.countsKey)
-        defaults.set(Int(Date().timeIntervalSince1970), forKey: Self.countsAtKey)
+        if stamp < defaults.integer(forKey: Self.countsAtKey) { return }
+        // La complication lit quatre entiers : `at` reste à côté, jamais dedans.
+        defaults.set(Array(payload.prefix(4)), forKey: Self.countsKey)
+        defaults.set(stamp, forKey: Self.countsAtKey)
         WidgetCenter.shared.reloadAllTimelines()
     }
 

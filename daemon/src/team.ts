@@ -13,12 +13,20 @@ import type {
 } from '@kovalink/protocol';
 import type { Exec } from './routines.js';
 
-const TIMEOUT_MS = 20_000;
+/** `list` lit un registre ; `reopen` relance une session entiere et peut prendre plus. */
+const LIST_TIMEOUT_MS = 20_000;
+const REOPEN_TIMEOUT_MS = 45_000;
 const MAX_BUFFER = 4 * 1024 * 1024;
 const STDERR_MAX = 200;
 
 /** Le format que `team spawn` accepte comme nom de session (donc un identifiant sur). */
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+/**
+ * Une reouverture en cours pour ce nom : la seconde est refusee plutot que de lancer
+ * deux fois le meme `claude`.
+ */
+const reopening = new Set<string>();
 
 /** Chemin du CLI `team`, surchargeable par `KOVALINK_TEAM` (tests, install custom). */
 export function teamPath(): string {
@@ -28,16 +36,21 @@ export function teamPath(): string {
 }
 
 /**
- * Executeur par defaut : `execFile`, jamais un shell, 20 s de plafond. Un CLI absent
- * (`ENOENT`) n'a pas de code numerique : il vaut un echec, avec le message de spawn
- * dans `stderr` pour le journal local.
+ * Executeur par defaut : `execFile`, jamais un shell, 20 s pour une lecture et 45 s pour
+ * une reouverture. Un CLI absent (`ENOENT`) n'a pas de code numerique : il vaut un echec,
+ * avec le message de spawn dans `stderr` pour le journal local.
  */
-export const execTeam: Exec = (argv) =>
-  new Promise((resolve) => {
+export const execTeam: Exec = (argv) => {
+  const isReopen = argv[0] === 'reopen';
+  return new Promise((resolve) => {
     execFile(
       teamPath(),
       argv,
-      { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, encoding: 'utf8' },
+      {
+        timeout: isReopen ? REOPEN_TIMEOUT_MS : LIST_TIMEOUT_MS,
+        maxBuffer: MAX_BUFFER,
+        encoding: 'utf8',
+      },
       (err, stdout, stderr) => {
         const e = err as (Error & { code?: unknown }) | null;
         const code = e === null ? 0 : typeof e.code === 'number' ? e.code : 1;
@@ -45,6 +58,7 @@ export const execTeam: Exec = (argv) =>
       },
     );
   });
+};
 
 /** Echec d'un appel : `team` en echec (502), ou roster lu pour un nom inconnu (404). */
 export class TeamError extends Error {
@@ -150,7 +164,24 @@ function parseRoster(stdout: string): Roster {
   };
 }
 
-async function readRoster(exec: Exec): Promise<Roster> {
+/**
+ * Un seul `team list --json` en vol par executeur : l'onglet Agents et l'accueil le
+ * demandent souvent dans la meme seconde, et chaque appel est un processus. Les appelants
+ * simultanes partagent la reponse en cours, oubliee des qu'elle arrive.
+ */
+const rosters = new WeakMap<Exec, Promise<Roster>>();
+
+function readRoster(exec: Exec): Promise<Roster> {
+  const running = rosters.get(exec);
+  if (running) return running;
+  const run: Promise<Roster> = loadRoster(exec).finally(() => {
+    if (rosters.get(exec) === run) rosters.delete(exec);
+  });
+  rosters.set(exec, run);
+  return run;
+}
+
+async function loadRoster(exec: Exec): Promise<Roster> {
   const res = await exec(['list', '--json']);
   if (res.code !== 0) throw new TeamError('team_failed', failure('list', res));
   return parseRoster(res.stdout);
@@ -164,23 +195,30 @@ export async function getRoster(exec: Exec): Promise<AgentsRosterResponse> {
 /**
  * Rouvre une session fermee. Le nom est d'abord valide, puis relu dans le roster
  * courant : une session ouverte n'est jamais rouverte, et l'argv execute est celui que
- * `team` a rendu pour ce nom-la, jamais une commande construite depuis l'app.
+ * `team` a rendu pour ce nom-la, jamais une commande construite depuis l'app. Une
+ * seconde demande pour le meme nom pendant que la premiere tourne est refusee.
  */
 export async function reopenAgent(exec: Exec, name: string): Promise<AgentActionResponse> {
   if (!NAME_RE.test(name)) return { applied: false, reason: 'unknown_agent' };
-  let roster: Roster;
+  if (reopening.has(name)) return { applied: false, reason: 'busy' };
+  reopening.add(name);
   try {
-    roster = await readRoster(exec);
-  } catch (e) {
-    if (e instanceof TeamError) return { applied: false, reason: e.reason };
-    throw e;
+    let roster: Roster;
+    try {
+      roster = await readRoster(exec);
+    } catch (e) {
+      if (e instanceof TeamError) return { applied: false, reason: e.reason };
+      throw e;
+    }
+    const found = [...roster.body.managers, ...roster.body.dedicated].find((a) => a.name === name);
+    if (!found) return { applied: false, reason: 'unknown_agent' };
+    if (found.state !== 'closed') return { applied: false, reason: 'not_closed' };
+    const argv = roster.reopen.get(name);
+    if (!argv) return { applied: false, reason: 'team_failed' };
+    const res = await exec(argv);
+    if (res.code !== 0) return { applied: false, reason: 'team_failed' };
+    return { applied: true };
+  } finally {
+    reopening.delete(name);
   }
-  const found = [...roster.body.managers, ...roster.body.dedicated].find((a) => a.name === name);
-  if (!found) return { applied: false, reason: 'unknown_agent' };
-  if (found.state !== 'closed') return { applied: false, reason: 'not_closed' };
-  const argv = roster.reopen.get(name);
-  if (!argv) return { applied: false, reason: 'team_failed' };
-  const res = await exec(argv);
-  if (res.code !== 0) return { applied: false, reason: 'team_failed' };
-  return { applied: true };
 }

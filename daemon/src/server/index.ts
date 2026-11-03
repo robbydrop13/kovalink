@@ -107,9 +107,10 @@ function fail(reply: FastifyReply, status: number, code: ErrorCode, message: str
 }
 
 /**
- * Refus d'une route de routines : 404 pour un nom inconnu ou hors format, 502 quand
- * `routinectl` echoue. Le message de `routinectl` ne part JAMAIS vers l'app (il porte des
- * chemins du Mac) : il reste dans le journal local.
+ * Refus d'une route de routines : 404 pour un nom inconnu ou hors format, 409 pour une
+ * routine suspendue ou un geste deja en cours, 502 quand `routinectl` echoue. Le message
+ * de `routinectl` ne part JAMAIS vers l'app (il porte des chemins du Mac) : il reste dans
+ * le journal local.
  */
 function failRoutine(
   reply: FastifyReply,
@@ -118,6 +119,8 @@ function failRoutine(
   why = '',
 ): void {
   if (reason === 'unknown_routine') return fail(reply, 404, 'ROUTINE_NOT_FOUND', 'unknown routine');
+  if (reason === 'paused') return fail(reply, 409, 'ROUTINE_PAUSED', 'routine is paused');
+  if (reason === 'busy') return fail(reply, 409, 'ROUTINE_BUSY', 'routine action in progress');
   logger.warn('routinectl en echec', { name, err: why });
   return fail(reply, 502, 'ROUTINE_ERROR', 'routinectl failed');
 }
@@ -130,7 +133,7 @@ function routineResult(
   name: string,
   res: RoutineActionResponse,
 ): RoutineActionResponse | void {
-  const denied = res.reason === 'unknown_routine';
+  const denied = res.reason !== undefined && res.reason !== 'routinectl_failed';
   audit({ deviceId, action, result: res.applied ? 'ok' : denied ? 'denied' : 'error', detail: name });
   if (res.applied) return res;
   return failRoutine(reply, res.reason ?? 'routinectl_failed', name);
@@ -138,12 +141,14 @@ function routineResult(
 
 /**
  * Refus sur les routes d'agents : 404 pour un nom inconnu ou hors format, 409 pour une
- * session qui n'est pas fermee, 502 quand `team` echoue. La sortie de `team` ne part
- * JAMAIS vers l'app (elle porte des chemins du Mac) : elle reste dans le journal local.
+ * session qui n'est pas fermee ou une reouverture deja en cours, 502 quand `team` echoue.
+ * La sortie de `team` ne part JAMAIS vers l'app (elle porte des chemins du Mac) : elle
+ * reste dans le journal local.
  */
 function failAgent(reply: FastifyReply, reason: AgentActionReason, name: string, why = ''): void {
   if (reason === 'unknown_agent') return fail(reply, 404, 'AGENT_NOT_FOUND', 'unknown agent');
   if (reason === 'not_closed') return fail(reply, 409, 'AGENT_NOT_CLOSED', 'agent is not closed');
+  if (reason === 'busy') return fail(reply, 409, 'AGENT_BUSY', 'reopen already running');
   logger.warn('team en echec', { name, err: why });
   return fail(reply, 502, 'AGENT_ERROR', 'team failed');
 }
@@ -156,7 +161,7 @@ function agentResult(
   name: string,
   res: AgentActionResponse,
 ): AgentActionResponse | void {
-  const denied = res.reason === 'unknown_agent' || res.reason === 'not_closed';
+  const denied = res.reason !== undefined && res.reason !== 'team_failed';
   audit({ deviceId, action, result: res.applied ? 'ok' : denied ? 'denied' : 'error', detail: name });
   if (res.applied) return res;
   return failAgent(reply, res.reason ?? 'team_failed', name);

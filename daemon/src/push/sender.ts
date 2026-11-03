@@ -14,7 +14,7 @@ import {
 } from '@kovalink/protocol';
 import type { KovalinkConfig } from '../config.js';
 import { logger } from '../logger.js';
-import { loadDevices, saveDevices, type DeviceRecord } from '../security/token.js';
+import { devicesRevision, loadDevices, saveDevices, type DeviceRecord } from '../security/token.js';
 import { deliveryFor, HourlyCap, inQuietHours, type DevicePushPrefs } from './policy.js';
 
 const RECEIPT_DELAY_MS = 15 * 60_000;
@@ -106,8 +106,19 @@ export function isPushTarget(device: DeviceRecord): device is PushTarget {
   );
 }
 
+/**
+ * La liste est relue a chaque instantane de panes, donc plusieurs fois par seconde. Elle
+ * reste en memoire tant que `devices.json` n'a pas bouge : `saveDevices` incremente une
+ * version, et la comparaison coute moins qu'une lecture de fichier.
+ */
+let cachedTargets: { revision: number; targets: PushTarget[] } | null = null;
+
 export function pushTargets(): PushTarget[] {
-  return Object.values(loadDevices()).filter(isPushTarget);
+  const revision = devicesRevision();
+  if (cachedTargets !== null && cachedTargets.revision === revision) return cachedTargets.targets;
+  const targets = Object.values(loadDevices()).filter(isPushTarget);
+  cachedTargets = { revision, targets };
+  return targets;
 }
 
 /**

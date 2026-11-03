@@ -16,13 +16,16 @@ import { requireOptionalNativeModule } from 'expo';
 
 /**
  * Les nombres du cadran. Que des entiers : ni question, ni nom de pane, ni titre.
- * `oldestAt` est l'heure (secondes epoch) de la plus ancienne question ou permission.
+ * `oldestAt` est l'heure (secondes epoch) de la plus ancienne question ou permission,
+ * `at` celle ou ces nombres ont ete composes : la montre et l'iPhone ignorent un envoi
+ * plus ancien que celui qu'ils portent deja.
  */
 export interface WatchCounts {
   asks: number;
   errors: number;
   ended: number;
   oldestAt: number | null;
+  at: number;
 }
 
 interface WatchRelayNative {

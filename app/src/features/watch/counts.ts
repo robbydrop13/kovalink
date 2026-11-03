@@ -64,6 +64,8 @@ export function countsOf(s: CountsSnapshot): WatchCounts {
     // du daemon porte ce chiffre quand l'app est fermee. Ouverte, il reste a zero.
     ended: 0,
     oldestAt,
+    // Instant de composition : la montre jette un envoi plus ancien que celui qu'elle porte.
+    at: now,
   };
 }
 

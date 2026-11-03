@@ -60,7 +60,7 @@ function parsedPrompt(paneId: number, awaitingSince: string): Prompt {
 }
 
 function counts(partial: Partial<WatchCounts> = {}): WatchCounts {
-  return { asks: 0, errors: 0, ended: 0, oldestAt: null, ...partial };
+  return { asks: 0, errors: 0, ended: 0, oldestAt: null, at: T0, ...partial };
 }
 
 describe('nombres du cadran : ce qui compte', () => {
@@ -81,7 +81,7 @@ describe('nombres du cadran : ce qui compte', () => {
       waitsOnYou: 3,
       nowMs: (T0 + 900) * 1000,
     });
-    assert.deepEqual(snap, { asks: 3, errors: 2, ended: 0, oldestAt: T0 });
+    assert.deepEqual(snap, { asks: 3, errors: 2, ended: 0, oldestAt: T0, at: T0 + 900 });
   });
 
   it('une question reportee, ou sans heure, ne tire pas oldestAt en arriere', () => {

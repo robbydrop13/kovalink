@@ -77,10 +77,22 @@ export function loadDevices(): Record<string, DeviceRecord> {
   }
 }
 
+/**
+ * Version du fichier `devices.json`, incrementee a chaque ecriture. Elle permet a un
+ * cache en memoire (la liste des destinataires de push) de savoir qu'il est perime sans
+ * relire le disque.
+ */
+let revision = 0;
+
+export function devicesRevision(): number {
+  return revision;
+}
+
 /** `devices.json` ne contient AUCUN materiel sensible : le jeton est recalculable. */
 export function saveDevices(devices: Record<string, DeviceRecord>): void {
   mkdirSync(paths.home(), { recursive: true, mode: 0o700 });
   writeFileSync(paths.devices(), `${JSON.stringify(devices, null, 2)}\n`, { mode: 0o600 });
+  revision += 1;
 }
 
 export function signToken(master: Buffer, deviceId: string, exp: number): string {

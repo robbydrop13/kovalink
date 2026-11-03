@@ -1,7 +1,8 @@
 // Routines locales de Robin : seul `routinectl` les connait, le daemon ne lit jamais
 // leurs fichiers lui-meme. Chaque appel lui passe un argv, jamais une ligne de shell. Les
-// chemins (`cwd`, prompt, journal) ne sortent pas du Mac : la reponse ne porte que les
-// noms, l'horaire et l'etat.
+// chemins (`cwd`, prompt) restent sur le Mac. Le journal, lui, sort avec le prefixe du
+// dossier personnel ramene a `~` : une ligne de log nomme un fichier sans donner au
+// telephone le nom d'utilisateur du Mac.
 import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -26,12 +27,21 @@ export type Exec = (argv: string[]) => Promise<ExecResult>;
 /** Plafond d'un journal, en lignes. */
 export const ROUTINE_LOG_LINES = 200;
 
+/** `list` et `logs` lisent des fichiers ; un geste (`run`, `disable`, `enable`) passe par
+ *  launchd et peut attendre. Deux plafonds, pour ne pas laisser un `list` pendu 30 s. */
 const TIMEOUT_MS = 20_000;
+const ACTION_TIMEOUT_MS = 30_000;
 const MAX_BUFFER = 4 * 1024 * 1024;
 const STDERR_MAX = 200;
 
 /** Le format que `routinectl` accepte comme nom de routine (donc comme nom de fichier). */
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+/**
+ * Un geste deja en cours pour ce nom. `routinectl run` peut durer : deux appuis sur
+ * « Run now » ne doivent pas lancer la routine deux fois, ni faire attendre le second.
+ */
+const inFlight = new Set<string>();
 
 /** Chemin de `routinectl`, surchargeable par `KOVALINK_ROUTINECTL` (tests, install custom). */
 export function routinectlPath(): string {
@@ -39,16 +49,21 @@ export function routinectlPath(): string {
 }
 
 /**
- * Executeur par defaut : `execFile`, jamais un shell, 20 s de plafond. Un binaire absent
- * (`ENOENT`) n'a pas de code numerique : il vaut un echec, avec le message de spawn dans
- * `stderr` pour le journal local.
+ * Executeur par defaut : `execFile`, jamais un shell, 20 s pour une lecture et 30 s pour
+ * un geste. Un binaire absent (`ENOENT`) n'a pas de code numerique : il vaut un echec,
+ * avec le message de spawn dans `stderr` pour le journal local.
  */
-export const execRoutinectl: Exec = (argv) =>
-  new Promise((resolve) => {
+export const execRoutinectl: Exec = (argv) => {
+  const isRead = argv[0] === 'list' || argv[0] === 'logs';
+  return new Promise((resolve) => {
     execFile(
       routinectlPath(),
       argv,
-      { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, encoding: 'utf8' },
+      {
+        timeout: isRead ? TIMEOUT_MS : ACTION_TIMEOUT_MS,
+        maxBuffer: MAX_BUFFER,
+        encoding: 'utf8',
+      },
       (err, stdout, stderr) => {
         const e = err as (Error & { code?: unknown }) | null;
         const code = e === null ? 0 : typeof e.code === 'number' ? e.code : 1;
@@ -56,6 +71,7 @@ export const execRoutinectl: Exec = (argv) =>
       },
     );
   });
+};
 
 /** Echec d'un appel : nom inconnu (404 cote route) ou `routinectl` en echec (502). */
 export class RoutineError extends Error {
@@ -117,11 +133,29 @@ function toRoutine(raw: Record<string, unknown>): Routine | null {
   };
 }
 
+/** Un seul `routinectl list --json` en vol par executeur (voir `listRoutines`). */
+const listings = new WeakMap<Exec, Promise<RoutinesResponse>>();
+
 /**
  * Les routines actives, telles que `routinectl list --json` les rend. Les routines `done`
  * (schedule `once` deja passee) sont filtrees : elles ne se relancent plus.
+ *
+ * Un seul appel en vol par executeur : l'accueil, l'onglet Scheduled et un geste le
+ * demandent souvent dans la meme seconde, et chaque appel est un processus. Les appelants
+ * simultanes partagent la reponse en cours, oubliee des qu'elle arrive, donc l'appel
+ * suivant relit le disque.
  */
-export async function listRoutines(exec: Exec): Promise<RoutinesResponse> {
+export function listRoutines(exec: Exec): Promise<RoutinesResponse> {
+  const running = listings.get(exec);
+  if (running) return running;
+  const run: Promise<RoutinesResponse> = readList(exec).finally(() => {
+    if (listings.get(exec) === run) listings.delete(exec);
+  });
+  listings.set(exec, run);
+  return run;
+}
+
+async function readList(exec: Exec): Promise<RoutinesResponse> {
   const res = await exec(['list', '--json']);
   if (res.code !== 0) throw new RoutineError('routinectl_failed', failure('list', res));
   let parsed: unknown;
@@ -143,34 +177,45 @@ export async function listRoutines(exec: Exec): Promise<RoutinesResponse> {
 }
 
 /**
- * Garde commune : un nom hors format ne part jamais vers `routinectl`, et un nom absent
- * de la liste courante est inconnu. `list` est relu a chaque appel : pas d'etat local a
- * perimer quand une routine est ajoutee ou retiree a la main.
+ * La routine nommee, ou `null` : un nom hors format ne part jamais vers `routinectl`, et
+ * un nom absent de la liste courante est inconnu. `list` est relu a chaque appel : pas
+ * d'etat local a perimer quand une routine est ajoutee ou retiree a la main.
  */
-async function requireRoutine(exec: Exec, name: string): Promise<void> {
-  if (!NAME_RE.test(name)) {
-    throw new RoutineError('unknown_routine', 'unknown routine');
-  }
+async function findRoutine(exec: Exec, name: string): Promise<Routine | null> {
+  if (!NAME_RE.test(name)) return null;
   const { routines } = await listRoutines(exec);
-  if (!routines.some((routine) => routine.name === name)) {
-    throw new RoutineError('unknown_routine', 'unknown routine');
-  }
+  return routines.find((routine) => routine.name === name) ?? null;
 }
 
+/**
+ * Un geste : `routinectl run`, `disable` ou `enable`. Le nom est relu dans la liste
+ * courante, un second geste pour le meme nom est refuse (`busy`), et `run` sur une
+ * routine suspendue aussi (`paused`) : `routinectl` sort alors 0 sans rien lancer, ce
+ * qui laissait l'app croire que la routine etait partie.
+ */
 async function act(
   exec: Exec,
   name: string,
   command: 'run' | 'disable' | 'enable',
 ): Promise<RoutineActionResponse> {
+  if (inFlight.has(name)) return { applied: false, reason: 'busy' };
+  inFlight.add(name);
   try {
-    await requireRoutine(exec, name);
-  } catch (e) {
-    if (e instanceof RoutineError) return { applied: false, reason: e.reason };
-    throw e;
+    let routine: Routine | null;
+    try {
+      routine = await findRoutine(exec, name);
+    } catch (e) {
+      if (e instanceof RoutineError) return { applied: false, reason: e.reason };
+      throw e;
+    }
+    if (routine === null) return { applied: false, reason: 'unknown_routine' };
+    if (command === 'run' && !routine.enabled) return { applied: false, reason: 'paused' };
+    const res = await exec([command, name]);
+    if (res.code !== 0) return { applied: false, reason: 'routinectl_failed' };
+    return { applied: true };
+  } finally {
+    inFlight.delete(name);
   }
-  const res = await exec([command, name]);
-  if (res.code !== 0) return { applied: false, reason: 'routinectl_failed' };
-  return { applied: true };
 }
 
 export function runRoutine(exec: Exec, name: string): Promise<RoutineActionResponse> {
@@ -190,12 +235,18 @@ export function resumeRoutine(exec: Exec, name: string): Promise<RoutineActionRe
 /**
  * Les `ROUTINE_LOG_LINES` dernieres lignes du journal. `-n` borne deja la lecture ; la
  * tranche ici protege d'un `routinectl` qui l'ignorerait.
+ *
+ * Une ligne de log nomme des fichiers du Mac : le prefixe du dossier personnel part en
+ * `~`, pour que le telephone ne recoive jamais le nom d'utilisateur de la machine.
  */
 export async function routineLog(exec: Exec, name: string): Promise<RoutineLogResponse> {
-  await requireRoutine(exec, name);
+  if ((await findRoutine(exec, name)) === null) {
+    throw new RoutineError('unknown_routine', 'unknown routine');
+  }
   const res = await exec(['logs', name, '-n', String(ROUTINE_LOG_LINES)]);
   if (res.code !== 0) throw new RoutineError('routinectl_failed', failure('logs', res));
+  const home = homedir();
   const lines = res.stdout.split('\n');
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  return { lines: lines.slice(-ROUTINE_LOG_LINES) };
+  return { lines: lines.slice(-ROUTINE_LOG_LINES).map((line) => line.split(home).join('~')) };
 }

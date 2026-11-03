@@ -22,6 +22,8 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     private static let sharedSuite = "group.io.claap.kovalink"
     /// Derniers nombres pousses, renvoyes a une montre qui s'active apres coup.
     private static let countsKey = "watch.counts"
+    /// Instant de composition des nombres gardes, en secondes epoch.
+    private static let countsAtKey = "watch.counts.at"
 
     private struct Config: Codable {
         let baseUrl: String
@@ -41,15 +43,26 @@ final class WatchRelay: NSObject, WCSessionDelegate {
 
     // MARK: Comptes du cadran
 
-    /// Les nombres du cadran, en quatre entiers : `[asks, errors, ended, oldestAt]`,
-    /// `oldestAt` etant la seconde epoch de la plus ancienne attente, 0 quand il n'y en a
-    /// pas. Jamais un mot : ni question, ni nom de pane, ni titre.
+    /// Les nombres du cadran, en cinq entiers : `[asks, errors, ended, oldestAt, at]`,
+    /// `oldestAt` etant la seconde epoch de la plus ancienne attente (0 quand il n'y en a
+    /// pas) et `at` celle de leur composition. Jamais un mot : ni question, ni nom de
+    /// pane, ni titre.
+    ///
+    /// Un `at` plus ancien que le dernier recu est ignore : deux pushes partis dans un
+    /// ordre peuvent arriver dans l'autre, et le second ecraserait des nombres plus
+    /// recents par des plus vieux.
     ///
     /// Ils sont gardes dans les defaults partages, pour qu'une montre activee plus tard
     /// (app installee, iPhone redemarre) recoive le dernier etat au lieu de rien.
-    func setCounts(asks: Int, errors: Int, ended: Int, oldestAt: Int?) {
-        let payload = [asks, errors, ended, oldestAt ?? 0]
+    func setCounts(asks: Int, errors: Int, ended: Int, oldestAt: Int?, at: Int?) {
+        let stamp = at ?? Int(Date().timeIntervalSince1970)
+        if stamp < sharedDefaults.integer(forKey: Self.countsAtKey) {
+            log.notice("counts ignored, older than the stored ones")
+            return
+        }
+        let payload = [asks, errors, ended, oldestAt ?? 0, stamp]
         sharedDefaults.set(payload, forKey: Self.countsKey)
+        sharedDefaults.set(stamp, forKey: Self.countsAtKey)
         log.notice("counts asks=\(asks) errors=\(errors) ended=\(ended)")
         publish(payload)
     }

@@ -438,16 +438,19 @@ export function fetchRoutines(timeoutMs = 8000): Promise<RoutinesResponse> {
   return request(ROUTES.routines, { timeoutMs });
 }
 
-/** `routinectl run` : le lancement part en fond, mais la route peut attendre 20 s. */
-export function postRoutineRun(name: string, timeoutMs = 25_000): Promise<RoutineActionResponse> {
+/**
+ * `routinectl run` part en fond, mais la route peut attendre 30 s (plafond du daemon).
+ * 50 s laisse la place a l'aller retour TLS et au refus 409.
+ */
+export function postRoutineRun(name: string, timeoutMs = 50_000): Promise<RoutineActionResponse> {
   return request(ROUTES.routineRun(name), { method: 'POST', timeoutMs });
 }
 
-export function postRoutinePause(name: string, timeoutMs = 25_000): Promise<RoutineActionResponse> {
+export function postRoutinePause(name: string, timeoutMs = 50_000): Promise<RoutineActionResponse> {
   return request(ROUTES.routinePause(name), { method: 'POST', timeoutMs });
 }
 
-export function postRoutineResume(name: string, timeoutMs = 25_000): Promise<RoutineActionResponse> {
+export function postRoutineResume(name: string, timeoutMs = 50_000): Promise<RoutineActionResponse> {
   return request(ROUTES.routineResume(name), { method: 'POST', timeoutMs });
 }
 
@@ -465,8 +468,10 @@ export function fetchAgentsRoster(timeoutMs = 25_000): Promise<AgentsRosterRespo
 
 /**
  * `team reopen <name>` : la seule ecriture de l'onglet Agents, sur une session fermee.
- * Un refus (404 nom inconnu, 409 pas fermee, 502 `team` en echec) leve un `HttpError`.
+ * Le daemon attend le CLI jusqu'a 45 s : 50 s laisse le temps du retour. Un refus
+ * (404 nom inconnu, 409 pas fermee ou deja en cours, 502 `team` en echec) leve un
+ * `HttpError`.
  */
-export function postAgentReopen(name: string, timeoutMs = 25_000): Promise<AgentActionResponse> {
+export function postAgentReopen(name: string, timeoutMs = 50_000): Promise<AgentActionResponse> {
   return request(ROUTES.agentReopen(name), { method: 'POST', timeoutMs });
 }

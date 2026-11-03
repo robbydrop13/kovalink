@@ -56,13 +56,17 @@ kovalinkd : resolveSession (comme le pont Slack) puis KeyGate.emitText (comme l'
 
 ## Complication (cadran)
 
-- L'iPhone pousse `[asks, errors, ended, oldestAt]` par `updateApplicationContext` et, quand
-  il reste du budget, `transferCurrentComplicationUserInfo` (module `watch-relay`).
+- L'iPhone pousse `[asks, errors, ended, oldestAt, at]` par `updateApplicationContext` et,
+  quand il reste du budget, `transferCurrentComplicationUserInfo` (module `watch-relay`).
+  `at` est la seconde epoch de composition : un contexte arrivé en retard ne remplace pas
+  des nombres plus récents.
 - La montre le reçoit (`didReceiveApplicationContext`, `didReceiveUserInfo`, et le contexte
   déjà reçu à l'activation), l'écrit dans les defaults de l'App Group `group.io.claap.kovalink`
-  sous `watch.counts` plus `watch.counts.at`, puis recharge les timelines.
+  sous `watch.counts` (les quatre nombres) plus `watch.counts.at` (l'instant), puis recharge
+  les timelines.
 - L'extension `targets/watch-widget` relit ces quatre entiers : rond avec le nombre d'asks,
-  rectangle avec l'âge de la plus ancienne attente, inline et coin en « N asks ».
+  rectangle avec l'âge de la plus ancienne attente en date relative, inline et coin en
+  « N asks ».
 - Rafraîchissement demandé toutes les 15 min, un tap ouvre l'app montre. Jamais un mot du
   contenu : ni question, ni nom de pane.
 

@@ -165,6 +165,8 @@ export const sessions = {
   scheduledRunFailed: (why: string) => `Run failed. ${why}`,
   scheduledPauseFailed: (why: string) => `Pause failed. ${why}`,
   scheduledResumeFailed: (why: string) => `Resume failed. ${why}`,
+  scheduledRunPaused: 'This routine is paused. Resume it first.',
+  scheduledBusy: 'A change is already running, wait a moment',
   scheduledRowA11y: (name: string, line: string, status: string) =>
     line.length > 0 ? `${name}, ${line}, ${status}` : `${name}, ${status}`,
   scheduledRowHint: 'Opens the actions for this routine',
@@ -191,6 +193,7 @@ export const sessions = {
   agentsOpenConfirm: (name: string) => `Open ${name}?`,
   agentsOpenFailed: (why: string) => `Open failed. ${why}`,
   agentsEmpty: 'None',
+  agentsBusy: 'Already opening, wait a moment',
   agentsRowHint: 'Opens this session',
   agentsOpenHint: 'Asks team to reopen this session on the Mac',
   sessionsBootFailedTitle: 'Could not start',

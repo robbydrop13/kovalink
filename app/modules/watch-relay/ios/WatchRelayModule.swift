@@ -20,7 +20,8 @@ public class WatchRelayModule: Module {
                 asks: intOf(counts, "asks") ?? 0,
                 errors: intOf(counts, "errors") ?? 0,
                 ended: intOf(counts, "ended") ?? 0,
-                oldestAt: intOf(counts, "oldestAt")
+                oldestAt: intOf(counts, "oldestAt"),
+                at: intOf(counts, "at")
             )
         }
     }
@@ -42,8 +43,10 @@ public class WatchRelayAppDelegateSubscriber: ExpoAppDelegateSubscriber {
     }
 
     /// Le push SILENCIEUX de comptes du daemon (`aps: {"content-available": 1}`, sans
-    /// alerte, sans son, sans badge). `kl` est à la racine du `userInfo` et ne porte que
-    /// des nombres : `t == "counts"`, `asks`, `errors`, `ended`, `oldestAt`.
+    /// alerte, sans son, sans badge). Expo place la charge `data` sous `userInfo["body"]` :
+    /// c'est là que vit `kl`, à la racine du `userInfo` pour un push APNs brut. Elle ne
+    /// porte que des nombres : `asks`, `errors`, `ended`, `oldestAt`, `at`, et
+    /// `t == "counts"`.
     ///
     /// C'est le seul chemin qui atteint le cadran quand l'app est fermée : iOS réveille le
     /// processus quelques secondes, on écrit dans les defaults partagés et on pousse à la
@@ -54,7 +57,8 @@ public class WatchRelayAppDelegateSubscriber: ExpoAppDelegateSubscriber {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        guard let kl = userInfo["kl"] as? [String: Any],
+        let body = userInfo["body"] as? [String: Any]
+        guard let kl = body?["kl"] as? [String: Any] ?? userInfo["kl"] as? [String: Any],
               kl["t"] as? String == "counts",
               let asks = kl["asks"] as? Int,
               let errors = kl["errors"] as? Int
@@ -68,8 +72,14 @@ public class WatchRelayAppDelegateSubscriber: ExpoAppDelegateSubscriber {
             asks: asks,
             errors: errors,
             ended: kl["ended"] as? Int ?? 0,
-            oldestAt: kl["oldestAt"] as? Int
+            oldestAt: kl["oldestAt"] as? Int,
+            at: kl["at"] as? Int
         )
+        // Le push silencieux ne touche pas au badge : sans ces deux lignes, une permission
+        // acceptée sur le Mac laissait le compteur haut sur l'écran d'accueil.
+        DispatchQueue.main.async {
+            UIApplication.shared.applicationIconBadgeNumber = asks
+        }
         completionHandler(.newData)
     }
 }
