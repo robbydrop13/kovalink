@@ -49,6 +49,11 @@ export const ERROR_CODES = [
   'MIRA_UNAVAILABLE',
   'MIRA_TAB_NOT_FOUND',
   'MIRA_ERROR',
+  // Routines locales : le nom est hors format ou absent de `routinectl list --json`
+  // (404), ou `routinectl` a echoue (502). Son message reste sur le Mac : il porte des
+  // chemins que le telephone n'a pas a voir.
+  'ROUTINE_NOT_FOUND',
+  'ROUTINE_ERROR',
   'INTERNAL',
 ] as const;
 

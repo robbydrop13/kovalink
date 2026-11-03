@@ -21,6 +21,9 @@ const RATE_RULES: Record<string, number> = {
   // un formulaire se remplit a coups de taps et de touches (10 gestes/s).
   miraShot: 240,
   miraAct: 600,
+  // Routines : l'ecran lit la liste rarement, et chaque geste relit `routinectl` avant
+  // d'agir. 60 suffit large a un pull-to-refresh repete.
+  routines: 60,
   health: 60,
   pair: 10,
   authFail: 10,

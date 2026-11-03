@@ -136,6 +136,16 @@ export const ROUTES = {
   miraTabs: '/v1/mira/tabs',
   miraFrame: (tabId: string): string => `/v1/mira/tabs/${encodeURIComponent(tabId)}/frame`,
   miraAct: (tabId: string): string => `/v1/mira/tabs/${encodeURIComponent(tabId)}/act`,
+
+  // --- Routines locales, pilotees par `routinectl` ------------------------
+  // Cinq routes : la liste, trois gestes (lancer, mettre en pause, reprendre) et le
+  // journal. Aucune route de suppression ni de modification du prompt : cela se fait
+  // sur le Mac, dans un editeur.
+  routines: '/v1/routines',
+  routineRun: (name: string): string => `/v1/routines/${encodeURIComponent(name)}/run`,
+  routinePause: (name: string): string => `/v1/routines/${encodeURIComponent(name)}/pause`,
+  routineResume: (name: string): string => `/v1/routines/${encodeURIComponent(name)}/resume`,
+  routineLog: (name: string): string => `/v1/routines/${encodeURIComponent(name)}/log`,
 } as const;
 
 /** Gabarits Fastify correspondants. Ecrits une fois, a cote des chemins clients. */
@@ -188,6 +198,12 @@ export const ROUTE_PATTERNS = {
   miraTabs: '/v1/mira/tabs',
   miraFrame: '/v1/mira/tabs/:tabId/frame',
   miraAct: '/v1/mira/tabs/:tabId/act',
+  // Routines locales : memes chemins que `ROUTES`, `:name` valide par le daemon.
+  routines: '/v1/routines',
+  routineRun: '/v1/routines/:name/run',
+  routinePause: '/v1/routines/:name/pause',
+  routineResume: '/v1/routines/:name/resume',
+  routineLog: '/v1/routines/:name/log',
 } as const;
 
 /**
@@ -484,4 +500,60 @@ export interface VoiceStreamTokenResponse {
   expiresAt: number;
   /** Nombre de termes du glossaire envoyes, pour le diagnostic. */
   keyterms: number;
+}
+
+/** Un passage de routine, tel que `routinectl list --json` le rend dans `last`. */
+export interface RoutineLastRun {
+  /** Debut du passage, heure locale ISO. */
+  start: string;
+  end: string;
+  /** Code de sortie du passage, 0 quand il s'est termine sans erreur. */
+  code: number;
+}
+
+/**
+ * Une routine locale, telle que `GET /v1/routines` la rend.
+ *
+ * Sans ses chemins : `cwd`, fichier de prompt et journal restent sur le Mac. `done` est
+ * toujours faux ici, les routines neutralisees apres leur passage (`once` deja partie)
+ * sont filtrees.
+ */
+export interface Routine {
+  name: string;
+  schedule: string;
+  /** Le meme horaire en mots (`daily at 09:17`), pour l'affichage. */
+  scheduleWords: string;
+  enabled: boolean;
+  /** `once` deja passee : la routine ne se relancera plus. Toujours faux dans la liste. */
+  done: boolean;
+  /** Chargee par launchd (une routine `manual` ne l'est jamais). */
+  active: boolean;
+  manual: boolean;
+  loaded: boolean;
+  running: boolean;
+  /** Prochaine echeance, heure locale ISO, `null` quand il n'y en a pas. */
+  nextRun: string | null;
+  last: RoutineLastRun | null;
+  description: string;
+}
+
+export interface RoutinesResponse {
+  routines: Routine[];
+}
+
+/** Raison d'un refus sur les routes de routines. */
+export type RoutineActionReason = 'unknown_routine' | 'routinectl_failed';
+
+/**
+ * Reponse des trois gestes (`run`, `pause`, `resume`). `applied:false` porte toujours sa
+ * raison, comme `ActionResponse` : nom inconnu (404) ou `routinectl` en echec (502).
+ */
+export interface RoutineActionResponse {
+  applied: boolean;
+  reason?: RoutineActionReason;
+}
+
+/** Reponse de `GET /v1/routines/:name/log` : les 200 dernieres lignes du journal. */
+export interface RoutineLogResponse {
+  lines: string[];
 }

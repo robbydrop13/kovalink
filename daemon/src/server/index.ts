@@ -16,6 +16,7 @@ import {
   type AskSnoozeRequest,
   type AskSnoozeResponse,
   type AsksResponse,
+  type RoutineActionReason,
   type ErrorCode,
   type ErrorPayload,
   type KovaLaunchResponse,
@@ -42,6 +43,8 @@ import {
   type KovaSessionsResponse,
   type Prompt,
   type Turn,
+  type RoutineActionResponse,
+  type RoutinesResponse,
 } from '@kovalink/protocol';
 import { audit } from '../audit.js';
 import { consumePairing, readPairing } from '../pairing.js';
@@ -52,6 +55,7 @@ import { logger } from '../logger.js';
 import { transcriptPath } from '../paths.js';
 import { formatTurnEndSubtitle } from '../turnEnd.js';
 import { buildTurns, sortAssistantBlocks } from '../transcript/jsonl.js';
+import { RoutineError, execRoutinectl, listRoutines, pauseRoutine, resumeRoutine, routineLog, runRoutine } from '../routines.js';
 import { readTailLines } from '../transcript/session.js';
 import {
   loadDevices,
@@ -96,6 +100,36 @@ function fail(reply: FastifyReply, status: number, code: ErrorCode, message: str
     retryable: code === 'KOVA_DOWN' || code === 'IPC_TIMEOUT',
   };
   void reply.code(status).send(payload);
+}
+
+/**
+ * Refus d'une route de routines : 404 pour un nom inconnu ou hors format, 502 quand
+ * `routinectl` echoue. Le message de `routinectl` ne part JAMAIS vers l'app (il porte des
+ * chemins du Mac) : il reste dans le journal local.
+ */
+function failRoutine(
+  reply: FastifyReply,
+  reason: RoutineActionReason,
+  name: string,
+  why = '',
+): void {
+  if (reason === 'unknown_routine') return fail(reply, 404, 'ROUTINE_NOT_FOUND', 'unknown routine');
+  logger.warn('routinectl en echec', { name, err: why });
+  return fail(reply, 502, 'ROUTINE_ERROR', 'routinectl failed');
+}
+
+/** Audit et reponse d'un geste : le journal nomme le geste et la routine, jamais sa sortie. */
+function routineResult(
+  reply: FastifyReply,
+  deviceId: string,
+  action: string,
+  name: string,
+  res: RoutineActionResponse,
+): RoutineActionResponse | void {
+  const denied = res.reason === 'unknown_routine';
+  audit({ deviceId, action, result: res.applied ? 'ok' : denied ? 'denied' : 'error', detail: name });
+  if (res.applied) return res;
+  return failRoutine(reply, res.reason ?? 'routinectl_failed', name);
 }
 
 /**
@@ -551,6 +585,85 @@ export async function createHttpServer(
       services.nonces.release(nonce);
       if (e instanceof ForbiddenError) return fail(reply, 403, e.code, e.message);
       throw e;
+    }
+  });
+
+  /**
+   * Routines locales, pilotees par `routinectl` : la liste, trois gestes (lancer,
+   * mettre en pause, reprendre) et le journal. Le daemon ne lit jamais les fichiers de
+   * routine lui-meme, et passe toujours un argv a `routinectl`, jamais une ligne de
+   * shell. Les chemins (`cwd`, prompt, journal) restent sur le Mac.
+   *
+   * Aucune route de suppression ni d'edition du prompt : cela se fait sur le Mac, dans
+   * un editeur (decision de Robin).
+   */
+  app.get(ROUTE_PATTERNS.routines, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'routines')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many routine reads');
+    }
+    try {
+      const body: RoutinesResponse = await listRoutines(execRoutinectl);
+      return body;
+    } catch (e) {
+      if (!(e instanceof RoutineError)) throw e;
+      audit({ deviceId, action: 'routine.list', result: 'error', detail: e.reason });
+      return failRoutine(reply, e.reason, 'list', e.message);
+    }
+  });
+
+  /** `routinectl run <name>` : lance la routine tout de suite, en fond. */
+  app.post<{ Params: { name: string } }>(ROUTE_PATTERNS.routineRun, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'routines')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many routine actions');
+    }
+    const name = req.params.name;
+    const res = await runRoutine(execRoutinectl, name);
+    return routineResult(reply, deviceId, 'routine.run', name, res);
+  });
+
+  /** `routinectl disable <name>` : `enabled: false`, plus aucun declenchement. */
+  app.post<{ Params: { name: string } }>(ROUTE_PATTERNS.routinePause, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'routines')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many routine actions');
+    }
+    const name = req.params.name;
+    const res = await pauseRoutine(execRoutinectl, name);
+    return routineResult(reply, deviceId, 'routine.pause', name, res);
+  });
+
+  /** `routinectl enable <name>` : la routine reprend son horaire. */
+  app.post<{ Params: { name: string } }>(ROUTE_PATTERNS.routineResume, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'routines')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many routine actions');
+    }
+    const name = req.params.name;
+    const res = await resumeRoutine(execRoutinectl, name);
+    return routineResult(reply, deviceId, 'routine.resume', name, res);
+  });
+
+  /**
+   * Les 200 dernieres lignes du journal. `routinectl logs` peut ecrire un chemin en
+   * erreur : ce message reste au journal local, l'app ne recoit qu'un 502 generique.
+   */
+  app.get<{ Params: { name: string } }>(ROUTE_PATTERNS.routineLog, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'routines')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many routine reads');
+    }
+    const name = req.params.name;
+    try {
+      const body = await routineLog(execRoutinectl, name);
+      audit({ deviceId, action: 'routine.log', result: 'ok', detail: name });
+      return body;
+    } catch (e) {
+      if (!(e instanceof RoutineError)) throw e;
+      const denied = e.reason === 'unknown_routine';
+      audit({ deviceId, action: 'routine.log', result: denied ? 'denied' : 'error', detail: name });
+      return failRoutine(reply, e.reason, name, e.message);
     }
   });
 
