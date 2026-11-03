@@ -164,7 +164,7 @@ export function TabGroupView({
           {summary.working ? <View style={[styles.stateDot, { backgroundColor: colors.status.working }]} /> : null}
         </>
       ) : null}
-      <Txt variant="footnote" color={colors.text.tertiary} numberOfLines={1}>
+      <Txt variant="footnote" color={colors.text.secondary} numberOfLines={1}>
         {t.tabCollapsedCount(group.panes.length)}
       </Txt>
       <Icon name={collapsed ? 'chevron-right' : 'chevron-down'} size={16} color={colors.text.tertiary} />
