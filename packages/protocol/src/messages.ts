@@ -221,6 +221,12 @@ export interface AsksMsg {
   asks: AskItem[];
   snoozeChoices: AskSnoozeChoice[];
   supported: boolean;
+  /**
+   * Ce qu'un humain doit repondre maintenant dans toute l'app : prompts de permission
+   * et questions ouvertes, dedoublonnes par pane (`needs.ts`). La pastille de l'icone
+   * cote daemon compte la meme chose.
+   */
+  waitsOnYou: number;
 }
 export interface PaneScreenMsg {
   t: 'pane.screen.ok';

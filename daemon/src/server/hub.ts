@@ -4,6 +4,7 @@ import {
   WS_CLOSE_CODE,
   WS_DEAD_AFTER_MISSED_PONGS,
   WS_PING_INTERVAL_MS,
+  type AsksMsg,
   type C2S,
   type DevicePrefs,
   type ErrorCode,
@@ -16,6 +17,7 @@ import {
 import { audit } from '../audit.js';
 import { saveConfig } from '../config.js';
 import { logger } from '../logger.js';
+import { waitsOnYouOf } from '../needs.js';
 import { transcriptPath } from '../paths.js';
 import { buildTurns, sortAssistantBlocks } from '../transcript/jsonl.js';
 import { buildSessionMeta } from '../transcript/session.js';
@@ -100,6 +102,8 @@ export class Hub {
    * Oublie sur `none`, sur `pane-close` et quand le pane repasse en travail.
    */
   private readonly lastPrompts = new Map<number, Prompt>();
+  /** Dernier `waitsOnYou` diffuse : une permission qui apparait ne fait pas de bruit si le compte ne bouge pas. */
+  private lastWaitsOnYou: number | null = null;
   private readonly now: () => number;
   private heartbeatTimer: NodeJS.Timeout | null = null;
 
@@ -559,6 +563,7 @@ export class Hub {
     const snap = this.panesSnapshot();
     this.broadcast(snap, (c) => c.panesSubscribed);
     this.replayPrompts((m) => this.broadcast(m, (c) => c.panesSubscribed));
+    this.syncWaitsOnYou();
   }
 
   /** Les prompts lisibles des panes encore ouverts, APRES l'instantane (l'app doit connaitre le pane). */
@@ -582,24 +587,50 @@ export class Hub {
     return [...this.lastPrompts.values()];
   }
 
-  asksSnapshot(): S2C {
-    const { asks, snoozeChoices, supported } = this.services.asks.snapshot();
-    return { t: 'asks', asks, snoozeChoices, supported };
+  asksSnapshot(): AsksMsg {
+    const snapshot = this.services.asks.snapshot();
+    return {
+      t: 'asks',
+      asks: snapshot.asks,
+      snoozeChoices: snapshot.snoozeChoices,
+      supported: snapshot.supported,
+      waitsOnYou: waitsOnYouOf(this.services.panes.all(), snapshot.asks, this.now()),
+    };
+  }
+
+  /**
+   * La pastille de l'icone : le meme compte que `waitsOnYou` dans le message `asks`,
+   * calcule sur les memes donnees pour que les deux ne divergent jamais.
+   */
+  waitsOnYou(): number {
+    return waitsOnYouOf(this.services.panes.all(), this.services.asks.snapshot().asks, this.now());
   }
 
   /** Les questions des agents ont change : tout le monde remplace sa liste. */
   pushAsks(): void {
-    this.broadcast(this.asksSnapshot(), (c) => c.panesSubscribed);
+    const msg = this.asksSnapshot();
+    this.lastWaitsOnYou = msg.waitsOnYou;
+    this.broadcast(msg, (c) => c.panesSubscribed);
+  }
+
+  /**
+   * Une permission ou une question a change sans que la liste des questions bouge :
+   * le compte vit dans le message `asks`, on ne le rediffuse que s'il a bouge.
+   */
+  private syncWaitsOnYou(): void {
+    if (this.waitsOnYou() !== this.lastWaitsOnYou) this.pushAsks();
   }
 
   pushPaneEvent(event: Extract<S2C, { t: 'pane.event' }>): void {
     this.broadcast(event, (c) => c.panesSubscribed);
+    this.syncWaitsOnYou();
   }
 
   pushPrompt(prompt: Prompt): void {
     if (prompt.state === 'none') this.lastPrompts.delete(prompt.paneId);
     else this.lastPrompts.set(prompt.paneId, prompt);
     this.broadcast({ t: 'prompt', prompt });
+    this.syncWaitsOnYou();
   }
 
   private rememberLink(client: Client): LinkInfo {

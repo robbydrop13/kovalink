@@ -72,9 +72,10 @@ const TAB_TITLES: Record<HomeTab, string> = {
 export default function SessionsScreen() {
   const asks = useAsks((s) => s.asks);
   const pendingAsk = nextAsk(asks);
-  // Le badge des Asks compte les questions dues.
-  // TODO(D01): y ajouter `waitsOnYou` quand le protocole l'expose.
-  const askCount = dueAsks(asks).length;
+  // Le badge des Asks : le compte du daemon (permissions et questions, un par pane),
+  // sinon les questions dues quand le daemon est plus ancien.
+  const waitsOnYou = useAsks((s) => s.waitsOnYou);
+  const askCount = waitsOnYou ?? dueAsks(asks).length;
   // Le point de l'onglet : une routine active dont le dernier passage a echoue.
   const scheduledFailed = useScheduledFailed();
   const tab = useHomeTab((s) => s.tab);

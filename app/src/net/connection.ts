@@ -111,7 +111,7 @@ function handle(msg: S2C): void {
     case 'asks':
       // Remplacement, jamais une fusion : une question reglee sur le Mac disparait de la
       // liste du daemon et doit disparaitre de l'ecran.
-      useAsks.getState().applySnapshot(msg.asks, msg.snoozeChoices, msg.supported);
+      useAsks.getState().applySnapshot(msg.asks, msg.snoozeChoices, msg.supported, msg.waitsOnYou);
       break;
     case 'prompt': {
       usePrompts.getState().setPrompt(msg.prompt);

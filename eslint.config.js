@@ -8,13 +8,17 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   // `app/` porte sa propre configuration : ce fichier couvre le daemon et le protocole.
   // `.claude/` accueille les worktrees des autres agents : jamais lintes d'ici.
-  { ignores: ['**/dist/**', '**/node_modules/**', 'app/**', '.claude/**'] },
+  { ignores: ['**/dist/**', '**/dist-test/**', '**/node_modules/**', 'app/**', '.claude/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
     files: ['**/*.ts'],
     languageOptions: {
-      parserOptions: { projectService: true },
+      parserOptions: {
+        // Le test du protocole compile a part (`tsconfig.test.json`) : il n'appartient
+        // pas au projet `tsc -b` du paquet, mais reste linté.
+        projectService: { allowDefaultProject: ['packages/protocol/test/*.ts'] },
+      },
     },
     rules: {
       'no-restricted-imports': [

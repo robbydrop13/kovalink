@@ -129,7 +129,7 @@ class FakeSocket implements Socket {
   }
 }
 
-function harness() {
+function harness(askRows: Record<string, unknown>[] = []) {
   let clock = 5_000_000;
   const panes = new PaneStore(() => clock);
   panes.upsertRaw({
@@ -171,7 +171,12 @@ function harness() {
     answer: async () => ({ applied: false, reason: 'not_awaiting' }) as never,
     prompts: {} as never,
     refs: new PromptRefs(),
-    asks: new AskBoard({ request: async () => ({ ok: false, error: 'unknown command: list-asks' }) } as never),
+    asks: new AskBoard({
+      request: async (payload: Record<string, unknown>) =>
+        payload['cmd'] === 'list-asks'
+          ? { ok: true, data: { asks: askRows } }
+          : { ok: false, error: `unknown command: ${String(payload['cmd'])}` },
+    } as never),
     tailer,
     sleep,
     rate: new RateLimiter(),
@@ -185,9 +190,11 @@ function harness() {
     hub.add(sock, deviceId, '100.64.0.2');
     return sock;
   };
+  const asks = services.asks;
   return {
     hub,
     panes,
+    asks,
     tailer,
     sleep,
     spawned,
@@ -660,5 +667,74 @@ describe('changement de liaison Tailscale', () => {
     h.hub.pushLinkChanges({ status: 'up', pid: 1 });
     assert.deepEqual(links(), ['par', null]);
     setKnownPeers([]);
+  });
+});
+
+describe('ce qui attend Robin (waitsOnYou)', () => {
+  /** Une question de `kova ask` sur la session du pane 66. */
+  const rawAsk = {
+    id: 'a1',
+    from: 'agent',
+    message: 'Ship the draft?',
+    buttons: ['OK'],
+    input: false,
+    asked_at: 1_000,
+    snoozed_until: 0,
+    due: true,
+    waiting: true,
+    session_id: SESSION,
+    cwd: CWD,
+  };
+
+  it('le message asks porte waitsOnYou, et la pastille compte la meme chose', async () => {
+    const h = harness([rawAsk]);
+    assert.equal((await h.asks.refresh()).changed, true);
+    // Le meme pane porte aussi un prompt de permission, plus recent que la question.
+    h.panes.setAwaiting(66, true, new Date(1_200_000).toISOString(), 'daemon');
+    const client = h.connect();
+    const msgs = await client.say({ t: 'panes.subscribe', id: 'p1' });
+    const asks = msgs.find((m) => m.t === 'asks') as { waitsOnYou: number } | undefined;
+    assert.equal(asks?.waitsOnYou, 1, 'question et permission du meme pane : une seule');
+    // `main.ts` passe cette valeur a la pastille de l'icone.
+    assert.equal(h.hub.waitsOnYou(), 1);
+  });
+
+  it('un pane qui demande autre chose compte en plus, une erreur ne compte pas', async () => {
+    const h = harness([rawAsk]);
+    await h.asks.refresh();
+    h.panes.upsertRaw({
+      id: 67,
+      window: 0,
+      tab: 1,
+      cwd: CWD,
+      title: 'web',
+      pid: 2,
+      agent: 'claude',
+      agent_session_id: 'sess-web',
+      awaiting: true,
+      awaiting_since: new Date(800_000).toISOString(),
+      error: { kind: 'Limit reached', text: 'resets 5:20pm' },
+      child_processes: [],
+    });
+    assert.equal(h.hub.waitsOnYou(), 2, 'une question et un prompt de permission');
+  });
+
+  it('une permission qui apparait rediffuse le message asks, sans attendre le sondage', async () => {
+    const h = harness();
+    const client = h.connect();
+    await client.say({ t: 'panes.subscribe', id: 'p1' });
+    const before = client.sent.filter((m) => m.t === 'asks').length;
+    const since = new Date(1_000_000).toISOString();
+    h.panes.setAwaiting(66, true, since, 'daemon');
+    h.hub.pushPaneEvent({
+      t: 'pane.event',
+      ev: 'pane-status',
+      paneId: 66,
+      awaiting: true,
+      awaitingSince: since,
+    });
+    const asks = client.sent.filter((m) => m.t === 'asks') as { waitsOnYou: number }[];
+    assert.equal(asks.length, before + 1);
+    assert.equal(asks.at(-1)?.waitsOnYou, 1);
   });
 });

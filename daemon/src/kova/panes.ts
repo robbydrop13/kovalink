@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { basename } from 'node:path';
-import type { Pane, Tab } from '@kovalink/protocol';
+import type { Pane, PaneError, Tab } from '@kovalink/protocol';
 import { hasTranscript, sessionMeta } from '../transcript/session.js';
 import { liveSessionOf } from './liveSession.js';
 import { colorOf } from './tabColors.js';
@@ -17,6 +17,20 @@ function num(v: unknown, fallback = 0): number {
 }
 function bool(v: unknown): boolean {
   return v === true;
+}
+
+/**
+ * L'erreur API d'un pane, recopiee telle que Kova la rend. `null` chez Kova veut dire
+ * « aucune erreur » et reste `null` ; l'absence du champ (Kova plus ancien) reste une
+ * absence, pour que l'app distingue les deux.
+ */
+function errorOf(value: unknown): PaneError | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== 'object') return undefined;
+  const r = value as Record<string, unknown>;
+  return typeof r['kind'] === 'string' && typeof r['text'] === 'string'
+    ? { kind: r['kind'], text: r['text'] }
+    : undefined;
 }
 
 /** Mappe un pane brut de Kova vers le type partage, champs calcules compris. */
@@ -41,6 +55,7 @@ export function toPane(raw: Record<string, unknown>): Pane {
   const transcript = hasTranscript(cwd, sessionId);
   const meta = sessionId ? sessionMeta(cwd, sessionId) : { permissionMode: null, title: null };
   const awaiting = bool(raw['awaiting']);
+  const error = errorOf(raw['error']);
   const working = bool(raw['working']);
   const window = num(raw['window']);
   // `pane.tab` est l'INDEX de l'onglet, pas son identifiant : verifie sur la machine,
@@ -65,6 +80,7 @@ export function toPane(raw: Record<string, unknown>): Pane {
     // est absent, et on le laisse ABSENT : `bool()` en ferait `false`, c'est a dire « Kova
     // dit que ce pane est lu », ce qui supprimerait le repli local de l'app.
     ...(typeof raw['unread'] === 'boolean' ? { unread: raw['unread'] } : {}),
+    ...(error !== undefined ? { error } : {}),
     minimized: bool(raw['minimized']),
     agent,
     agent_session_id: strOrNull(raw['agent_session_id']) ?? live?.id ?? null,

@@ -372,7 +372,9 @@ async function run(): Promise<void> {
   // (A6) : session ouverte sur un telephone VIVANT au premier plan, Robin devant son
   // Mac (suspension 60 s). Le reste (reglages d'appareil, heures calmes, plafond) est
   // decide dans `PushSender`, et la categorie `KL_AWAITING_*` vient de `categoryForPrompt`.
-  const badge = (): number => panes.all().reduce((n, p) => n + (p.awaiting ? 1 : 0), 0);
+  // Le meme compte que la pastille des questions du telephone : prompts de permission
+  // et questions `kova ask` ouvertes, dedoublonnes par pane (voir `needs.ts`).
+  const badge = (): number => hub.waitsOnYou();
   const notifier = new PushNotifier({
     isWatchedLive: (sessionId, paneId, now) => hub.isWatching(sessionId, paneId, now),
     isMacFocused: (paneId) => panes.appActive && panes.focusPaneId === paneId,

@@ -11,7 +11,7 @@
     "build": "tsc -b packages/protocol daemon && node packages/protocol/scripts/gen-swift.mjs && node packages/protocol/scripts/gen-tokens.mjs",
     "tokens": "node packages/protocol/scripts/gen-tokens.mjs",
     "clean": "tsc -b --clean packages/protocol daemon",
-    "test": "npm run build && npm run test --workspace daemon",
+    "test": "npm run build && npm run test --workspace daemon && npm run test --workspace @kovalink/protocol",
     "lint": "eslint ."
   },
   "devDependencies": {

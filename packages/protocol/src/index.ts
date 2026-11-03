@@ -13,6 +13,7 @@ export * from './messages.js';
 export * from './mime.js';
 export * from './mira.js';
 export * from './notifications.js';
+export * from './needs.js';
 export * from './pairing.js';
 export * from './pane.js';
 export * from './prompt.js';

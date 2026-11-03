@@ -23,6 +23,11 @@ export interface ChildProcess {
   version: string | null;
 }
 
+export interface PaneError {
+  kind: string;
+  text: string;
+}
+
 /** Pane tel qu'expose a l'app : champs Kova bruts, plus les champs calcules. */
 export interface Pane {
   id: number;
@@ -50,6 +55,13 @@ export interface Pane {
    * l'app sur sa regle locale (les `Prompt` synthetises par le daemon).
    */
   unread?: boolean;
+  /**
+   * L'erreur API sur laquelle le dernier tour est mort, telle que Kova la rend
+   * (`list-panes`), ou `null` quand il n'y en a pas. `kind` est deja un mot d'interface
+   * (« Limit reached », « API error », « Request failed », « Logged out », « Error »).
+   * ABSENT chez un Kova qui ne l'expose pas encore : absent n'est pas `null`.
+   */
+  error?: PaneError | null;
   minimized: boolean;
   agent: string | null;
   agent_session_id: string | null;

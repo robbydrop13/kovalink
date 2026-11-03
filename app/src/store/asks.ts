@@ -18,9 +18,11 @@ interface AsksState {
   snoozeChoices: AskSnoozeChoice[];
   /** Faux quand le Kova du Mac ne connait pas encore les questions : on le dit. */
   supported: boolean;
+  /** Le compte du daemon (`waitsOnYou`) : null tant qu'un daemon plus ancien ne le donne pas. */
+  waitsOnYou: number | null;
   phase: Record<string, AskPhase>;
   notice: Record<string, string | null>;
-  applySnapshot: (asks: AskItem[], snoozeChoices: AskSnoozeChoice[], supported: boolean) => void;
+  applySnapshot: (asks: AskItem[], snoozeChoices: AskSnoozeChoice[], supported: boolean, waitsOnYou?: number) => void;
   setPhase: (askId: string, phase: AskPhase) => void;
   setNotice: (askId: string, notice: string | null) => void;
 }
@@ -29,10 +31,11 @@ export const useAsks = create<AsksState>((set, get) => ({
   asks: [],
   snoozeChoices: [],
   supported: true,
+  waitsOnYou: null,
   phase: {},
   notice: {},
 
-  applySnapshot: (asks, snoozeChoices, supported) => {
+  applySnapshot: (asks, snoozeChoices, supported, waitsOnYou) => {
     // Les gestes des questions disparues n'ont plus d'objet : sans ce menage, un
     // `failed` d'hier reapparaitrait sur une question qui porte le meme identifiant.
     const alive = new Set(asks.map((a) => a.id));
@@ -40,6 +43,7 @@ export const useAsks = create<AsksState>((set, get) => ({
       asks,
       snoozeChoices: snoozeChoices.length > 0 ? snoozeChoices : s.snoozeChoices,
       supported,
+      waitsOnYou: typeof waitsOnYou === 'number' ? waitsOnYou : null,
       phase: keepKeys(s.phase, alive),
       notice: keepKeys(s.notice, alive),
     }));
