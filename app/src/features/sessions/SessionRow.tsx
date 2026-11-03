@@ -17,7 +17,7 @@ import { StatusGlyph, type AgentState } from '@/ui/StatusGlyph';
 import { Txt, interFamily } from '@/ui/Txt';
 import { shortAge, shortAgeMs } from '@/utils/time';
 import { usePanes } from '@/store/panes';
-import { PermissionNote, bypassAccessibilitySuffix } from './PaneIdentity';
+import { bypassAccessibilitySuffix } from './PaneIdentity';
 import { isStaleSession } from './tabGroups';
 import { reorderAccessibility, type ReorderActions } from './reorderAccessibility';
 import { t } from '@/i18n/en';
@@ -157,7 +157,6 @@ export function SessionRow({
           />
         ) : null}
       </View>
-      <PermissionNote mode={pane.permissionMode} />
       {last ? null : <View style={styles.separator} />}
     </Pressable>
   );

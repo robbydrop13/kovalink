@@ -11,7 +11,7 @@ import { Button, LinkAction } from '@/ui/Button';
 import { StatusGlyph } from '@/ui/StatusGlyph';
 import { Txt } from '@/ui/Txt';
 import { shortAge } from '@/utils/time';
-import { PaneTitle, PermissionNote, bypassAccessibilitySuffix } from './PaneIdentity';
+import { PaneTitle, bypassAccessibilitySuffix } from './PaneIdentity';
 import { reorderAccessibility, type ReorderActions } from './reorderAccessibility';
 import { t } from '@/i18n/en';
 
@@ -85,7 +85,6 @@ export function AwaitingCard({
         </Txt>
         <LinkAction icon="corner-down-left" label={t.actionAnswer} onPress={onAnswer} />
       </View>
-      <PermissionNote mode={pane.permissionMode} />
       <Txt variant="body" color={colors.text.primary} numberOfLines={2}>
         {title}
       </Txt>

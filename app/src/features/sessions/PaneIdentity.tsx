@@ -42,19 +42,6 @@ function PermissionBadge({ mode }: { mode: PermissionMode | null }) {
 }
 
 /**
- * Le texte du PRD, VISIBLE sous la ligne (CA-07). Il vivait seulement dans un
- * `accessibilityLabel`, donc nulle part pour qui n'utilise pas VoiceOver.
- */
-export function PermissionNote({ mode }: { mode: PermissionMode | null }) {
-  if (!isBypass(mode)) return null;
-  return (
-    <Txt variant="caption" color={colors.text.tertiary} numberOfLines={1}>
-      {BYPASS_EXPLANATION}
-    </Txt>
-  );
-}
-
-/**
  * Pastille de l'onglet Kova : point de couleur, nom de l'onglet en couleur sur un fond
  * teinté. Dans l'en-tête d'une session, c'est ce qui dit « où je suis » d'un coup d'œil,
  * comme la couleur de l'onglet sur le Mac. Sans couleur (onglet sans couleur ou onglet
