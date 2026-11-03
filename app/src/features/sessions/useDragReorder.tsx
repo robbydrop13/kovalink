@@ -34,7 +34,18 @@
 // un no-op (`RCTPropsAnimatedNode`). Une valeur neuve à 0 rendue par React laissait donc
 // la ligne écartée là où le geste l'avait poussée, d'une hauteur de ligne, par dessus
 // l'onglet suivant. Seul le module animé peut ramener ce qu'il a déplacé.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef, type ReactNode, type RefObject } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useRef,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { Animated, Easing, type LayoutChangeEvent, type ScrollView, type StyleProp, type ViewStyle } from 'react-native';
 import { Gesture, type PanGesture } from 'react-native-gesture-handler';
 import { colors, motion } from '@/theme';
@@ -174,8 +185,11 @@ export function useDragReorder<K extends string | number>(opts: Options<K>): Dra
   const active = lifted?.key ?? null;
   /** Le nom de cette liste auprès du verrou de défilement partagé. */
   const [lockOwner] = useState(() => ({}));
+  /** La dernière prop `scroll` : écrite après la pose, lue par les rappels du geste et le démontage. */
   const latestScroll = useRef(scroll);
-  latestScroll.current = scroll;
+  useLayoutEffect(() => {
+    latestScroll.current = scroll;
+  }, [scroll]);
 
   // Démontée en plein geste (l'onglet disparaît, l'écran se ferme) : aucun `onEnd` ne
   // viendra. Le défilement est rendu ici, sinon la liste resterait figée pour de bon.

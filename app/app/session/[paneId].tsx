@@ -373,12 +373,18 @@ export default function SessionScreen() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Toasts levés hors de l'écran (« Copied » depuis une bulle) : affichés ici, puis effacés.
+  // Toasts levés hors de l'écran (« Copied » depuis une bulle) : repris pendant le rendu,
+  // clé par son numéro d'ordre (la recette « adjusting state when a prop changes »), puis
+  // effacés du magasin une fois affichés.
   const globalToast = useToast((s) => s.text);
   const globalToastSeq = useToast((s) => s.seq);
+  const [takenToastSeq, setTakenToastSeq] = useState(0);
+  if (globalToastSeq !== takenToastSeq) {
+    setTakenToastSeq(globalToastSeq);
+    if (globalToast) setToast(globalToast);
+  }
   useEffect(() => {
     if (!globalToast) return;
-    setToast(globalToast);
     useToast.getState().clear();
   }, [globalToast, globalToastSeq]);
 

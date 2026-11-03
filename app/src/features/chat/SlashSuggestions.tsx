@@ -22,19 +22,23 @@ const cache = new Map<number, { at: number; commands: SlashCommand[] }>();
  * Un échec réseau donne une liste vide : le menu ne s'affiche pas, rien de plus.
  */
 export function useSlashCommands(paneId: number, active: boolean): SlashCommand[] {
-  const [commands, setCommands] = useState<SlashCommand[]>(() => cache.get(paneId)?.commands ?? []);
+  // L'état est clé par son pane : un changement de pane s'ajuste pendant le rendu (la
+  // recette React « adjusting state when a prop changes »), jamais depuis un effet.
+  const [loaded, setLoaded] = useState<{ paneId: number; commands: SlashCommand[] }>(() => ({
+    paneId,
+    commands: cache.get(paneId)?.commands ?? [],
+  }));
+  if (loaded.paneId !== paneId) setLoaded({ paneId, commands: cache.get(paneId)?.commands ?? [] });
   useEffect(() => {
     if (!active) return;
     const hit = cache.get(paneId);
-    if (hit && Date.now() - hit.at < CACHE_MS) {
-      setCommands(hit.commands);
-      return;
-    }
+    // Frais : la valeur du rendu la porte déjà, rien à poser.
+    if (hit && Date.now() - hit.at < CACHE_MS) return;
     let alive = true;
     fetchCommands(paneId).then(
       (res) => {
         cache.set(paneId, { at: Date.now(), commands: res.commands });
-        if (alive) setCommands(res.commands);
+        if (alive) setLoaded({ paneId, commands: res.commands });
       },
       () => undefined,
     );
@@ -42,7 +46,7 @@ export function useSlashCommands(paneId: number, active: boolean): SlashCommand[
       alive = false;
     };
   }, [paneId, active]);
-  return commands;
+  return loaded.commands;
 }
 
 export function SlashSuggestions({
