@@ -8,6 +8,8 @@ import {
   TURNS_PAGE_SIZE,
   TURNS_QUERY,
   type ActionResponse,
+  type AgentActionResponse,
+  type AgentsRosterResponse,
   type AskAnswerRequest,
   type AskSnoozeRequest,
   type AskSnoozeResponse,
@@ -452,4 +454,19 @@ export function postRoutineResume(name: string, timeoutMs = 25_000): Promise<Rou
 /** Les 200 dernières lignes du journal, bornées par le daemon. */
 export function fetchRoutineLog(name: string, timeoutMs = 25_000): Promise<RoutineLogResponse> {
   return request(ROUTES.routineLog(name), { timeoutMs });
+}
+
+// --- Equipe d'agents (`team`) -----------------------------------------------
+
+/** Le trombinoscope. `team list` peut attendre 20 s sur le Mac : le plafond le couvre. */
+export function fetchAgentsRoster(timeoutMs = 25_000): Promise<AgentsRosterResponse> {
+  return request(ROUTES.agentsRoster, { timeoutMs });
+}
+
+/**
+ * `team reopen <name>` : la seule ecriture de l'onglet Agents, sur une session fermee.
+ * Un refus (404 nom inconnu, 409 pas fermee, 502 `team` en echec) leve un `HttpError`.
+ */
+export function postAgentReopen(name: string, timeoutMs = 25_000): Promise<AgentActionResponse> {
+  return request(ROUTES.agentReopen(name), { method: 'POST', timeoutMs });
 }

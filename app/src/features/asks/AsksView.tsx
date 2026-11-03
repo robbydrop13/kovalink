@@ -11,7 +11,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { AskItem, Pane, Prompt, PromptOption } from '@/protocol';
+import type { AskItem, Prompt, PromptOption } from '@/protocol';
 import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Banner, EmptyState } from '@/ui/States';

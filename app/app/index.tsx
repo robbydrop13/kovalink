@@ -42,6 +42,7 @@ import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
 import type { ReorderActions } from '@/features/sessions/reorderAccessibility';
 import { AsksView } from '@/features/asks/AsksView';
+import { AgentsView } from '@/features/agents/AgentsView';
 import { ScheduledView } from '@/features/scheduled/ScheduledView';
 import { useScheduledFailed } from '@/features/scheduled/useRoutines';
 import { DragItem, DragScrollContext, useDragReorder, type DragList, type DragScroll } from '@/features/sessions/useDragReorder';
@@ -631,6 +632,8 @@ export default function SessionsScreen() {
         </>
       ) : tab === 'asks' ? (
         <AsksView />
+      ) : tab === 'agents' ? (
+        <AgentsView />
       ) : tab === 'scheduled' ? (
         <ScheduledView />
       ) : (
