@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.status.awaiting,
     borderWidth: 2,
     borderColor: colors.bg.base,
-    fontWeight: '700',
+    fontFamily: 'Inter-Bold',
   },
   badgeNeutral: { backgroundColor: colors.bg.pressed },
   base: {
