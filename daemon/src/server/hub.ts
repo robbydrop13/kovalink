@@ -18,6 +18,7 @@ import { audit } from '../audit.js';
 import { saveConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { waitsOnYouOf } from '../needs.js';
+import { countsOf, type CountsSnapshot } from '../push/counts.js';
 import { transcriptPath } from '../paths.js';
 import { buildTurns, sortAssistantBlocks } from '../transcript/jsonl.js';
 import { buildSessionMeta } from '../transcript/session.js';
@@ -73,6 +74,11 @@ const MAX_FRAME_BYTES = 256 * 1024;
 export interface HubOptions {
   /** Horloge injectable, pour tester la fraicheur du premier plan a sa vraie valeur. */
   now?: () => number;
+  /**
+   * Le trio du cadran du poignet a change. `main.ts` le pousse en silence, avec son
+   * propre anti-rebond ; le hub ne connait ni les appareils ni leurs jetons.
+   */
+  onCounts?: (counts: CountsSnapshot) => void;
 }
 
 /**
@@ -105,6 +111,7 @@ export class Hub {
   /** Dernier `waitsOnYou` diffuse : une permission qui apparait ne fait pas de bruit si le compte ne bouge pas. */
   private lastWaitsOnYou: number | null = null;
   private readonly now: () => number;
+  private readonly onCounts?: (counts: CountsSnapshot) => void;
   private heartbeatTimer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -112,6 +119,7 @@ export class Hub {
     options: HubOptions = {},
   ) {
     this.now = options.now ?? Date.now;
+    this.onCounts = options.onCounts;
     services.tailer.on('lines', (sessionId: string, lines: unknown[], reopened: boolean) => {
       this.onTranscriptLines(sessionId, lines as never[], reopened);
     });
@@ -606,11 +614,23 @@ export class Hub {
     return waitsOnYouOf(this.services.panes.all(), this.services.asks.snapshot().asks, this.now());
   }
 
+  /**
+   * Ce que le cadran du poignet doit afficher maintenant. Appele la ou l'etat qui le
+   * produit change (compte, erreur, question orpheline), jamais par un minuteur : le
+   * poussoir a son propre anti-rebond par appareil.
+   */
+  syncCounts(): void {
+    if (!this.onCounts) return;
+    const { asks } = this.services.asks.snapshot();
+    this.onCounts(countsOf(this.services.panes.all(), asks, this.now()));
+  }
+
   /** Les questions des agents ont change : tout le monde remplace sa liste. */
   pushAsks(): void {
     const msg = this.asksSnapshot();
     this.lastWaitsOnYou = msg.waitsOnYou;
     this.broadcast(msg, (c) => c.panesSubscribed);
+    this.syncCounts();
   }
 
   /**
@@ -618,7 +638,10 @@ export class Hub {
    * le compte vit dans le message `asks`, on ne le rediffuse que s'il a bouge.
    */
   private syncWaitsOnYou(): void {
+    // `pushAsks` pousse deja les comptes : ne les calculer deux fois que s'il n'a pas
+    // tourne (une erreur ou un age a change sans que le compte bouge).
     if (this.waitsOnYou() !== this.lastWaitsOnYou) this.pushAsks();
+    else this.syncCounts();
   }
 
   pushPaneEvent(event: Extract<S2C, { t: 'pane.event' }>): void {

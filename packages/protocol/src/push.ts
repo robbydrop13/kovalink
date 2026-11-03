@@ -87,3 +87,25 @@ export interface PushPayload {
   optionCount?: number;
   optionKinds?: OptionKind[];
 }
+
+/**
+ * Les nombres du cadran du poignet, seuls dans un push SILENCIEUX.
+ *
+ * Le daemon l'envoie avec `aps: { "content-available": 1 }`, sans alerte, sans son et
+ * sans badge : rien ne s'affiche, l'app se reveille et met le cadran a jour. Aucun
+ * texte de question, aucun nom de pane, aucune chaine autre que `t` ne doit y entrer.
+ *
+ * `asks` est le meme compte que `waitsOnYou` (permissions et questions ouvertes),
+ * `errors` les panes sur une erreur API, `ended` les questions ouvertes dont la session
+ * n'existe plus, et `oldestAt` la seconde epoch de la plus ancienne des deux premieres.
+ */
+export interface CountsPush {
+  t: 'counts';
+  asks: number;
+  errors: number;
+  ended: number;
+  /** La plus ancienne permission ou question ouverte, en secondes epoch. */
+  oldestAt: number | null;
+  /** Instant de composition du push, en secondes epoch. */
+  at: number;
+}

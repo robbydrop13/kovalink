@@ -26,6 +26,7 @@ import { answerPrompt } from './prompt/answer.js';
 import { PromptDetector, type AwaitingPrompt } from './prompt/detector.js';
 import { PromptRefs } from './prompt/refs.js';
 import { PromptState } from './prompt/state.js';
+import { CountsPusher } from './push/counts.js';
 import { PushNotifier } from './push/policy.js';
 import { PushSender } from './push/sender.js';
 import { startPeerRefresh } from './net/tailscale.js';
@@ -123,6 +124,11 @@ async function run(): Promise<void> {
   // message que Claude a lu. Il est construit avant, pour cette seule raison.
   const keygate = new KeyGate(ipc, panes, prompts, tailer);
   const push = new PushSender(cfg);
+  // Le cadran du poignet ne lit pas le WebSocket : ces nombres partent en push
+  // silencieux, avec leur propre anti-rebond par appareil.
+  const counts = new CountsPusher({
+    send: (payload, targets) => push.sendCounts(payload, targets),
+  });
   const sleep = new SleepAssertion(() => cfg().preventSleep);
 
   const nonces = new NonceStore();
@@ -144,7 +150,7 @@ async function run(): Promise<void> {
     authFailures: new AuthFailures(),
     nonces,
   };
-  const hub = new Hub(services);
+  const hub = new Hub(services, { onCounts: (snapshot) => counts.update(snapshot) });
 
   // --- Flux Kova ---------------------------------------------------------
 
@@ -180,6 +186,9 @@ async function run(): Promise<void> {
       const [tabs, rawPanes] = await Promise.all([ipc.listTabs(), ipc.listPanes()]);
       panes.setTabs(tabs);
       panes.replaceAll(rawPanes);
+      // Les erreurs de pane ne font pas partie de `layoutSignature` : le poussoir
+      // silencieux doit les voir meme quand rien d'autre n'a change.
+      hub.syncCounts();
       if (!layout.changed(tabs, rawPanes)) return;
       hub.pushPanesSnapshot();
       logger.debug('mise en page relue', { reason });
@@ -643,6 +652,7 @@ async function run(): Promise<void> {
     promptDetector.stop();
     sleep.stop();
     push.stop();
+    counts.stop();
     tailer.detachAll();
     ipc.stop();
     clearRuntimeState();

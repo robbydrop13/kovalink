@@ -9,6 +9,7 @@ import {
   type NotificationCategory,
   type Pane,
   type Prompt,
+  type CountsPush,
   type PushPayload,
 } from '@kovalink/protocol';
 import type { KovalinkConfig } from '../config.js';
@@ -54,9 +55,59 @@ export interface ExpoPushMessage {
   data: PushPayload;
 }
 
+/**
+ * Push SILENCIEUX de comptes. Expo en derive la charge APNs voulue : `_contentAvailable`
+ * donne `aps: { "content-available": 1 }` et `apns-push-type: background`, et
+ * `priority: "normal"` vaut `apns-priority: 5`. Aucun titre, corps, son ni badge : rien
+ * ne s'affiche et le badge existant ne bouge pas.
+ */
+export interface SilentCountsMessage {
+  to: string;
+  _contentAvailable: true;
+  priority: 'normal';
+  data: { kl: CountsPush };
+}
+
+export function buildCountsMessage(
+  expoPushToken: string,
+  counts: CountsPush,
+): SilentCountsMessage {
+  return { to: expoPushToken, _contentAvailable: true, priority: 'normal', data: { kl: counts } };
+}
+
+/**
+ * Ce que `dispatch` lit sur un message, alerte ou silencieux. Une alerte porte son
+ * `kind` et sa categorie ; un push de comptes n'a que `kl` et se journalise `counts`.
+ */
+interface OutboundMessage {
+  to: string;
+  /** `PushPayload` pour une alerte, `{ kl: CountsPush }` pour un push silencieux. */
+  data: unknown;
+  interruptionLevel?: string;
+}
+
 export interface SuppressionContext {
   cfg: KovalinkConfig;
   now?: Date;
+}
+
+/** Un appareil qui peut recevoir un push : apparie, non revoque, avec un jeton. */
+export type PushTarget = DeviceRecord & { expoPushToken: string };
+
+/**
+ * Les destinataires possibles d'un push. Les deux reglages d'appareil
+ * (`onlyValidations`, `quietHours`) ne filtrent que les ALERTES : un push de comptes est
+ * invisible, il part tant que l'appareil a un jeton. Sans jeton (Expo Go, appareil
+ * revoque, desinscription), l'appareil a coupe le push pour de bon.
+ */
+export function isPushTarget(device: DeviceRecord): device is PushTarget {
+  return (
+    !device.revoked && typeof device.expoPushToken === 'string' && device.expoPushToken.length > 0
+  );
+}
+
+export function pushTargets(): PushTarget[] {
+  return Object.values(loadDevices()).filter(isPushTarget);
 }
 
 /**
@@ -315,12 +366,9 @@ export class PushSender {
    * va au journal quand il n'y a aucun destinataire : « 0 sur 1 » et « 0 sur 0 » ne
    * decrivent pas la meme panne.
    */
-  private recipients(): { paired: number; targets: (DeviceRecord & { expoPushToken: string })[] } {
+  private recipients(): { paired: number; targets: PushTarget[] } {
     const paired = Object.values(loadDevices()).filter((d) => !d.revoked);
-    const targets = paired.filter(
-      (d): d is DeviceRecord & { expoPushToken: string } =>
-        typeof d.expoPushToken === 'string' && d.expoPushToken.length > 0,
-    );
+    const targets = paired.filter(isPushTarget);
     return { paired: paired.length, targets };
   }
 
@@ -361,15 +409,34 @@ export class PushSender {
   }
 
   /**
+   * Push silencieux de comptes pour le cadran du poignet. `targets` vient de
+   * `CountsPusher` : l'anti-rebond est PAR APPAREIL, l'appelant sait donc deja qui doit
+   * recevoir cet envoi et n'a pas a relire la liste.
+   */
+  async sendCounts(counts: CountsPush, targets: PushTarget[]): Promise<number> {
+    if (targets.length === 0) return 0;
+    const messages = targets.map((d) => buildCountsMessage(d.expoPushToken, counts));
+    const routed = new Map(targets.map((d) => [d.expoPushToken, d.deviceId] as const));
+    let expo: ExpoLike;
+    try {
+      expo = await this.client();
+    } catch (e) {
+      logger.warn('envoi push en silence en echec', { stage: 'sdk', err: (e as Error).message });
+      return 0;
+    }
+    return this.dispatch(expo, messages, routed, { counts: true });
+  }
+
+  /**
    * Transport : les lots vers Expo, une ligne de journal par emission, et les tickets
-   * relus 15 minutes plus tard. Commun aux prompts et aux questions d'agent, pour que
-   * les deux laissent exactement la meme trace.
+   * relus 15 minutes plus tard. Commun aux prompts, aux questions d'agent et aux comptes,
+   * pour que les trois laissent exactement la meme trace.
    */
   private async dispatch(
     expo: ExpoLike,
-    messages: ExpoPushMessage[],
+    messages: OutboundMessage[],
     routed: Map<string, string>,
-    about: { paneId: number } | { askId: string },
+    about: { paneId: number } | { askId: string } | { counts: true },
   ): Promise<number> {
     let sent = 0;
     for (const chunk of expo.chunkPushNotifications(messages as never)) {
@@ -382,7 +449,7 @@ export class PushSender {
         sent += tickets.length;
         // Le ticket `i` correspond au message `i` du meme lot : c'est ce lien qui permet
         // de ne desinscrire QUE l'appareil fautif.
-        const messagesSent = chunk as unknown as ExpoPushMessage[];
+        const messagesSent = chunk as unknown as OutboundMessage[];
         const owners = messagesSent.map((m) => routed.get(m.to) ?? null);
         // Une ligne PAR emission acceptee par Expo (CA-12) : sans elle, l'ecart entre
         // l'evenement Kova et l'APNs ne se mesure pas, et un push perdu par Expo est
@@ -391,11 +458,12 @@ export class PushSender {
         tickets.forEach((t, i) => {
           const m = messagesSent[i];
           if (!m) return;
+          const data = m.data as { kind?: string; targetCategory?: string };
           const entry = {
             ...about,
             deviceId: owners[i],
-            kind: m.data.kind,
-            categoryId: m.data.targetCategory,
+            kind: data.kind ?? 'counts',
+            categoryId: data.targetCategory ?? null,
             ticketId: t.id ?? null,
             passive: m.interruptionLevel === 'passive',
           };
