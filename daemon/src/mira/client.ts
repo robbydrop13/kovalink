@@ -1,9 +1,10 @@
 // Client de la socket de Mira, le navigateur de Robin.
 //
-// Protocole : une requete JSON par ligne `{"command", "params"}`, une reponse JSON par
-// ligne `{"ok":true,...}` ou `{"ok":false,"error"}`. Une connexion par commande, huit
-// secondes au plus. On parle a la socket directement, jamais par la CLI `mira` : le
-// daemon tourne sous launchd, sans le PATH d'un shell.
+// Protocole : une requete JSON par ligne `{"client", "command", "params"}` (Mira refuse
+// une requete sans `client`), une reponse JSON par ligne `{"ok":true,...}` ou
+// `{"ok":false,"error"}`. Une connexion par commande, huit secondes au plus. On parle
+// a la socket directement, jamais par la CLI `mira` : le daemon tourne sous launchd,
+// sans le PATH d'un shell.
 //
 // Deux erreurs seulement. `MiraUnavailable` : la socket est absente ou refuse la
 // connexion, Mira ne tourne pas ; l'app affiche « Mira is not running on the Mac » et
@@ -62,7 +63,7 @@ export function miraCall(command: string, params: Record<string, unknown> = {}, 
     };
     const timer = setTimeout(() => finish(() => reject(new MiraError(command, `Mira did not answer within ${TIMEOUT_MS / 1000}s`))), TIMEOUT_MS);
     sock.setEncoding('utf8');
-    sock.on('connect', () => sock.write(`${JSON.stringify({ command, params })}\n`));
+    sock.on('connect', () => sock.write(`${JSON.stringify({ client: 'kovalinkd', command, params })}\n`));
     sock.on('error', (e: NodeJS.ErrnoException) => {
       if (e.code === 'ENOENT' || e.code === 'ECONNREFUSED') finish(() => reject(new MiraUnavailable()));
       else finish(() => reject(new MiraError(command, e.message)));

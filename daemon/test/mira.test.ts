@@ -96,7 +96,12 @@ class FakeMira {
           buf += chunk;
           const nl = buf.indexOf('\n');
           if (nl < 0) return;
-          const msg = JSON.parse(buf.slice(0, nl)) as { command: string; params?: Record<string, unknown> };
+          const msg = JSON.parse(buf.slice(0, nl)) as { client?: string; command: string; params?: Record<string, unknown> };
+          // Comme le vrai Mira : une requete sans `client` est refusee.
+          if (!msg.client) {
+            sock.end(`${JSON.stringify({ ok: false, error: 'missing "client" field' })}\n`);
+            return;
+          }
           const params = msg.params ?? {};
           this.received.push({ command: msg.command, params });
           sock.end(`${JSON.stringify(this.answer(msg.command, params))}\n`);
