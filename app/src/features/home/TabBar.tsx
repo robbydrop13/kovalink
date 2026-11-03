@@ -6,7 +6,7 @@
 // protocole, ce compteur deviendra la somme des deux.
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radius, space } from '@/theme';
+import { colors, radius } from '@/theme';
 import { Icon, type IconName } from '@/ui/Icon';
 import { Txt } from '@/ui/Txt';
 import { t } from '@/i18n/en';
@@ -32,7 +32,7 @@ export function TabBar({
   onSelect: (tab: HomeTab) => void;
   /** Questions dues, celles que l'onglet Asks ouvre. */
   askCount: number;
-  /** TODO(P07) : passera a vrai quand le schedule expose ses echecs. */
+  /** Une routine active a echoue : un point rouge, comme sur le Mac. */
   scheduledFailed?: boolean;
 }) {
   const insets = useSafeAreaInsets();

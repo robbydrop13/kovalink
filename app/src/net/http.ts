@@ -43,6 +43,9 @@ import {
   type Prompt,
   type RecentProject,
   type ReorderRequest,
+  type RoutineActionResponse,
+  type RoutineLogResponse,
+  type RoutinesResponse,
   type Tab,
   type TabReorderResponse,
   type Turn,
@@ -424,4 +427,29 @@ export function fetchMiraFrame(tabId: string, timeoutMs = 10_000): Promise<MiraF
 /** Un geste sur un onglet de Mira : clic, texte, touche, défilement, navigation. */
 export function postMiraAction(tabId: string, action: MiraAction, timeoutMs = 10_000): Promise<MiraActResponse> {
   return request(ROUTES.miraAct(tabId), { method: 'POST', body: action, timeoutMs });
+}
+
+// --- Routines locales -------------------------------------------------------
+
+/** Les routines actives, telles que `routinectl` les connait sur le Mac. */
+export function fetchRoutines(timeoutMs = 8000): Promise<RoutinesResponse> {
+  return request(ROUTES.routines, { timeoutMs });
+}
+
+/** `routinectl run` : le lancement part en fond, mais la route peut attendre 20 s. */
+export function postRoutineRun(name: string, timeoutMs = 25_000): Promise<RoutineActionResponse> {
+  return request(ROUTES.routineRun(name), { method: 'POST', timeoutMs });
+}
+
+export function postRoutinePause(name: string, timeoutMs = 25_000): Promise<RoutineActionResponse> {
+  return request(ROUTES.routinePause(name), { method: 'POST', timeoutMs });
+}
+
+export function postRoutineResume(name: string, timeoutMs = 25_000): Promise<RoutineActionResponse> {
+  return request(ROUTES.routineResume(name), { method: 'POST', timeoutMs });
+}
+
+/** Les 200 dernières lignes du journal, bornées par le daemon. */
+export function fetchRoutineLog(name: string, timeoutMs = 25_000): Promise<RoutineLogResponse> {
+  return request(ROUTES.routineLog(name), { timeoutMs });
 }

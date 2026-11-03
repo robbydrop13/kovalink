@@ -98,6 +98,8 @@ export default function RootLayout() {
           <Stack.Screen name="browser/index" />
           <Stack.Screen name="browser/[tabId]" />
           <Stack.Screen name="activity" />
+          {/* Journal d'une routine : lecture seule, ouvert depuis l'onglet Scheduled. */}
+          <Stack.Screen name="routine-log" />
         </Stack>
       </SafeAreaProvider>
       </GestureHandlerRootView>

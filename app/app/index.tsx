@@ -41,6 +41,8 @@ import { ImpactStyle, NotifyType, impact, notify } from '@/utils/haptics';
 import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
 import type { ReorderActions } from '@/features/sessions/reorderAccessibility';
+import { ScheduledView } from '@/features/scheduled/ScheduledView';
+import { useScheduledFailed } from '@/features/scheduled/useRoutines';
 import { DragItem, DragScrollContext, useDragReorder, type DragList, type DragScroll } from '@/features/sessions/useDragReorder';
 import { applyPendingOrder, groupByTab, sortGroups, summaryLine, tabOrderOf, windowCount, type TabGroup } from '@/features/sessions/tabGroups';
 import { useInterrupt } from '@/features/sessions/useInterrupt';
@@ -73,8 +75,8 @@ export default function SessionsScreen() {
   // Le badge des Asks compte les questions dues.
   // TODO(D01): y ajouter `waitsOnYou` quand le protocole l'expose.
   const askCount = dueAsks(asks).length;
-  // TODO(P07) : brancher ce drapeau sur les echecs du schedule.
-  const scheduledFailed = false;
+  // Le point de l'onglet : une routine active dont le dernier passage a echoue.
+  const scheduledFailed = useScheduledFailed();
   const tab = useHomeTab((s) => s.tab);
   const setTab = useHomeTab((s) => s.setTab);
   const insets = useSafeAreaInsets();
@@ -625,6 +627,8 @@ export default function SessionsScreen() {
       </ScrollView>
 
         </>
+      ) : tab === 'scheduled' ? (
+        <ScheduledView />
       ) : (
         <EmptyState title={TAB_TITLES[tab]} body={t.homeTabComingBody} />
       )}
