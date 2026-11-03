@@ -88,9 +88,10 @@ export function NextPill({
         delayLongPress={500}
         style={({ pressed }) => [
           styles.pill,
-          mode === 'caughtUp' && styles.pillCaughtUp,
+          docked && styles.pillDocked,
+          mode === 'caughtUp' && (docked ? styles.pillCaughtUpDocked : styles.pillCaughtUp),
           accent && styles.pillAccent,
-          badge > 0 ? styles.pillBadged : null,
+          badge > 0 ? (docked ? styles.pillBadgedDocked : styles.pillBadged) : null,
           pressed && styles.pressed,
         ]}
       >
@@ -101,7 +102,7 @@ export function NextPill({
           </Txt>
         )}
         {badge > 0 ? (
-          <View style={[styles.badge, accent ? styles.badgeAccent : styles.badgeIdle]}>
+          <View style={[styles.badge, docked && styles.badgeDocked, accent ? styles.badgeAccent : styles.badgeIdle]}>
             <Txt variant="footnote" color={accent ? colors.accent.primary : colors.text.secondary}>
               {badge}
             </Txt>
@@ -111,6 +112,9 @@ export function NextPill({
     </Animated.View>
   );
 }
+
+/** Les boutons ronds de l'en-tete de l'accueil (`RoundButton size={32}`). */
+const HEADER_BUTTON = 32;
 
 /** Hauteur du bouton plus sa marge : le fil garde ce padding bas. */
 export const NEXT_BUTTON_SPACE = 44 + space[4];
@@ -134,6 +138,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
   },
+  // Dans un en-tete : la hauteur des boutons ronds voisins (32), sans ombre de bouton flottant.
+  pillDocked: { height: HEADER_BUTTON, paddingLeft: space[3], paddingRight: space[3], shadowOpacity: 0 },
+  pillCaughtUpDocked: { width: HEADER_BUTTON, paddingLeft: 0, paddingRight: 0, justifyContent: 'center' },
+  pillBadgedDocked: { paddingRight: space[1] },
+  badgeDocked: { minWidth: 20, height: 20, paddingHorizontal: 6 },
   pillAccent: { backgroundColor: colors.accent.primary, borderColor: colors.accent.primary },
   pillCaughtUp: { width: 44, paddingLeft: 0, paddingRight: 0, justifyContent: 'center' },
   pillBadged: { paddingRight: space[2] },
