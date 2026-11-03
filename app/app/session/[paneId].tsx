@@ -141,7 +141,7 @@ function refusalLabel(reason: string | undefined): string {
 }
 
 export default function SessionScreen() {
-  const params = useLocalSearchParams<{ paneId: string; focus?: string; view?: string }>();
+  const params = useLocalSearchParams<{ paneId: string; focus?: string; view?: string; dictate?: string }>();
   const paneId = Number(params.paneId);
   const insets = useSafeAreaInsets();
 
@@ -1233,6 +1233,7 @@ export default function SessionScreen() {
           }}
           onLockedTap={() => setToast(t.sessionAnswerFirst)}
           onNotice={setToast}
+          autoDictate={params.dictate === '1'}
         />
         )}
       </View>

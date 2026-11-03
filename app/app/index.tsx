@@ -63,6 +63,7 @@ import { clockTime } from '@/utils/time';
 import { retryBoot, useBootError, useBootState } from '@/boot';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
 import { TabBar, TAB_BAR_HEIGHT } from '@/features/home/TabBar';
+import { dictateTarget } from '@/features/home/dictate';
 import { ErrorScreen } from '@/ui/ErrorScreen';
 import { t } from '@/i18n/en';
 
@@ -451,6 +452,13 @@ export default function SessionsScreen() {
    * Kova`. La liste se remplit d'elle même quand le socket réapparaît, il n'y a rien à
    * relire ici. L'échec est montré avec la cause du daemon, jamais maquillé.
    */
+  /** Bouton micro de la barre : claap-agent s'ouvre, la dictée démarre seule. */
+  const openDictation = (): void => {
+    const target = dictateTarget(panes);
+    if (target) router.push({ pathname: '/session/[paneId]', params: { paneId: String(target.id), dictate: '1' } });
+    else setToast(t.homeDictateNoTarget);
+  };
+
   const launchKova = useCallback(async () => {
     setLaunching(true);
     try {
@@ -689,7 +697,13 @@ export default function SessionsScreen() {
         </View>
       ) : null}
 
-      <TabBar active={tab} onSelect={setTab} askCount={askCount} scheduledFailed={scheduledFailed} />
+      <TabBar
+        active={tab}
+        onSelect={setTab}
+        askCount={askCount}
+        scheduledFailed={scheduledFailed}
+        onDictate={openDictation}
+      />
     </View>
   );
 }

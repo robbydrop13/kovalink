@@ -66,6 +66,8 @@ export interface MessageBarProps {
   onNotice: (text: string) => void;
   /** Hauteur réelle de la barre, mesurée : le fil s'en sert comme padding bas. */
   onHeight?: (height: number) => void;
+  /** Lance la dictée à l'ouverture (bouton micro de l'accueil). Une seule fois. */
+  autoDictate?: boolean;
 }
 
 const CARD_RADIUS = 24;
@@ -156,6 +158,7 @@ export function MessageBar({
   onLockedTap,
   onNotice,
   onHeight,
+  autoDictate = false,
 }: MessageBarProps) {
   const value = useDrafts((s) => draftOf(s.byPane, paneId));
   const setDraft = useDrafts((s) => s.set);
@@ -335,6 +338,15 @@ export function MessageBar({
       starting.current = false;
     }
   };
+
+  // Ouvert depuis le bouton micro de l'accueil : la dictée démarre seule, une fois, dès que
+  // la barre est utilisable. Valider l'envoie comme d'habitude.
+  const autoDictated = useRef(false);
+  useEffect(() => {
+    if (!autoDictate || autoDictated.current || disabled) return;
+    autoDictated.current = true;
+    void micStart();
+  });
 
   const startVoice = async (): Promise<void> => {
     // Le direct d'abord ; en repli silencieux, l'enregistrement m4a d'avant.

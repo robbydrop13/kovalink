@@ -1,4 +1,5 @@
-// Barre d'onglets de l'accueil (P02) : Panes, Asks, Agents, Scheduled. 49 pt de contenu,
+// Barre d'onglets de l'accueil (P02) : Panes, Asks, Agents, Scheduled, et au milieu le
+// bouton dictee qui ouvre claap-agent micro lance. 49 pt de contenu,
 // plus l'encoche basse. Elle est posee par dessus l'ecran : la liste de Panes reserve sa
 // hauteur dans son padding bas, sinon la derniere ligne passe dessous.
 //
@@ -27,6 +28,7 @@ export function TabBar({
   onSelect,
   askCount,
   scheduledFailed = false,
+  onDictate,
 }: {
   active: HomeTab;
   onSelect: (tab: HomeTab) => void;
@@ -34,16 +36,18 @@ export function TabBar({
   askCount: number;
   /** Une routine active a echoue : un point rouge, comme sur le Mac. */
   scheduledFailed?: boolean;
+  /** Bouton du milieu : dicter un message a claap-agent. */
+  onDictate: () => void;
 }) {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={[styles.bar, { height: TAB_BAR_HEIGHT + insets.bottom, paddingBottom: insets.bottom }]}>
-      {TABS.map((item) => {
+      {TABS.flatMap((item, index) => {
         const selected = item.key === active;
         const tint = selected ? colors.accent.primary : colors.text.tertiary;
         const badge = item.key === 'asks' ? askCount : 0;
-        return (
+        const tab = (
           <Pressable
             key={item.key}
             accessibilityRole="tab"
@@ -68,6 +72,20 @@ export function TabBar({
             </Txt>
           </Pressable>
         );
+        if (index !== 1) return [tab];
+        return [
+          tab,
+          <View key="dictate" style={styles.tab}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t.homeDictateA11y}
+              onPress={onDictate}
+              style={({ pressed }) => [styles.dictate, pressed && styles.pressed]}
+            >
+              <Icon name="mic" size={22} color={colors.text.onFill} />
+            </Pressable>
+          </View>,
+        ];
       })}
     </View>
   );
@@ -92,6 +110,14 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   pressed: { opacity: 0.7 },
+  dictate: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent.primary,
+  },
   badge: {
     position: 'absolute',
     top: -5,
