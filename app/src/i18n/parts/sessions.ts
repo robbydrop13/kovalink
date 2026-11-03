@@ -14,6 +14,7 @@ export const sessions = {
   actionLoading: 'Loading…',
   actionSee: 'See',
   actionSeeSessions: 'See sessions',
+  actionAnswer: 'Answer',
 
   // Pane : identité et badges d'état
   paneFallbackTitle: 'pane',
@@ -131,6 +132,16 @@ export const sessions = {
   homeTabAsksA11y: (count: number) => (count > 0 ? `Asks, ${count} waiting` : 'Asks'),
   homeTabMore: 'More',
 
+  // Needs you (P04)
+  needsYouTitle: 'Needs you',
+  needsYouNeedYou: (count: number) => `${count} need you`,
+  needsYouErrors: (count: number) => `${count} error${count > 1 ? 's' : ''}`,
+  needsYouFailed: (count: number) => `${count} failed`,
+  needsYouShowAll: (count: number) => `Show all ${count}`,
+  needsYouShowLess: 'Show less',
+  needsYouRowA11y: (title: string, detail: string, age: string) =>
+    [title, detail, age].filter((part) => part.length > 0).join(', '),
+
   // Scheduled (P07)
   scheduledEmpty: 'No routines',
   scheduledSectionAttention: 'Needs attention',
@@ -209,7 +220,7 @@ export const sessions = {
   allCaughtUp: 'All caught up',
   caughtUp: 'Caught up',
   nothingLeftToRead: 'Nothing left to read',
-  nextPillA11y: (n: number) => `Next unread session, ${n} left`,
+  nextPillA11y: (n: number) => (n > 0 ? `Next, ${n} waiting` : 'Next'),
   nextPillHint: (tab: string, title: string) => `Opens ${tab}, ${title}`,
   panesUnreadTitle: 'Unread',
   panesUnreadPlaceholder: 'Search unread',

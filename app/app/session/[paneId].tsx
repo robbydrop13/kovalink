@@ -50,10 +50,12 @@ import { followSessionOnMac, showPaneMenu } from '@/features/sessions/openOnMac'
 import { paneHref, paneLabel } from '@/features/sessions/SessionRow';
 import { NEXT_BUTTON_SPACE, NextPill } from '@/features/sessions/NextPill';
 import { useNextTarget } from '@/features/sessions/useNextTarget';
+import { askIdOf } from '@/features/home/needs';
 import { readMarkRef, readablePrompt } from '@/features/sessions/unread';
 import { markPaneReadOnMac } from '@/features/sessions/markReadOnMac';
 import { useReads } from '@/store/reads';
 import { useDrafts, draftOf } from '@/store/drafts';
+import { useHomeTab } from '@/store/homeTab';
 import { dismissBannersForPane, paneIdentity } from '@/notifications/banners';
 import {
   attachSession,
@@ -158,6 +160,7 @@ export default function SessionScreen() {
   const session = useSession();
   const screen = useScreens((s) => s.byPane[paneId]);
   const { run: interrupt } = useInterrupt();
+  const setTab = useHomeTab((s) => s.setTab);
 
   const [view, setView] = useState<ViewMode>(params.view === 'term' ? 'term' : 'chat');
   // Cmd+J (docs/16) : cible du prochain saut, clavier, garde de saisie à l'arrivée.
@@ -839,10 +842,28 @@ export default function SessionScreen() {
       return;
     }
     impact(ImpactStyle.Light);
+    if (target.kind === 'scheduled') {
+      setTab('scheduled');
+      router.replace('/');
+      return;
+    }
+    if (target.kind === 'need') {
+      const askId = askIdOf(target.item);
+      if (askId !== null) {
+        router.push(`/ask/${askId}`);
+        return;
+      }
+      const dest = target.item.pane_id === null ? undefined : paneById(allPanes, target.item.pane_id);
+      if (!dest) return;
+      const href = paneHref(dest);
+      const focus = dest.awaiting ? 'awaiting' : 'last';
+      router.replace(`${href}${href.includes('?') ? '&' : '?'}focus=${focus}`);
+      return;
+    }
     const href = paneHref(target.entry.pane);
     const focus = target.entry.pane.awaiting ? 'awaiting' : 'last';
     router.replace(`${href}${href.includes('?') ? '&' : '?'}focus=${focus}`);
-  }, [next.target]);
+  }, [next.target, allPanes, setTab]);
   const pillHidden =
     keyboardOpen || draft.trim().length > 0 || phase === 'authenticating' || phase === 'sending' || closed;
 

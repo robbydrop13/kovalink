@@ -55,13 +55,26 @@ export function NextPill({
     Animated.timing(opacity, { toValue: hidden ? 0 : 1, duration: 120, useNativeDriver: true }).start();
   }, [hidden, opacity]);
 
-  const mode: PillMode | null = flash ? 'caughtUp' : state.target?.kind === 'unread' ? 'next' : state.target?.kind === 'idle' ? 'idle' : null;
+  const target = state.target;
+  const pending = target?.kind === 'need' || target?.kind === 'scheduled';
+  const mode: PillMode | null =
+    flash && !pending ? 'caughtUp' : target === null ? null : target.kind === 'idle' ? 'idle' : 'next';
   if (mode === null) return null;
 
-  const badge = mode === 'next' ? state.unreadCount : mode === 'idle' ? state.idleCount : 0;
+  const badge = mode === 'next' ? state.waitCount : mode === 'idle' ? state.idleCount : 0;
   const accent = mode === 'next';
   const tint = mode === 'next' ? colors.text.onFill : mode === 'idle' ? colors.text.secondary : colors.status.success;
-  const dest = state.target ? t.nextPillHint(state.target.entry.group.title, state.target.entry.pane.title ?? state.target.entry.pane.agent ?? '') : '';
+  const dest =
+    target === null
+      ? ''
+      : target.kind === 'need'
+        ? t.nextPillHint(t.needsYouTitle, target.item.title)
+        : target.kind === 'scheduled'
+          ? t.homeTabScheduled
+          : t.nextPillHint(
+              target.entry.group.title,
+              target.entry.pane.title ?? target.entry.pane.agent ?? '',
+            );
 
   return (
     <Animated.View pointerEvents={hidden ? 'none' : 'auto'} style={[styles.wrap, docked && styles.docked, { opacity }]}>

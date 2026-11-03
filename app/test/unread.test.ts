@@ -92,7 +92,7 @@ describe('nextTarget et repli', () => {
   it('le premier non lu avec le compte des autres, sinon la prochaine session Claude inactive, sinon rien', () => {
     const t1 = nextTarget(entries, PROMPTS, MARKS, 13);
     assert.equal(t1?.kind, 'unread');
-    assert.equal(t1?.entry.pane.id, 11);
+    assert.equal(t1?.kind === 'unread' ? t1.entry.pane.id : null, 11);
     assert.equal(t1?.others, 2);
     const allRead = { 13: 'r13', 3: 'r3', 11: 'r11', 40: 'r40' };
     const t2 = nextTarget(entries, PROMPTS, allRead, 13);
@@ -120,6 +120,7 @@ describe('unreadRing : les panes minimisés restent dehors', () => {
     const panes = PANES.map((p) => (p.id === 13 ? { ...p, minimized: true } : p));
     const e = paletteEntries(groupByTab(panes, TABS), '');
     assert.deepEqual(unreadRing(e, PROMPTS, MARKS, null).map((x) => x.pane.id), [11, 40]);
-    assert.equal(nextTarget(e, PROMPTS, MARKS, null)?.entry.pane.id, 11);
+    const hit = nextTarget(e, PROMPTS, MARKS, null);
+    assert.equal(hit?.kind === 'unread' ? hit.entry.pane.id : null, 11);
   });
 });

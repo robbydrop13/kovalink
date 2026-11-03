@@ -35,7 +35,11 @@ interface Props {
   prompts: Record<number, Prompt>;
   aging: (paneId: number) => boolean;
   onOpen: (paneId: number) => void;
+  /** Un pane perime : relancer Claude dans son dossier. */
   onRelaunch: (pane: Pane) => void;
+  onAnswer: (pane: Pane) => void;
+  /** Vrai quand le pane porte une question ouverte : sa ligne propose `Answer`. */
+  answerable: (paneId: number) => boolean;
   /** Panes repliés : l'en-tête seul, avec son résumé. */
   collapsed: boolean;
   /** Tap sur l'en-tête d'onglet : replier ou déplier ses panes. */
@@ -72,7 +76,9 @@ export function TabGroupView({
   prompts,
   aging,
   onOpen,
+  onAnswer,
   onRelaunch,
+  answerable,
   collapsed,
   onToggle,
   onAddPane,
@@ -111,6 +117,7 @@ export function TabGroupView({
         prompt={prompts[pane.id]}
         aging={aging(pane.id)}
         onOpen={() => onOpen(pane.id)}
+        onAnswer={() => onAnswer(pane)}
         interruptDisabled={interruptDisabled}
         interruptLabel={interruptLabel(pane.id)}
         onInterrupt={() => onInterrupt(pane.id)}
@@ -122,6 +129,7 @@ export function TabGroupView({
         prompt={prompts[pane.id]}
         unread={isUnread(pane)}
         onOpen={() => onOpen(pane.id)}
+        onAnswer={answerable(pane.id) ? () => onAnswer(pane) : undefined}
         onRelaunch={() => onRelaunch(pane)}
         interruptDisabled={interruptDisabled}
         interruptLabel={interruptLabel(pane.id)}

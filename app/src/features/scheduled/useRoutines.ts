@@ -20,6 +20,8 @@ interface RoutinesState {
 
 /** Réponse tardive : seule la dernière requête partie a le droit d'écrire l'état. */
 let generation = 0;
+/** Une seule lecture a la fois, meme quand l'accueil et Next montent ensemble. */
+let snapshotLoading = false;
 
 const useRoutinesStore = create<RoutinesState>((set) => ({
   routines: null,
@@ -65,12 +67,25 @@ export function useRoutines(): RoutinesView {
   return { routines, error, refreshing, refresh, reload };
 }
 
+/**
+ * La liste du dernier instantane, sans le sondage de l'onglet Scheduled. L'accueil la lit
+ * pour Needs you et Next ; le premier lecteur declenche la lecture, comme le point de
+ * l'onglet, pour que les echecs arrivent avant la premiere visite de Scheduled.
+ */
+export function useRoutinesSnapshot(): Routine[] | null {
+  const load = useRoutinesStore((s) => s.load);
+  useEffect(() => {
+    if (useRoutinesStore.getState().routines !== null || snapshotLoading) return;
+    snapshotLoading = true;
+    void load().finally(() => {
+      snapshotLoading = false;
+    });
+  }, [load]);
+  return useRoutinesStore((s) => s.routines);
+}
+
 /** Le point de l'onglet Scheduled : une routine active dont le dernier passage a échoué.
  *  Une lecture au montage de l'accueil, pour que le point existe avant la première visite. */
 export function useScheduledFailed(): boolean {
-  const load = useRoutinesStore((s) => s.load);
-  useEffect(() => {
-    if (useRoutinesStore.getState().routines === null) void load();
-  }, [load]);
-  return useRoutinesStore((s) => needsAttention(s.routines));
+  return needsAttention(useRoutinesSnapshot());
 }

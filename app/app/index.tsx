@@ -31,6 +31,9 @@ import { Icon } from '@/ui/Icon';
 import { TabGroupView } from '@/features/sessions/TabGroupView';
 import { paneHref } from '@/features/sessions/SessionRow';
 import { useNextTarget } from '@/features/sessions/useNextTarget';
+import { NeedsYou } from '@/features/home/NeedsYou';
+import { useNeeds } from '@/features/home/useNeeds';
+import { askIdOf, paneIdOfAsk } from '@/features/home/needs';
 import { NextPill } from '@/features/sessions/NextPill';
 import { isUnread } from '@/features/sessions/unread';
 import { useReads } from '@/store/reads';
@@ -157,15 +160,36 @@ export default function SessionsScreen() {
   const windows = byActivity ? 1 : windowCount(shown);
   // Cmd+J depuis la liste : l'anneau entier (aucun pane courant), la ligne de résumé.
   const next = useNextTarget(null);
+  const needs = useNeeds();
+  /** Panes qui portent une question due : leur ligne propose `Answer`. */
+  const answerPanes = useMemo(() => {
+    const ids = new Set<number>();
+    for (const ask of dueAsks(asks)) {
+      const id = paneIdOfAsk(ask, panes);
+      if (id !== null) ids.add(id);
+    }
+    return ids;
+  }, [asks, panes]);
   const marks = useReads((s) => s.byPane);
   const collapsedTabs = useTabCollapse((s) => s.collapsed);
   const toggleCollapse = useTabCollapse((s) => s.toggle);
   const unreadOf = (pane: Pane) => isUnread(pane, prompts[pane.id], marks);
   const summary = kovaDown ? null : summaryLine(panes, next.unreadCount);
   const jumpNext = () => {
-    if (!next.target) return;
+    const target = next.target;
+    if (!target) return;
     impact(ImpactStyle.Light);
-    router.push(paneHref(next.target.entry.pane));
+    if (target.kind === 'scheduled') {
+      setTab('scheduled');
+      return;
+    }
+    if (target.kind === 'need') {
+      const askId = askIdOf(target.item);
+      if (askId !== null) router.push(`/ask/${askId}`);
+      else if (target.item.pane_id !== null) open(target.item.pane_id);
+      return;
+    }
+    router.push(paneHref(target.entry.pane));
   };
 
   // Le `+` de l'en-tete : les deux routes de la barre basse d'hier, la palette des projets
@@ -210,6 +234,12 @@ export default function SessionsScreen() {
   const open = (paneId: number) => {
     const pane = panes.find((p) => p.id === paneId);
     router.push(pane ? paneHref(pane) : `/session/${paneId}`);
+  };
+  /** `Answer` d'une ligne qui attend : sa question si elle existe, sinon le pane. */
+  const openAnswer = (pane: Pane) => {
+    const ask = dueAsks(asks).find((item) => paneIdOfAsk(item, panes) === pane.id);
+    if (ask) router.push(`/ask/${ask.id}`);
+    else open(pane.id);
   };
   const relaunch = (pane: Pane) =>
     router.push({ pathname: '/new-session', params: { cwd: pane.cwd } });
@@ -368,6 +398,8 @@ export default function SessionsScreen() {
         prompts={prompts}
         aging={aging}
         onOpen={open}
+        onAnswer={openAnswer}
+        answerable={(id) => answerPanes.has(id)}
         onRelaunch={relaunch}
         collapsed={ghost || tabDragging || (group.tabId !== null && collapsedTabs[group.tabId] === true)}
         onToggle={() => toggleTab(group)}
@@ -579,6 +611,15 @@ export default function SessionsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.text.secondary} />
         }
       >
+        {needs.items.length > 0 ? (
+          <NeedsYou
+            items={needs.items}
+            now={needs.now}
+            onOpenPane={open}
+            onOpenAsk={(id) => router.push(`/ask/${id}`)}
+            onShowScheduled={() => setTab('scheduled')}
+          />
+        ) : null}
         {loading && panes.length === 0 && !kovaDown ? <SkeletonList /> : null}
 
         {kovaDown ? (

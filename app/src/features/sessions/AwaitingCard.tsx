@@ -19,6 +19,8 @@ interface Props {
   pane: Pane;
   prompt: Prompt | undefined;
   onOpen: () => void;
+  /** Ouvre la question du pane quand il en a une, sinon le pane. */
+  onAnswer: () => void;
   onInterrupt: () => void;
   interruptDisabled: boolean;
   interruptLabel: string;
@@ -54,6 +56,7 @@ export function AwaitingCard({
   pane,
   prompt,
   onOpen,
+  onAnswer,
   onInterrupt,
   interruptDisabled,
   interruptLabel,
@@ -74,9 +77,13 @@ export function AwaitingCard({
         <StatusGlyph state="awaiting" />
         <PaneTitle pane={pane} />
         <View style={styles.spacer} />
-        <Txt variant="footnote" color={aging ? colors.status.error : colors.text.tertiary}>
-          {age}
+        <Txt variant="footnote" color={aging ? colors.status.error : colors.status.awaiting}>
+          {age ? `${t.paneBadgeWaiting} ${age}` : t.paneBadgeWaiting}
         </Txt>
+        <Txt variant="footnote" color={colors.text.tertiary}>
+          ·
+        </Txt>
+        <LinkAction icon="corner-down-left" label={t.actionAnswer} onPress={onAnswer} />
       </View>
       <PermissionNote mode={pane.permissionMode} />
       <Txt variant="body" color={colors.text.primary} numberOfLines={2}>

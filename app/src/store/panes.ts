@@ -28,6 +28,12 @@ interface PanesState {
    * pane déjà en travail dont on ne savait rien. Sert au bandeau `Travaille · 1 min 12 s`.
    */
   workingSince: Record<number, number>;
+  /**
+   * Debut de l'erreur en cours, par pane, en ms epoch. Kova n'envoie pas cette date : on
+   * la pose au premier instantane qui voit l'erreur, et on l'oublie quand elle disparait.
+   * Sert a l'age des lignes de Needs you et a l'ordre de Next.
+   */
+  errorSince: Record<number, number>;
   hydrate: () => Promise<void>;
   applySnapshot: (s: {
     panes: Pane[];
@@ -53,6 +59,7 @@ export const usePanes = create<PanesState>((set, get) => ({
   appActive: false,
   focusPaneId: null,
   workingSince: {},
+  errorSince: {},
 
   hydrate: async () => {
     const cached = await kvGet<PanesSnapshotCache>(SNAPSHOT_KEY);
@@ -63,6 +70,7 @@ export const usePanes = create<PanesState>((set, get) => ({
         etag: cached.etag,
         fetchedAt: cached.fetchedAt,
         loading: false,
+        errorSince: reconcileErrorSince({}, cached.panes, cached.fetchedAt),
       });
     } else {
       set({ loading: false });
@@ -78,6 +86,7 @@ export const usePanes = create<PanesState>((set, get) => ({
       fetchedAt,
       loading: false,
       workingSince: reconcileWorkingSince(get().workingSince, s.panes, fetchedAt),
+      errorSince: reconcileErrorSince(get().errorSince, s.panes, fetchedAt),
       ...(s.appActive !== undefined ? { appActive: s.appActive } : {}),
       ...(s.focusPaneId !== undefined ? { focusPaneId: s.focusPaneId } : {}),
     });
@@ -120,12 +129,20 @@ export const usePanes = create<PanesState>((set, get) => ({
         return;
     }
     const fetchedAt = Date.now();
-    set({ panes, fetchedAt });
+    set({ panes, fetchedAt, errorSince: reconcileErrorSince(state.errorSince, panes, fetchedAt) });
     persist(panes, state.tabs, state.etag, fetchedAt);
   },
 
   reset: () =>
-    set({ panes: [], tabs: [], etag: null, fetchedAt: null, loading: true, workingSince: {} }),
+    set({
+      panes: [],
+      tabs: [],
+      etag: null,
+      fetchedAt: null,
+      loading: true,
+      workingSince: {},
+      errorSince: {},
+    }),
 }));
 
 /** Garde les débuts connus des panes encore en travail, en pose un pour les nouveaux. */
@@ -137,6 +154,19 @@ function reconcileWorkingSince(
   const next: Record<number, number> = {};
   for (const p of panes) {
     if (p.working) next[p.id] = known[p.id] ?? now;
+  }
+  return next;
+}
+
+/** Garde le debut connu de chaque erreur encore la, en pose un pour les nouvelles. */
+function reconcileErrorSince(
+  known: Record<number, number>,
+  panes: Pane[],
+  now: number,
+): Record<number, number> {
+  const next: Record<number, number> = {};
+  for (const p of panes) {
+    if (p.error) next[p.id] = known[p.id] ?? now;
   }
   return next;
 }

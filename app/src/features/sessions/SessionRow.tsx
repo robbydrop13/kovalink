@@ -31,6 +31,8 @@ interface Props {
   onOpen: () => void;
   /** Session périmée : relancer Claude dans ce dossier (feuille « Nouvelle session »). */
   onRelaunch?: () => void;
+  /** Pane qui attend : `Answer` ouvre la question du pane, sinon le pane. */
+  onAnswer?: () => void;
   onInterrupt?: () => void;
   interruptDisabled?: boolean;
   interruptLabel?: string;
@@ -102,6 +104,7 @@ export function SessionRow({
   prompt,
   unread = false,
   onOpen,
+  onAnswer,
   onRelaunch,
   onInterrupt,
   interruptDisabled = false,
@@ -135,6 +138,14 @@ export function SessionRow({
           {state.label}
         </Txt>
         <View style={styles.spacer} />
+        {onAnswer ? (
+          <>
+            <Txt variant="footnote" color={colors.text.tertiary}>
+              ·
+            </Txt>
+            <LinkAction icon="corner-down-left" label={t.actionAnswer} onPress={onAnswer} />
+          </>
+        ) : null}
         {stale && onRelaunch ? <LinkAction icon="refresh-cw" label={t.paneRelaunchClaude} onPress={onRelaunch} /> : null}
         {working && onInterrupt ? (
           <LinkAction

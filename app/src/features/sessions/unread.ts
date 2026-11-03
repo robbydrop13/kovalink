@@ -16,7 +16,7 @@
 //
 // L'ordre est celui du sélecteur de Kova (fenêtre, onglet, pane), les `awaiting` non vus
 // d'abord (P2), en boucle à partir du pane courant.
-import type { Pane, Prompt } from '@/protocol';
+import type { NeedItem, Pane, Prompt } from '@/protocol';
 import type { PaletteEntry } from './tabGroups';
 
 export type ReadMarks = Readonly<Record<number, string>>;
@@ -94,7 +94,16 @@ export function idleRing(
   return rotate(entries, currentId).filter((e) => e.pane.id !== currentId && isIdleClaude(e.pane, prompts[e.pane.id], marks));
 }
 
-export type NextTarget = { kind: 'unread' | 'idle'; entry: PaletteEntry; others: number } | null;
+/**
+ * La cible de Next, dans l'ordre de Kova : un element de Needs you (erreur, permission,
+ * question), l'onglet Scheduled pour une routine en echec, puis les non lus et le repli
+ * sur une session inactive.
+ */
+export type NextTarget =
+  | { kind: 'need'; item: NeedItem; others: number }
+  | { kind: 'scheduled'; others: number }
+  | { kind: 'unread' | 'idle'; entry: PaletteEntry; others: number }
+  | null;
 
 /** La cible du prochain saut : le premier non lu, sinon la première session inactive, sinon rien. */
 export function nextTarget(
