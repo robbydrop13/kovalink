@@ -54,6 +54,12 @@ export const ERROR_CODES = [
   // chemins que le telephone n'a pas a voir.
   'ROUTINE_NOT_FOUND',
   'ROUTINE_ERROR',
+  // Equipe d'agents : le nom est hors format ou absent de `team list --json` (404),
+  // la session n'est pas fermee (409), ou `team` a echoue (502). Sa sortie reste sur
+  // le Mac : elle porte des chemins que le telephone n'a pas a voir.
+  'AGENT_NOT_FOUND',
+  'AGENT_NOT_CLOSED',
+  'AGENT_ERROR',
   'INTERNAL',
 ] as const;
 

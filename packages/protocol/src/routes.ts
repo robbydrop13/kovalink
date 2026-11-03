@@ -146,6 +146,13 @@ export const ROUTES = {
   routinePause: (name: string): string => `/v1/routines/${encodeURIComponent(name)}/pause`,
   routineResume: (name: string): string => `/v1/routines/${encodeURIComponent(name)}/resume`,
   routineLog: (name: string): string => `/v1/routines/${encodeURIComponent(name)}/log`,
+
+  // --- Equipe d'agents, pilotee par le CLI `team` -------------------------
+  // Deux routes : le trombinoscope (managers, sessions dediees, autres sessions
+  // ouvertes) et un seul geste, rouvrir une session fermee. Aucune creation ni
+  // fermeture depuis l'app : cela reste sur le Mac, dans `team`.
+  agentsRoster: '/v1/agents/roster',
+  agentReopen: (name: string): string => `/v1/agents/${encodeURIComponent(name)}/reopen`,
 } as const;
 
 /** Gabarits Fastify correspondants. Ecrits une fois, a cote des chemins clients. */
@@ -204,6 +211,9 @@ export const ROUTE_PATTERNS = {
   routinePause: '/v1/routines/:name/pause',
   routineResume: '/v1/routines/:name/resume',
   routineLog: '/v1/routines/:name/log',
+  // Equipe d'agents : memes chemins que `ROUTES`, `:name` valide par le daemon.
+  agentsRoster: '/v1/agents/roster',
+  agentReopen: '/v1/agents/:name/reopen',
 } as const;
 
 /**
@@ -556,4 +566,43 @@ export interface RoutineActionResponse {
 /** Reponse de `GET /v1/routines/:name/log` : les 200 dernieres lignes du journal. */
 export interface RoutineLogResponse {
   lines: string[];
+}
+
+/** Etat reel d'une session d'agent, tel que `team list --json` le lit dans Kova. */
+export type AgentState = 'working' | 'open' | 'closed';
+
+/**
+ * Une entree du trombinoscope, sans son argv de reouverture : `reopen` ne sort pas du
+ * Mac, le daemon le garde pour lui. Les champs optionnels ne sont presents que quand
+ * `team` les rend (un manager n'a ni `by` ni `project`, une session dediee n'a pas
+ * d'`tab` a elle).
+ */
+export interface RosterEntry {
+  name: string;
+  role: string;
+  tab?: string;
+  by?: string;
+  project?: string;
+  /** Date de creation, heure locale ISO. */
+  created?: string;
+  state: AgentState;
+}
+
+/** Reponse de `GET /v1/agents/roster`. `otherOpen` ne porte que des noms. */
+export interface AgentsRosterResponse {
+  managers: RosterEntry[];
+  dedicated: RosterEntry[];
+  otherOpen: string[];
+}
+
+/** Raison d'un refus sur `POST /v1/agents/:name/reopen`. */
+export type AgentActionReason = 'unknown_agent' | 'not_closed' | 'team_failed';
+
+/**
+ * Reponse de `POST /v1/agents/:name/reopen`. `applied:false` porte toujours sa raison :
+ * nom inconnu (404), session pas fermee (409) ou `team` en echec (502).
+ */
+export interface AgentActionResponse {
+  applied: boolean;
+  reason?: AgentActionReason;
 }

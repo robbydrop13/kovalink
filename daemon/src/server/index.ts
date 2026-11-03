@@ -44,6 +44,9 @@ import {
   type Prompt,
   type Turn,
   type RoutineActionResponse,
+  type AgentActionReason,
+  type AgentActionResponse,
+  type AgentsRosterResponse,
   type RoutinesResponse,
 } from '@kovalink/protocol';
 import { audit } from '../audit.js';
@@ -56,6 +59,7 @@ import { transcriptPath } from '../paths.js';
 import { formatTurnEndSubtitle } from '../turnEnd.js';
 import { buildTurns, sortAssistantBlocks } from '../transcript/jsonl.js';
 import { RoutineError, execRoutinectl, listRoutines, pauseRoutine, resumeRoutine, routineLog, runRoutine } from '../routines.js';
+import { TeamError, execTeam, getRoster, reopenAgent } from '../team.js';
 import { readTailLines } from '../transcript/session.js';
 import {
   loadDevices,
@@ -130,6 +134,32 @@ function routineResult(
   audit({ deviceId, action, result: res.applied ? 'ok' : denied ? 'denied' : 'error', detail: name });
   if (res.applied) return res;
   return failRoutine(reply, res.reason ?? 'routinectl_failed', name);
+}
+
+/**
+ * Refus sur les routes d'agents : 404 pour un nom inconnu ou hors format, 409 pour une
+ * session qui n'est pas fermee, 502 quand `team` echoue. La sortie de `team` ne part
+ * JAMAIS vers l'app (elle porte des chemins du Mac) : elle reste dans le journal local.
+ */
+function failAgent(reply: FastifyReply, reason: AgentActionReason, name: string, why = ''): void {
+  if (reason === 'unknown_agent') return fail(reply, 404, 'AGENT_NOT_FOUND', 'unknown agent');
+  if (reason === 'not_closed') return fail(reply, 409, 'AGENT_NOT_CLOSED', 'agent is not closed');
+  logger.warn('team en echec', { name, err: why });
+  return fail(reply, 502, 'AGENT_ERROR', 'team failed');
+}
+
+/** Audit et reponse d'un geste : le journal nomme le geste et l'agent, jamais sa sortie. */
+function agentResult(
+  reply: FastifyReply,
+  deviceId: string,
+  action: string,
+  name: string,
+  res: AgentActionResponse,
+): AgentActionResponse | void {
+  const denied = res.reason === 'unknown_agent' || res.reason === 'not_closed';
+  audit({ deviceId, action, result: res.applied ? 'ok' : denied ? 'denied' : 'error', detail: name });
+  if (res.applied) return res;
+  return failAgent(reply, res.reason ?? 'team_failed', name);
 }
 
 /**
@@ -665,6 +695,42 @@ export async function createHttpServer(
       audit({ deviceId, action: 'routine.log', result: denied ? 'denied' : 'error', detail: name });
       return failRoutine(reply, e.reason, name, e.message);
     }
+  });
+
+  /**
+   * Equipe d'agents, pilotee par le CLI `team` : le trombinoscope et un seul geste,
+   * rouvrir une session fermee. Le daemon ne lit ni `registry.json` ni les profils, et
+   * passe toujours un argv a `team`, jamais une ligne de shell. L'argv de reouverture
+   * rendu par `team list --json` reste sur le Mac.
+   *
+   * Aucune route de creation ni de fermeture : cela se fait sur le Mac, dans `team`
+   * (decision de Robin).
+   */
+  app.get(ROUTE_PATTERNS.agentsRoster, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'agents')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many agent reads');
+    }
+    try {
+      const body: AgentsRosterResponse = await getRoster(execTeam);
+      audit({ deviceId, action: 'agents.roster', result: 'ok' });
+      return body;
+    } catch (e) {
+      if (!(e instanceof TeamError)) throw e;
+      audit({ deviceId, action: 'agents.roster', result: 'error', detail: e.reason });
+      return failAgent(reply, e.reason, 'roster', e.message);
+    }
+  });
+
+  /** `team reopen <name>` : rouvre une session fermee, dans l'onglet de son role. */
+  app.post<{ Params: { name: string } }>(ROUTE_PATTERNS.agentReopen, async (req, reply) => {
+    const deviceId = req.deviceId ?? '';
+    if (!services.rate.allow(deviceId, 'agents')) {
+      return fail(reply, 429, 'RATE_LIMITED', 'too many agent actions');
+    }
+    const name = req.params.name;
+    const res = await reopenAgent(execTeam, name);
+    return agentResult(reply, deviceId, 'agents.reopen', name, res);
   });
 
   /**
