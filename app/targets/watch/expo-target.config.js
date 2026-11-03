@@ -16,6 +16,6 @@ module.exports = {
   icon: './icon.png',
   deploymentTarget: '10.0',
   colors: {
-    $accent: '#4C8DFF',
+    $accent: '#3A5EED',
   },
 };

@@ -25,13 +25,14 @@ struct ContentView: View {
         ScrollView {
             VStack(spacing: 8) {
                 Picker("To", selection: $target) {
-                    ForEach(targets, id: \.self) { Text($0).tag($0) }
+                    ForEach(targets, id: \.self) { Text($0).font(DS.font(15)).tag($0) }
                 }
                 .pickerStyle(.navigationLink)
                 // Autre destinataire, autre message : un doublon ne doit pas passer pour livré.
                 .onChange(of: target) { _, _ in nonce = UUID().uuidString }
 
                 TextField("Dictate", text: $text, axis: .vertical)
+                    .font(DS.font(15))
                     .lineLimit(1...8)
                     .onChange(of: text) { _, new in
                         // Nouveau texte : nouveau message, donc nouveau nonce.
@@ -43,9 +44,11 @@ struct ContentView: View {
                 if !text.isEmpty {
                     Button(action: send) {
                         Label(state == .sending ? "Sending" : "Send", systemImage: "paperplane.fill")
+                            .font(DS.font(15, weight: .semibold))
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(DS.accent)
                     .disabled(state == .sending)
                 }
 
@@ -53,6 +56,7 @@ struct ContentView: View {
             }
         }
         .navigationTitle("KovaLink")
+        .tint(DS.selIcon)
         #if DEBUG
         .task { await selfTest() }
         #endif
@@ -76,12 +80,12 @@ struct ContentView: View {
             EmptyView()
         case .sent(let session):
             Label("Delivered to \(session)", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.footnote)
+                .foregroundStyle(DS.ok)
+                .font(DS.font(12))
         case .failed(let reason):
             Label(reason, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-                .font(.footnote)
+                .foregroundStyle(DS.warn)
+                .font(DS.font(12))
         }
     }
 
