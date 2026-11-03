@@ -1,5 +1,6 @@
 import Foundation
 import WatchConnectivity
+import WidgetKit
 
 /// Le seul canal de la montre : l'iPhone, par WatchConnectivity. L'iPhone relaie au daemon.
 ///
@@ -53,5 +54,35 @@ final class PhoneLink: NSObject, ObservableObject, WCSessionDelegate {
         }
     }
 
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
+    // MARK: Nombres du cadran
+
+    /// App Group partagé avec l'extension `watch-widget` : c'est par lui que la complication
+    /// lit les nombres, sans WatchConnectivity.
+    private static let sharedSuite = "group.io.claap.kovalink"
+    private static let countsKey = "watch.counts"
+    private static let countsAtKey = "watch.counts.at"
+
+    /// `[asks, errors, ended, oldestAt]`, exactement la forme envoyée par l'iPhone : jamais
+    /// un mot, ni question, ni nom. `oldestAt` vaut 0 quand rien n'attend.
+    private func storeCounts(_ raw: Any?) {
+        guard let payload = raw as? [Int], payload.count == 4 else { return }
+        let defaults = UserDefaults(suiteName: Self.sharedSuite) ?? .standard
+        defaults.set(payload, forKey: Self.countsKey)
+        defaults.set(Int(Date().timeIntervalSince1970), forKey: Self.countsAtKey)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        // Contexte reçu pendant que l'app n'était pas lancée : on le remonte à la complication.
+        guard activationState == .activated else { return }
+        storeCounts(session.receivedApplicationContext["counts"])
+    }
+
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        storeCounts(applicationContext["counts"])
+    }
+
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        storeCounts(userInfo["counts"])
+    }
 }

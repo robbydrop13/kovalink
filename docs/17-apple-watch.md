@@ -17,6 +17,9 @@ Kova, `claap-agent` ou `perso-agent`. Rien de plus en v1.
   `production`, celui de `npm run ota` depuis 4413568).
 - Limite connue : si l'écriture dans Kova dépasse 12 s, un nouvel essai depuis la montre
   peut répondre « Delivered » (nonce déjà réservé) alors que le premier envoi échoue ensuite.
+- Complication (03/11/2026) : code sur `feat/ds-tokens`, typecheck watchOS des deux cibles
+  passé. Pas encore de build EAS : `watch-widget` est une nouvelle cible, le bundle
+  `io.claap.kovalink.watch.widget` et son App Group restent à déclarer dans le portail Apple.
 
 ## Parcours
 
@@ -51,6 +54,18 @@ kovalinkd : resolveSession (comme le pont Slack) puis KeyGate.emitText (comme l'
 - **Session occupée** : même comportement que l'envoi depuis l'iPhone, le texte est tapé
   tout de suite (Claude Code le met en file). Le pont Slack, lui, attend la fin du tour.
 
+## Complication (cadran)
+
+- L'iPhone pousse `[asks, errors, ended, oldestAt]` par `updateApplicationContext` et, quand
+  il reste du budget, `transferCurrentComplicationUserInfo` (module `watch-relay`).
+- La montre le reçoit (`didReceiveApplicationContext`, `didReceiveUserInfo`, et le contexte
+  déjà reçu à l'activation), l'écrit dans les defaults de l'App Group `group.io.claap.kovalink`
+  sous `watch.counts` plus `watch.counts.at`, puis recharge les timelines.
+- L'extension `targets/watch-widget` relit ces quatre entiers : rond avec le nombre d'asks,
+  rectangle avec l'âge de la plus ancienne attente, inline et coin en « N asks ».
+- Rafraîchissement demandé toutes les 15 min, un tap ouvre l'app montre. Jamais un mot du
+  contenu : ni question, ni nom de pane.
+
 ## Fichiers
 
 | Partie | Fichier |
@@ -59,15 +74,17 @@ kovalinkd : resolveSession (comme le pont Slack) puis KeyGate.emitText (comme l'
 | Tests | `daemon/test/sessiontext.test.ts` |
 | Relais iPhone | `app/modules/watch-relay/` (Swift + `index.ts`), appelé depuis `src/store/credentials.ts` et `src/boot.ts` |
 | App montre | `app/targets/watch/` (`expo-target.config.js`, SwiftUI) |
+| Complication | `app/targets/watch-widget/` (`expo-target.config.js`, `Widget.swift`, `DSTokens.swift` généré) |
 
 La cible montre est générée par `@bacons/apple-targets` (type `watch`, bundle
 `io.claap.kovalink.watch`, embarquée dans l'app iPhone). C'est un changement natif : un build
-EAS et un bump de `version`, jamais une OTA seule.
+EAS et un bump de `version`, jamais une OTA seule. Les deux cibles déclarent l'App Group
+`group.io.claap.kovalink` dans `entitlements`, l'extension sous le bundle
+`io.claap.kovalink.watch.widget`.
 
 ## Plus tard
 
 - Dictée AssemblyAI avec le glossaire de Robin (`GET /v1/voice/stream-token`) : l'audio
   passerait par l'iPhone. La dictée système suffit pour la v1.
-- Complication de cadran (cible `watch-widget`) et bouton Action (Ultra, App Intent) pour
-  ouvrir directement la dictée.
+- Bouton Action (Ultra, App Intent) pour ouvrir directement la dictée.
 - File d'attente quand l'iPhone est hors de portée (`transferUserInfo`).

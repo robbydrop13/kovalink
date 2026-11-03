@@ -18,4 +18,10 @@ module.exports = {
   colors: {
     $accent: '#3A5EED',
   },
+  // L'App Group porte les nombres du cadran (`watch.counts`) jusqu'à l'extension
+  // `watch-widget`. Il est déjà déclaré sur l'app hôte, la Notification Service Extension et
+  // la Share Extension : le profil de provisionnement de la montre doit le porter aussi.
+  entitlements: {
+    'com.apple.security.application-groups': ['group.io.claap.kovalink'],
+  },
 };

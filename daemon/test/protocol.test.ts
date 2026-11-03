@@ -227,6 +227,10 @@ describe('tokens de design generes depuis ds.json', () => {
       readFileSync(new URL('../../../app/targets/watch/DSTokens.swift', import.meta.url), 'utf8'),
       tokenGenerator.renderSwift(generatedTokens),
     );
+    assert.equal(
+      readFileSync(new URL('../../../app/targets/watch-widget/DSTokens.swift', import.meta.url), 'utf8'),
+      tokenGenerator.renderSwift(generatedTokens),
+    );
   });
 
   it('chaque couleur de ds.json est un hex opaque ou un rgba', () => {
