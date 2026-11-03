@@ -104,7 +104,7 @@ export async function afconvertToWav(
 
 /** Retire tout ce qui ressemble a une cle OpenAI, meme masquee, d'un texte venu d'OpenAI. */
 function scrubKey(s: string): string {
-  return s.replace(/sk-[A-Za-z0-9_*\-]+/g, 'sk-[REDACTED]');
+  return s.replace(/sk-[A-Za-z0-9_*-]+/g, 'sk-[REDACTED]');
 }
 
 /** Message et code d'erreur d'OpenAI (`{ error: { message, code, type } }`). */
