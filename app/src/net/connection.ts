@@ -23,6 +23,7 @@ import { useSession } from '@/store/session';
 import { useScreens } from '@/store/screen';
 import { usePrefs, type Prefs } from '@/store/prefs';
 import { flushOutbox } from '@/actions/outboxRunner';
+import { startWatchCountsSync, stopWatchCountsSync } from '@/features/watch/countsSync';
 import { bootLog, bootWarn } from '@/env';
 import { t } from '@/i18n/en';
 
@@ -258,6 +259,10 @@ export async function startConnection(): Promise<void> {
     // ce pane, sinon la prochaine fin de tour ne vibre pas. Ping immédiat, pane à null.
     socket?.pingNow();
   });
+
+  // Les nombres du cadran suivent maintenant l'etat. Pose ici et non dans le demarrage :
+  // l'appairage en cours d'execution rappelle `startConnection` sans rejouer le boot.
+  startWatchCountsSync();
 }
 
 export function stopConnection(): void {
@@ -266,6 +271,7 @@ export function stopConnection(): void {
   socket = null;
   netSub?.remove();
   appSub?.remove();
+  stopWatchCountsSync();
   netSub = null;
   appSub = null;
   visiblePaneId = null;

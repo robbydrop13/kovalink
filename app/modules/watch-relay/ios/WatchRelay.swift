@@ -3,10 +3,12 @@ import OSLog
 import Security
 import WatchConnectivity
 
-/// Reçoit le texte dicté sur la montre et l'envoie au daemon, sans passer par le JS.
+/// Le relais de la montre, dans les deux sens : le texte dicte part vers le daemon, et les
+/// nombres du cadran (questions, erreurs, age) partent vers la montre par WatchConnectivity.
 ///
-/// Message attendu : `kind=send`, `session`, `text`, `nonce`. Réponse à la montre : `ok`
-/// puis `session` (nom résolu par le daemon) ou `error` (phrase courte, affichée telle quelle).
+/// Message attendu de la montre : `kind=send`, `session`, `text`, `nonce`. Reponse a la
+/// montre : `ok` puis `session` (nom resolu par le daemon) ou `error` (phrase courte,
+/// affichee telle quelle).
 final class WatchRelay: NSObject, WCSessionDelegate {
     static let shared = WatchRelay()
 
@@ -14,6 +16,12 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     private static let sessionTextPath = "/v1/sessions/text"
     private static let keychainService = "io.claap.kovalink.watch-relay"
     private static let keychainAccount = "config"
+
+    /// App Group partage avec l'app hote et avec la montre : c'est par lui que la montre
+    /// lit les nombres, y compris quand l'iPhone est verrouille.
+    private static let sharedSuite = "group.io.claap.kovalink"
+    /// Derniers nombres pousses, renvoyes a une montre qui s'active apres coup.
+    private static let countsKey = "watch.counts"
 
     private struct Config: Codable {
         let baseUrl: String
@@ -29,6 +37,42 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         WCSession.default.delegate = self
         WCSession.default.activate()
         log.notice("activating WatchConnectivity")
+    }
+
+    // MARK: Comptes du cadran
+
+    /// Les nombres du cadran, en quatre entiers : `[asks, errors, ended, oldestAt]`,
+    /// `oldestAt` etant la seconde epoch de la plus ancienne attente, 0 quand il n'y en a
+    /// pas. Jamais un mot : ni question, ni nom de pane, ni titre.
+    ///
+    /// Ils sont gardes dans les defaults partages, pour qu'une montre activee plus tard
+    /// (app installee, iPhone redemarre) recoive le dernier etat au lieu de rien.
+    func setCounts(asks: Int, errors: Int, ended: Int, oldestAt: Int?) {
+        let payload = [asks, errors, ended, oldestAt ?? 0]
+        sharedDefaults.set(payload, forKey: Self.countsKey)
+        log.notice("counts asks=\(asks) errors=\(errors) ended=\(ended)")
+        publish(payload)
+    }
+
+    private var sharedDefaults: UserDefaults {
+        UserDefaults(suiteName: Self.sharedSuite) ?? .standard
+    }
+
+    private func publish(_ payload: [Int]) {
+        let session = WCSession.default
+        // Session pas encore active (le push silencieux peut arriver avant la fin de
+        // `activate()`) : la valeur gardee partira de `activationDidComplete`.
+        guard session.activationState == .activated else { return }
+        do {
+            // Derniere valeur gagne : `updateApplicationContext` remplace, il ne fait pas file.
+            try session.updateApplicationContext(["counts": payload])
+        } catch {
+            log.error("application context failed \(error.localizedDescription)")
+        }
+        // Complication : iOS compte le budget, on n'en prend un que s'il en reste un.
+        if session.isComplicationEnabled && session.remainingComplicationUserInfoTransfers > 0 {
+            _ = session.transferCurrentComplicationUserInfo(["counts": payload])
+        }
     }
 
     // MARK: Configuration, copiée du trousseau de l'app par le JS
@@ -78,6 +122,16 @@ final class WatchRelay: NSObject, WCSessionDelegate {
 
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         log.notice("activation state \(activationState.rawValue), error \(error?.localizedDescription ?? "none")")
+        // Montre activee apres le dernier envoi : on lui renvoie les nombres gardes.
+        if activationState == .activated, let payload = sharedDefaults.array(forKey: Self.countsKey) as? [Int] {
+            publish(payload)
+        }
+    }
+    /// App de montre installee (ou retiree) pendant que l'iPhone tourne.
+    func sessionWatchStateDidChange(_ session: WCSession) {
+        if let payload = sharedDefaults.array(forKey: Self.countsKey) as? [Int] {
+            publish(payload)
+        }
     }
     func sessionDidBecomeInactive(_ session: WCSession) {}
     func sessionDidDeactivate(_ session: WCSession) {
