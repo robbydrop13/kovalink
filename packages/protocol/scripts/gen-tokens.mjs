@@ -139,6 +139,8 @@ export function renderRust(tokens) {
     .join('\n');
 
   return `// ${HEADER}
+// Some channels land near 1/pi and friends: not math constants.
+#![allow(clippy::approx_constant)]
 
 #[allow(dead_code)]
 pub mod dark {
