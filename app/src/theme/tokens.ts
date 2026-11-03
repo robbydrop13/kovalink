@@ -1,49 +1,51 @@
-// Tokens de design, source unique. Recopiés de docs/02-design.md section 2.
-// v1 : mode sombre uniquement (A9). Le jeu clair est spécifié dans le document mais
+// Tokens de design, source unique. Palette : design system Claap, depuis ./ds
+// (généré depuis packages/protocol/tokens/ds.json).
+// v1 : mode sombre uniquement (A9). Le jeu clair est spécifié dans le design system mais
 // n'est volontairement pas câblé ici.
+import { ds } from './ds';
 
 export const dark = {
   bg: {
-    base: '#0B0D10',
-    raised: '#14171C',
-    overlay: '#1B1F26',
-    inset: '#070809',
-    pressed: '#1F242B',
+    base: ds.dark.bg0,
+    raised: ds.dark.bg1,
+    overlay: ds.dark.bgElev,
+    inset: ds.dark.bg0,
+    pressed: ds.dark.hover,
     scrim: 'rgba(0,0,0,0.60)',
   },
-  border: { subtle: '#23272F', strong: '#333944', focus: '#4C8DFF' },
+  border: { subtle: ds.dark.b3, strong: ds.dark.b2, focus: ds.dark.selRail },
   text: {
-    primary: '#E8EAED',
-    secondary: '#9BA3AF',
-    tertiary: '#7C8593',
-    disabled: '#5A616D',
-    inverse: '#0B0D10',
+    primary: ds.dark.t1,
+    secondary: ds.dark.t2,
+    tertiary: ds.dark.t3,
+    disabled: '#7a7a7a',
+    inverse: ds.dark.bg0,
     onFill: '#FFFFFF',
   },
-  accent: { primary: '#4C8DFF', primaryPressed: '#3A79E6', subtleBg: '#12213A' },
+  accent: { primary: ds.dark.accent, primaryPressed: ds.dark.accentHover, subtleBg: ds.dark.selBg },
   status: {
-    awaiting: '#FFB020',
-    awaitingBg: '#2A1F08',
-    working: '#38BDF8',
-    workingBg: '#0A1F2B',
-    idle: '#7C8593',
-    closed: '#5A616D',
-    error: '#FF5C5C',
-    success: '#3DD68C',
+    awaiting: ds.dark.warnDot,
+    awaitingBg: ds.dark.warnBg,
+    working: ds.dark.infoDot,
+    workingBg: ds.dark.selBg,
+    idle: ds.dark.t3,
+    closed: '#7a7a7a',
+    error: ds.dark.critDot,
+    success: ds.dark.okDot,
   },
   action: {
-    approve: { bg: '#1C8052', bgPressed: '#166843', text: '#FFFFFF' },
-    reject: { bg: '#B02A22', bgPressed: '#8E211B', text: '#FFFFFF' },
-    always: { border: '#2E9E63', bg: '#101C16', text: '#6FE0A6' },
-    neutral: { bg: '#2A2F38', text: '#E8EAED' },
-    interrupt: { border: '#FF5C5C', text: '#FF7A7A' },
+    approve: { bg: ds.dark.accent, bgPressed: ds.dark.accentHover, text: '#FFFFFF' },
+    reject: { bg: '#ED3726', bgPressed: '#CC2314', text: '#FFFFFF' },
+    always: { border: ds.dark.okDot, bg: ds.dark.bg1, text: ds.dark.ok },
+    neutral: { bg: ds.dark.btn2, text: ds.dark.t1 },
+    interrupt: { border: ds.dark.critDot, text: ds.dark.crit },
   },
   link: {
-    direct: '#3DD68C',
-    relayed: '#4C8DFF',
-    connecting: '#FFB020',
-    macUnreachable: '#FF9F45',
-    offline: '#FF5C5C',
+    direct: ds.dark.okDot,
+    relayed: ds.dark.infoDot,
+    connecting: ds.dark.warnDot,
+    macUnreachable: ds.dark.warnDot,
+    offline: ds.dark.critDot,
   },
   diff: {
     addBg: '#10251A',
@@ -66,8 +68,15 @@ export const dark = {
     type: '#2AC3DE',
     punct: '#9BA3AF',
   },
-  tab: ['#FF6B6B', '#FF9F45', '#FFD84D', '#4ADE80', '#60A5FA', '#C084FC'],
-  tabNone: '#7C8593',
+  tab: [
+    ds.tagDots.dark.red,
+    ds.tagDots.dark.orange,
+    ds.tagDots.dark.yellow,
+    ds.tagDots.dark.green,
+    ds.tagDots.dark.blue,
+    ds.tagDots.dark.violet,
+  ],
+  tabNone: ds.dark.t3,
 } as const;
 
 export const space = [0, 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64] as const;

@@ -6,7 +6,7 @@
     "version": "1.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0B0D10",
+    "backgroundColor": "#161616",
     "primaryColor": "#4C8DFF",
     "newArchEnabled": true,
     "runtimeVersion": {
@@ -57,7 +57,7 @@
       [
         "expo-notifications",
         {
-          "color": "#0B0D10"
+          "color": "#161616"
         }
       ],
       [
