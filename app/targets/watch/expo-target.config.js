@@ -18,10 +18,8 @@ module.exports = {
   colors: {
     $accent: '#3A5EED',
   },
-  // L'App Group porte les nombres du cadran (`watch.counts`) jusqu'à l'extension
-  // `watch-widget`. Il est déjà déclaré sur l'app hôte, la Notification Service Extension et
-  // la Share Extension : le profil de provisionnement de la montre doit le porter aussi.
-  entitlements: {
-    'com.apple.security.application-groups': ['group.io.claap.kovalink'],
-  },
+  // L'App Group (`group.io.claap.kovalink`) porte les nombres du cadran jusqu'à l'extension
+  // `watch-widget`. Retiré tant que l'App ID de la montre n'a pas le groupe sur le portail
+  // Apple (voir `targets-off/README.md`) : sans lui, Xcode refuse de signer. PhoneLink écrit
+  // alors dans ses propres préférences, sans effet visible puisque la complication est hors build.
 };
