@@ -31,7 +31,7 @@ export interface WatchCounts {
 interface WatchRelayNative {
   configure(baseUrl: string, token: string): void;
   clear(): void;
-  setCounts(counts: WatchCounts): void;
+  setCounts?(counts: WatchCounts): void; // absent before 1.3.0
 }
 
 const native = requireOptionalNativeModule<WatchRelayNative>('WatchRelay');
@@ -46,5 +46,6 @@ export function clearWatchRelay(): void {
 
 /** Pousse les nombres du cadran. No-op sur Android, le web, les tests et Expo Go. */
 export function setCounts(counts: WatchCounts): void {
-  native?.setCounts(counts);
+  // A 1.2.0 binary has no setCounts: an over-the-air update must not crash it.
+  native?.setCounts?.(counts);
 }
