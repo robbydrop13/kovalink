@@ -109,6 +109,19 @@ describe('slack: parseCommand', () => {
     assert.deepEqual(parseCommand(`<@${BOT}> list`, BOT), { kind: 'list' });
     assert.deepEqual(parseCommand('LIST', BOT), { kind: 'list' });
   });
+  it('mention au milieu du message : le texte avant suit comme contexte, jamais comme session', () => {
+    // Cas reel du 03/11 (DM D0A16KYRZ1D) : « haha 🙂 » puis la commande a la ligne.
+    const c = parseCommand(`haha 🙂\n<@${BOT}> claap-agent you could get this info? (Tal from lemlist workspace)`, BOT);
+    assert.deepEqual(c, {
+      kind: 'send',
+      session: 'claap-agent',
+      message: 'you could get this info? (Tal from lemlist workspace)\n\n(Earlier in the same Slack message: haha 🙂)',
+    });
+  });
+  it('mention au milieu sans message : usage, pas de contexte seul', () => {
+    assert.deepEqual(parseCommand(`haha <@${BOT}> claap-agent`, BOT), { kind: 'send', session: 'claap-agent', message: '' });
+    assert.deepEqual(parseCommand(`haha <@${BOT}>`, BOT), { kind: 'list' });
+  });
   it('session sans message', () => {
     assert.deepEqual(parseCommand(`<@${BOT}> claap-agent`, BOT), { kind: 'send', session: 'claap-agent', message: '' });
   });

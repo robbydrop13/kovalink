@@ -109,22 +109,30 @@ export type Command =
   | { kind: 'send'; session: string; message: string };
 
 /**
- * Retire la mention du bot, puis : premier mot = session, reste = message.
+ * La commande commence a la mention du bot, ou qu'elle soit dans le message : premier mot
+ * apres elle = session, reste = message. Le texte AVANT la mention (« haha 🙂 » puis, a la
+ * ligne, `@kova claap-agent ...`) n'est jamais pris pour un nom de session : il suit le
+ * message comme contexte. Sans mention (DM au bot), tout le texte est la commande.
  * `@kova` seul ou `@kova list` = liste des sessions. Une session sans message est
  * refusee (`message: ''`), l'appelant repond avec l'usage.
  */
 export function parseCommand(text: string, botUserId: string | null): Command {
+  let before = '';
   let s = text;
   if (botUserId) {
-    const mention = new RegExp(`<@${botUserId}(?:\\|[^>]*)?>`);
-    s = s.replace(mention, ' ');
+    const hit = new RegExp(`<@${botUserId}(?:\\|[^>]*)?>`).exec(text);
+    if (hit) {
+      before = text.slice(0, hit.index).trim();
+      s = text.slice(hit.index + hit[0].length).replace(new RegExp(`<@${botUserId}(?:\\|[^>]*)?>`, 'g'), ' ');
+    }
   }
   s = s.trim();
   if (s === '') return { kind: 'list' };
   const m = /^(\S+)\s*([\s\S]*)$/.exec(s);
   const session = m?.[1] ?? '';
-  const message = (m?.[2] ?? '').trim();
+  let message = (m?.[2] ?? '').trim();
   if (session.toLowerCase() === 'list' && message === '') return { kind: 'list' };
+  if (message !== '' && before !== '') message = `${message}\n\n(Earlier in the same Slack message: ${before})`;
   return { kind: 'send', session, message };
 }
 
