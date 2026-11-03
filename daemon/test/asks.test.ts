@@ -187,6 +187,9 @@ describe('questions des agents : le tableau', () => {
     await assert.rejects(() => board.answer(id, undefined, ''), AskError);
     await assert.rejects(() => board.answer(id, 'OK', 'x'.repeat(8 * 1024 + 1)), AskError);
     await assert.rejects(() => board.answer('6f1c0000-0000-4000-8000-00000000ffff', 'OK', ''), AskError);
+    // `Other` n'est une reponse que s'il porte une consigne (le Brief).
+    await assert.rejects(() => board.answer(id, 'Other', ''), AskError);
+    await assert.rejects(() => board.answer(id, 'Other', '   '), AskError);
     // Aucun refus n'a atteint Kova : seule la lecture initiale est passee.
     assert.deepEqual(seen.map((r) => r['cmd']), ['list-asks']);
     await board.answer(id, 'OK', 'coupe le dernier paragraphe');

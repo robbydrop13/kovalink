@@ -187,7 +187,10 @@ export class AskBoard {
    */
   async answer(askId: string, action: unknown, text: unknown): Promise<void> {
     const ask = this.requireAsk(askId);
-    if (typeof action !== 'string' || !ask.buttons.includes(action)) {
+    // `Other` avec un texte, c'est le Brief : une consigne libre, acceptee sur toute
+    // question (Kova fait la meme regle, `accepts_external_answer`).
+    const freeText = action === 'Other' && typeof text === 'string' && text.trim().length > 0;
+    if (typeof action !== 'string' || (!ask.buttons.includes(action) && !freeText)) {
       throw new AskError('BAD_REQUEST', 'action must be one of this question\'s buttons');
     }
     if (text !== undefined && typeof text !== 'string') {

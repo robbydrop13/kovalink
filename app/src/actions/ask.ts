@@ -10,7 +10,7 @@
 // que la redemander.
 import type { AskItem } from '@/protocol';
 import { HttpError, postAskAnswer, postAskSnooze } from '@/net/http';
-import { askText, isAskButton } from '@/features/asks/answer';
+import { askAnswerBody, isAskButton } from '@/features/asks/answer';
 import { nonce } from './nonce';
 
 export type AskOutcome =
@@ -35,7 +35,7 @@ export async function answerAsk(ask: AskItem, action: string, text: string): Pro
     return { ok: false, kind: 'refused', cause: 'unknown button' };
   }
   try {
-    await postAskAnswer(ask.id, { action, text: askText(text), nonce: nonce() });
+    await postAskAnswer(ask.id, { ...askAnswerBody(action, text), nonce: nonce() });
     return { ok: true };
   } catch (e) {
     return outcome(e);
