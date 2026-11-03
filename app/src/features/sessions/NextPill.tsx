@@ -22,11 +22,14 @@ export function NextPill({
   hidden,
   onPress,
   onLongPress,
+  docked = false,
 }: {
   state: NextState;
   hidden: boolean;
   onPress: () => void;
   onLongPress?: () => void;
+  /** Pose dans un en-tete plutot que flottant au dessus du fil (accueil, P02). */
+  docked?: boolean;
 }) {
   const [flash, setFlash] = useState(false);
   const previousUnread = useRef<number | null>(null);
@@ -58,7 +61,7 @@ export function NextPill({
   const dest = state.target ? t.nextPillHint(state.target.entry.group.title, state.target.entry.pane.title ?? state.target.entry.pane.agent ?? '') : '';
 
   return (
-    <Animated.View pointerEvents={hidden ? 'none' : 'auto'} style={[styles.wrap, { opacity }]}>
+    <Animated.View pointerEvents={hidden ? 'none' : 'auto'} style={[styles.wrap, docked && styles.docked, { opacity }]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={mode === 'caughtUp' ? t.allCaughtUp : mode === 'idle' ? `${t.nextIdle}, ${badge}` : t.nextPillA11y(badge)}
@@ -87,6 +90,7 @@ export const NEXT_BUTTON_SPACE = 44 + space[4];
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', right: space[5], bottom: space[4] },
+  docked: { position: 'relative', right: 0, bottom: 0 },
   round: {
     width: 44,
     height: 44,

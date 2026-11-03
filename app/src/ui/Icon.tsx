@@ -7,7 +7,8 @@ import type { ComponentProps } from 'react';
 import { colors } from '@/theme';
 
 export type IconName = ComponentProps<typeof Feather>['name'];
-export type IconSize = 12 | 14 | 16 | 20 | 24;
+// Quatre tailles du design : 16, 20, 22 (onglets de l'accueil), 24.
+export type IconSize = 12 | 14 | 16 | 20 | 22 | 24;
 
 export function Icon({
   name,

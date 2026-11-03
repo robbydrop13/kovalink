@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Pane } from '@/protocol';
 import { colors, layout, radius, space } from '@/theme';
-import { Button, LinkAction, RoundButton } from '@/ui/Button';
+import { Button, RoundButton } from '@/ui/Button';
 import { LinkPill } from '@/ui/LinkPill';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
@@ -31,6 +31,7 @@ import { Icon } from '@/ui/Icon';
 import { TabGroupView } from '@/features/sessions/TabGroupView';
 import { paneHref } from '@/features/sessions/SessionRow';
 import { useNextTarget } from '@/features/sessions/useNextTarget';
+import { NextPill } from '@/features/sessions/NextPill';
 import { isUnread } from '@/features/sessions/unread';
 import { useReads } from '@/store/reads';
 import { useTabCollapse } from '@/store/tabCollapse';
@@ -47,19 +48,35 @@ import { createScrollLock } from '@/features/sessions/scrollLock';
 import { isDegraded, useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { dueAsks, nextAsk, useAsks } from '@/store/asks';
+import { useHomeTab, type HomeTab } from '@/store/homeTab';
 import { isAging, usePrompts } from '@/store/prompts';
 import { forceReconnect } from '@/net/connection';
 import { fetchPanes, fetchSessions, postKovaLaunch, postSplit } from '@/net/http';
 import { clockTime } from '@/utils/time';
 import { retryBoot, useBootError, useBootState } from '@/boot';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
+import { TabBar, TAB_BAR_HEIGHT } from '@/features/home/TabBar';
 import { ErrorScreen } from '@/ui/ErrorScreen';
 import { t } from '@/i18n/en';
+
+/** Titre de chaque onglet de l'accueil, repris par l'etat vide des onglets a venir. */
+const TAB_TITLES: Record<HomeTab, string> = {
+  panes: t.homeTabPanes,
+  asks: t.homeTabAsks,
+  agents: t.homeTabAgents,
+  scheduled: t.homeTabScheduled,
+};
 
 export default function SessionsScreen() {
   const asks = useAsks((s) => s.asks);
   const pendingAsk = nextAsk(asks);
-  const waitingAsks = dueAsks(asks).length;
+  // Le badge des Asks compte les questions dues.
+  // TODO(D01): y ajouter `waitsOnYou` quand le protocole l'expose.
+  const askCount = dueAsks(asks).length;
+  // TODO(P07) : brancher ce drapeau sur les echecs du schedule.
+  const scheduledFailed = false;
+  const tab = useHomeTab((s) => s.tab);
+  const setTab = useHomeTab((s) => s.setTab);
   const insets = useSafeAreaInsets();
   const boot = useBootState();
   const bootError = useBootError();
@@ -144,6 +161,44 @@ export default function SessionsScreen() {
     if (!next.target) return;
     impact(ImpactStyle.Light);
     router.push(paneHref(next.target.entry.pane));
+  };
+
+  // Le `+` de l'en-tete : les deux routes de la barre basse d'hier, la palette des projets
+  // et la nouvelle session.
+  const addMenu = () => {
+    if (degraded) return;
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: [t.sessionsNewSessionButton, t.sessionsProjectsButton, t.actionCancel],
+        cancelButtonIndex: 2,
+        userInterfaceStyle: 'dark',
+      },
+      (index) => {
+        if (index === 0 || index === 1) router.push('/new-session');
+      },
+    );
+  };
+  // Le `...` : Panes (l'ancien bouton bas) et les liens qui etaient dans cet en-tete.
+  const moreMenu = () => {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: [
+          t.sessionsPanesButton,
+          t.sessionsNavFiles,
+          t.sessionsNavBrowser,
+          t.sessionsNavSettings,
+          t.actionCancel,
+        ],
+        cancelButtonIndex: 4,
+        userInterfaceStyle: 'dark',
+      },
+      (index) => {
+        if (index === 0) router.push('/panes');
+        if (index === 1) router.push('/files');
+        if (index === 2) router.push('/browser');
+        if (index === 3) router.push('/settings');
+      },
+    );
   };
   // Un pane sans agent s'ouvre sur la vue Term ; une session périmée propose de relancer
   // Claude dans son dossier via la feuille « Nouvelle session », préfiltrée.
@@ -397,19 +452,33 @@ export default function SessionsScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.nav}>
-        <Txt variant="title1" color={colors.text.primary}>
-          {t.sessionsTitle}
-        </Txt>
-        <View style={styles.grow} />
-        <LinkPill onPress={() => router.push('/settings')} />
-        {/* Le bloc C ne dépend pas de Kova : l'accès aux fichiers reste offert même quand
-            la liste des sessions est vide parce que Kova est quitté (CA-123). */}
-        <LinkAction icon="folder" label={t.sessionsNavFiles} onPress={() => router.push('/files')} />
-        <LinkAction icon="globe" label={t.sessionsNavBrowser} onPress={() => router.push('/browser')} />
-        <LinkAction icon="settings" label={t.sessionsNavSettings} onPress={() => router.push('/settings')} />
+      <View style={styles.header}>
+        <View style={styles.titleRow}>
+          <Txt variant="display" color={colors.text.primary} numberOfLines={1} style={styles.title}>
+            {TAB_TITLES[tab]}
+          </Txt>
+          <View style={styles.grow} />
+          {/* La navigation de Robin reste sur Panes ; les autres onglets arrivent (P05-P07). */}
+          {tab === 'panes' ? (
+            <>
+              <LinkPill onPress={() => router.push('/settings')} />
+              <RoundButton
+                icon="plus"
+                size={32}
+                label={t.sessionsNewSessionButton}
+                disabled={degraded}
+                accessibilityHint={t.sessionsNewSessionHint}
+                onPress={addMenu}
+              />
+              <RoundButton icon="more-horizontal" size={32} label={t.homeTabMore} onPress={moreMenu} />
+            </>
+          ) : null}
+          <NextPill state={next} hidden={false} onPress={jumpNext} docked />
+        </View>
       </View>
 
+      {tab === 'panes' ? (
+        <>
       {degraded ? (
         <Banner
           tone={link === 'offline' ? 'offline' : 'warn'}
@@ -436,7 +505,7 @@ export default function SessionsScreen() {
       {pendingAsk ? (
         <Banner
           tone="warn"
-          text={t.askBanner(waitingAsks)}
+          text={t.askBanner(askCount)}
           actionLabel={t.askBannerAction}
           onAction={() => router.push(`/ask/${pendingAsk.id}`)}
         />
@@ -500,7 +569,7 @@ export default function SessionsScreen() {
         onContentSizeChange={(_w, h) => {
           contentHeight.current = h;
         }}
-        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + layout.touchPrimary + space[8] }]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + TAB_BAR_HEIGHT + space[8] }]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.text.secondary} />
         }
@@ -555,70 +624,29 @@ export default function SessionsScreen() {
         </DragScrollContext.Provider>
       </ScrollView>
 
-      {/* Barre d'action basse, zone du pouce (design 4.1) : icônes rondes, sans libellé,
-          le nom est porté par l'accessibilité. Panes (Cmd+P), Projects (Cmd+O), New session
-          (un projet récent dans un nouvel onglet, avec Claude) et Next (Cmd+J). */}
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + space[3] }]}>
-        <RoundButton
-          icon="grid"
-          label={t.sessionsPanesButton}
-          disabled={kovaDown}
-          accessibilityHint={t.sessionsPanesHint}
-          onPress={() => router.push('/panes')}
-        />
-        <RoundButton
-          icon="folder"
-          label={t.sessionsProjectsButton}
-          disabled={degraded}
-          accessibilityHint={t.sessionsProjectsHint}
-          onPress={() => router.push('/new-session')}
-        />
-        <RoundButton
-          icon="plus"
-          label={t.sessionsNewSessionButton}
-          disabled={degraded}
-          accessibilityHint={t.sessionsNewSessionHint}
-          onPress={() => router.push('/new-session')}
-        />
-        <View style={styles.grow} />
-        <RoundButton
-          icon={next.target ? 'skip-forward' : 'check-circle'}
-          kind={next.target?.kind === 'unread' ? 'primary' : 'secondary'}
-          disabled={degraded || !next.target}
-          badge={next.target?.kind === 'unread' ? next.unreadCount : next.target?.kind === 'idle' ? next.idleCount : undefined}
-          badgeTone={next.target?.kind === 'unread' ? 'attention' : 'neutral'}
-          label={
-            next.target?.kind === 'unread'
-              ? `${t.nextUnread} (${next.unreadCount})`
-              : next.target?.kind === 'idle'
-                ? t.nextIdle
-                : t.caughtUp
-          }
-          accessibilityHint={next.target ? t.nextPillHint(next.target.entry.group.title, next.target.entry.pane.title ?? '') : t.nothingLeftToRead}
-          onPress={jumpNext}
-        />
-      </View>
+        </>
+      ) : (
+        <EmptyState title={TAB_TITLES[tab]} body={t.homeTabComingBody} />
+      )}
 
       {toast ? (
-        <View style={[styles.toast, { bottom: insets.bottom + layout.touchPrimary + space[6] }]}>
+        <View style={[styles.toast, { bottom: insets.bottom + TAB_BAR_HEIGHT + space[4] }]}>
           <Txt variant="footnote" color={colors.text.primary}>
             {toast}
           </Txt>
         </View>
       ) : null}
+
+      <TabBar active={tab} onSelect={setTab} askCount={askCount} scheduledFailed={scheduledFailed} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg.base },
-  nav: {
-    height: layout.navBarHeight,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[4],
-    paddingHorizontal: layout.screenPaddingH,
-  },
+  header: { paddingHorizontal: layout.screenPaddingH, paddingTop: space[3], paddingBottom: space[2] },
+  titleRow: { minHeight: layout.navBarHeight, flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  title: { flexShrink: 1 },
   content: { paddingHorizontal: layout.screenPaddingH, paddingTop: space[2] },
   groups: { gap: space[6] },
   // Le libellé garde 8 pt avec son groupe malgré les 20 pt entre frères.
@@ -637,16 +665,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.raised,
   },
   searchPressed: { backgroundColor: colors.bg.pressed },
-  bottomBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[4],
-    paddingHorizontal: layout.screenPaddingH,
-    paddingTop: space[3],
-    backgroundColor: colors.bg.base,
-    borderTopWidth: 1,
-    borderTopColor: colors.border.subtle,
-  },
   grow: { flex: 1 },
   toast: {
     position: 'absolute',

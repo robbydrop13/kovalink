@@ -106,6 +106,8 @@ export const type = {
   action: { size: 14, line: 18, weight: '400', tracking: 0 },
   footnote: { size: 13, line: 18, weight: '400', tracking: 0 },
   caption: { size: 11, line: 14, weight: '500', tracking: 0.2 },
+  /** Libelle de la barre d'onglets de l'accueil : 10 pt Medium (P02). */
+  tabLabel: { size: 10, line: 12, weight: '500', tracking: 0.1 },
   monoCode: { size: 13, line: 20, weight: '400', tracking: 0, mono: true },
   monoCodeInline: { size: 15, line: 20, weight: '400', tracking: 0, mono: true },
   monoDiff: { size: 12, line: 18, weight: '400', tracking: 0, mono: true },

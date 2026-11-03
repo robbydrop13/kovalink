@@ -121,6 +121,15 @@ export const sessions = {
   sessionsNavFiles: 'Files',
   sessionsNavBrowser: 'Browser',
   sessionsNavSettings: 'Settings',
+
+  // Accueil a onglets (P02)
+  homeTabPanes: 'Panes',
+  homeTabAsks: 'Asks',
+  homeTabAgents: 'Agents',
+  homeTabScheduled: 'Scheduled',
+  homeTabComingBody: 'Coming in this build',
+  homeTabAsksA11y: (count: number) => (count > 0 ? `Asks, ${count} waiting` : 'Asks'),
+  homeTabMore: 'More',
   sessionsBootFailedTitle: 'Could not start',
   sessionsBootFailedHint: 'Local storage did not respond. Retry, then relaunch the app if the error persists.',
   sessionsOfflineBanner: (time: string) => `iPhone offline, last state at ${time}`,
