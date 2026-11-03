@@ -1,0 +1,264 @@
+{
+  "colors": {
+    "bg0": {
+      "ds": "bg.primary",
+      "dark": "#161616",
+      "light": "#fafafa",
+      "use": "Sidebar, phone screen"
+    },
+    "bg1": {
+      "ds": "bg.secondary",
+      "dark": "#1d1d1d",
+      "light": "#ffffff",
+      "use": "Cards, selected tab group"
+    },
+    "bg2": {
+      "ds": "bg.tertiary",
+      "dark": "#242424",
+      "light": "#fafafa",
+      "use": "Nested tile, code, tags"
+    },
+    "bgInput": {
+      "ds": "bg.input",
+      "dark": "#242424",
+      "light": "#ffffff",
+      "use": "Text field"
+    },
+    "bgElev": {
+      "ds": "bg.elevated",
+      "dark": "#2f2f2f",
+      "light": "#ffffff",
+      "use": "Menus, popovers"
+    },
+    "hover": {
+      "ds": "interactive.bg.item.hover",
+      "dark": "#3a3a3a",
+      "light": "#f3f3f3",
+      "use": "Row and tile hover"
+    },
+    "selBg": {
+      "ds": "interactive.bg.item.selected",
+      "dark": "#233B98",
+      "light": "#D5E1FF",
+      "use": "Focused pane, active view"
+    },
+    "selText": {
+      "ds": "interactive.text.item.selected",
+      "dark": "#D5E1FF",
+      "light": "#233B98",
+      "use": "Text on selected item"
+    },
+    "selIcon": {
+      "ds": "interactive.icon.item.selected",
+      "dark": "#B4CAFF",
+      "light": "#2D4BC5",
+      "use": "Selected tab bar icon"
+    },
+    "selRail": {
+      "ds": "interactive.border.item.selected",
+      "dark": "#7498FF",
+      "light": "#4C74FF",
+      "use": "Selected card border, focus"
+    },
+    "ghostHover": {
+      "ds": "interactive.bg.ghost.hover",
+      "dark": "rgba(250,250,250,0.10)",
+      "light": "rgba(22,22,22,0.08)",
+      "use": "Icon button hover"
+    },
+    "accent": {
+      "ds": "interactive.bg.primary.default",
+      "dark": "#3A5EED",
+      "light": "#3A5EED",
+      "use": "Next pill, primary button, badge"
+    },
+    "accentHover": {
+      "ds": "interactive.bg.primary.hover",
+      "dark": "#2D4BC5",
+      "light": "#2D4BC5",
+      "use": "Primary hover"
+    },
+    "btn2": {
+      "ds": "interactive.bg.secondary.default",
+      "dark": "#3a3a3a",
+      "light": "#dbdbdb",
+      "use": "Neutral button"
+    },
+    "btn2Hover": {
+      "ds": "interactive.bg.secondary.hover",
+      "dark": "#464646",
+      "light": "#cccccc",
+      "use": "Neutral button hover"
+    },
+    "b2": {
+      "ds": "border.secondary",
+      "dark": "#464646",
+      "light": "#dbdbdb",
+      "use": "Input border, card hover"
+    },
+    "b3": {
+      "ds": "border.tertiary",
+      "dark": "#3a3a3a",
+      "light": "#e9e9e9",
+      "use": "Card border, separators"
+    },
+    "t1": {
+      "ds": "text.primary",
+      "dark": "#e9e9e9",
+      "light": "#242424",
+      "use": "Titles, body"
+    },
+    "t2": {
+      "ds": "text.secondary",
+      "dark": "#cccccc",
+      "light": "#525252",
+      "use": "Secondary body"
+    },
+    "t3": {
+      "ds": "text.tertiary",
+      "dark": "#bebebe",
+      "light": "#5f5f5f",
+      "use": "Meta, timestamps, idle ring"
+    },
+    "info": {
+      "ds": "text.info",
+      "dark": "#B4CAFF",
+      "light": "#2D4BC5",
+      "use": "Working label, links"
+    },
+    "infoDot": {
+      "ds": "border.info",
+      "dark": "#7498FF",
+      "light": "#4C74FF",
+      "use": "Working dot, unread dot"
+    },
+    "warn": {
+      "ds": "text.warning",
+      "dark": "#F3C081",
+      "light": "#7D5000",
+      "use": "Waiting label"
+    },
+    "warnDot": {
+      "ds": "border.warning",
+      "dark": "#D78C00",
+      "light": "#B67700",
+      "use": "Waiting dot"
+    },
+    "warnBg": {
+      "ds": "bg.warning",
+      "dark": "#623D00",
+      "light": "#FFDBAF",
+      "use": "Waiting tag"
+    },
+    "crit": {
+      "ds": "text.critical",
+      "dark": "#FFB5A9",
+      "light": "#A9160A",
+      "use": "Error, failed run"
+    },
+    "critDot": {
+      "ds": "border.critical",
+      "dark": "#FF6551",
+      "light": "#ED3726",
+      "use": "Error dot, reject outline"
+    },
+    "critBg": {
+      "ds": "bg.critical",
+      "dark": "#83150C",
+      "light": "#FFD7CF",
+      "use": "Reject hover"
+    },
+    "ok": {
+      "ds": "text.success",
+      "dark": "#55D270",
+      "light": "#00561E",
+      "use": "Delivered, run ok"
+    },
+    "okDot": {
+      "ds": "border.success",
+      "dark": "#00BE4C",
+      "light": "#00A240",
+      "use": "Ok glyph"
+    }
+  },
+  "tagDots": {
+    "gray": {
+      "dark": "#949494",
+      "light": "#949494"
+    },
+    "green": {
+      "dark": "#00BE4C",
+      "light": "#00A240"
+    },
+    "blue": {
+      "dark": "#7498FF",
+      "light": "#4C74FF"
+    },
+    "yellow": {
+      "dark": "#BB9C00",
+      "light": "#9E8400"
+    },
+    "orange": {
+      "dark": "#F27700",
+      "light": "#CE6400"
+    },
+    "violet": {
+      "dark": "#A287FF",
+      "light": "#8E5FFF"
+    },
+    "red": {
+      "dark": "#FF6551",
+      "light": "#ED3726"
+    },
+    "teal": {
+      "dark": "#00B89E",
+      "light": "#009C86"
+    },
+    "pink": {
+      "dark": "#FF5A81",
+      "light": "#E93569"
+    },
+    "cyan": {
+      "dark": "#00B3C2",
+      "light": "#0098A4"
+    },
+    "indigo": {
+      "dark": "#8E8FFF",
+      "light": "#756DFF"
+    },
+    "amber": {
+      "dark": "#D78C00",
+      "light": "#B67700"
+    }
+  },
+  "radii": {
+    "sm": 4,
+    "md": 6,
+    "lg": 8,
+    "xl": 12,
+    "full": 9999
+  },
+  "type": {
+    "xs": [
+      11,
+      16
+    ],
+    "sm": [
+      12,
+      16
+    ],
+    "md": [
+      13,
+      18
+    ],
+    "lg": [
+      15,
+      20
+    ],
+    "4xl": [
+      28,
+      34
+    ]
+  },
+  "font": "Inter"
+}

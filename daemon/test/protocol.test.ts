@@ -197,3 +197,47 @@ describe('constantes partagees avec les cibles Swift', () => {
     assert.doesNotMatch(nse, /\b\d{4,5}\b/);
   });
 });
+
+// Import dynamique impose : le test compile depuis daemon/test (deux niveaux jusqu'a
+// la racine) mais tourne depuis daemon/dist/test (trois niveaux). Un import statique
+// ne peut pas resoudre les deux chemins a la fois.
+type GeneratedTokens = {
+  colors: Record<string, { dark: string; light: string }>;
+  tagDots: Record<string, { dark: string; light: string }>;
+};
+
+const tokenGenerator = (await import(
+  new URL('../../../packages/protocol/scripts/gen-tokens.mjs', import.meta.url).href
+)) as {
+  renderTs: (tokens: GeneratedTokens) => string;
+  renderSwift: (tokens: GeneratedTokens) => string;
+};
+
+const generatedTokens = JSON.parse(
+  readFileSync(new URL('../../../packages/protocol/tokens/ds.json', import.meta.url), 'utf8'),
+) as GeneratedTokens;
+
+describe('tokens de design generes depuis ds.json', () => {
+  it('ds.ts et DSTokens.swift sur disque sont exactement le rendu de ds.json', () => {
+    assert.equal(
+      readFileSync(new URL('../../../app/src/theme/ds.ts', import.meta.url), 'utf8'),
+      tokenGenerator.renderTs(generatedTokens),
+    );
+    assert.equal(
+      readFileSync(new URL('../../../app/targets/watch/DSTokens.swift', import.meta.url), 'utf8'),
+      tokenGenerator.renderSwift(generatedTokens),
+    );
+  });
+
+  it('chaque couleur de ds.json est un hex opaque ou un rgba', () => {
+    const pattern = /^#[0-9A-Fa-f]{6}$|^rgba\(/;
+    for (const [name, color] of Object.entries(generatedTokens.colors)) {
+      assert.match(color.dark, pattern, `${name} (dark)`);
+      assert.match(color.light, pattern, `${name} (light)`);
+    }
+    for (const [name, color] of Object.entries(generatedTokens.tagDots)) {
+      assert.match(color.dark, pattern, `${name} (dark)`);
+      assert.match(color.light, pattern, `${name} (light)`);
+    }
+  });
+});
