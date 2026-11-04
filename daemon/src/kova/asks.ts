@@ -12,7 +12,18 @@
 //
 // Trois commandes de Kova, et un Kova anterieur a `list-asks` repond `unknown command` :
 // c'est `supported: false`, jamais une liste vide, qui se lirait « aucune question ».
-import { ASK_TEXT_MAX, type AskItem, type AskSnoozeChoice, type AsksResponse } from '@kovalink/protocol';
+import {
+  ASK_TEXT_MAX,
+  SHEET_NOTE_MAX,
+  type AskItem,
+  type AskSheetAnswerResponse,
+  type AskSheetResponse,
+  type AskSnoozeChoice,
+  type AsksResponse,
+  type DecisionSheet,
+  type SheetAnswersPayload,
+  type SheetDraft,
+} from '@kovalink/protocol';
 import { logger } from '../logger.js';
 import { IpcError, mapIpcError, type KovaIpc, type KovaResponse } from './ipc.js';
 
@@ -83,8 +94,88 @@ export function mapAsk(raw: unknown): AskItem | null {
     waiting: r['waiting'] === true,
     sessionId: text('session_id'),
     cwd: text('cwd'),
+    kind: text('kind'),
+    // Meme garde que Kova (`is_panel_url`) : le telephone l'ouvre dans une WebView.
+    url: isPanelUrl(r['url']) ? (r['url'] as string) : null,
+    sheet: r['sheet'] === true,
   };
 }
+
+/** Une URL que le panneau peut ouvrir : http(s), imprimable, 2 Kio au plus. */
+export function isPanelUrl(v: unknown): v is string {
+  if (typeof v !== 'string' || v.length > 2048) return false;
+  const lower = v.toLowerCase();
+  const scheme = lower.startsWith('https://') ? 8 : lower.startsWith('http://') ? 7 : 0;
+  // eslint-disable-next-line no-control-regex
+  return scheme > 0 && v.length > scheme && !/[\s\x00-\x1f\x7f]/.test(v);
+}
+
+/**
+ * La reponse de `get-sheet`, traduite. La fiche garde ses noms de champs (Kova l'a deja
+ * validee, ils sont en un mot) ; seuls l'enveloppe et l'horodatage changent de forme.
+ * `null` quand la fiche n'a pas la forme attendue.
+ */
+export function mapSheet(raw: unknown): AskSheetResponse | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const sheet = r['sheet'] as DecisionSheet | undefined;
+  if (typeof r['id'] !== 'string' || typeof sheet !== 'object' || sheet === null) return null;
+  if (typeof sheet.title !== 'string' || !Array.isArray(sheet.decisions)) return null;
+  const draft = (typeof r['draft'] === 'object' && r['draft'] !== null ? r['draft'] : {}) as Partial<SheetDraft>;
+  const askedAt = r['asked_at'];
+  return {
+    id: r['id'],
+    from: typeof r['from'] === 'string' ? r['from'] : 'agent',
+    message: typeof r['message'] === 'string' ? r['message'] : '',
+    askedAtMs: typeof askedAt === 'number' && askedAt > 0 ? Math.round(askedAt * 1000) : 0,
+    followUp: r['follow_up'] === true,
+    sheet,
+    draft: {
+      decisions: Array.isArray(draft.decisions) ? draft.decisions : [],
+      ...(typeof draft.note === 'string' && draft.note.length > 0 ? { note: draft.note } : {}),
+    },
+  };
+}
+
+/**
+ * Les reponses d'une fiche telles que le telephone les envoie, verifiees dans leur
+ * FORME seulement : Kova les ramene ensuite a ce que la fiche demande (`answers_from`).
+ * Leve `BAD_REQUEST` sur tout le reste, plutot que d'envoyer a Kova un objet qu'il
+ * lirait comme « tout effacer ».
+ */
+export function checkSheetAnswers(raw: unknown): SheetAnswersPayload {
+  const bad = (why: string): AskError => new AskError('BAD_REQUEST', `answers: ${why}`);
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw bad('must be an object');
+  const r = raw as Record<string, unknown>;
+  const decisions = r['decisions'] ?? {};
+  if (typeof decisions !== 'object' || decisions === null || Array.isArray(decisions)) {
+    throw bad('decisions must be an object keyed by decision id');
+  }
+  const out: SheetAnswersPayload = { decisions: {} };
+  for (const [id, value] of Object.entries(decisions as Record<string, unknown>)) {
+    if (typeof value !== 'object' || value === null) throw bad(`decision ${id} must be an object`);
+    const v = value as Record<string, unknown>;
+    const entry: { choice?: string; note?: string } = {};
+    if (v['choice'] !== undefined && v['choice'] !== null) {
+      if (typeof v['choice'] !== 'string') throw bad(`choice of ${id} must be a string`);
+      entry.choice = v['choice'];
+    }
+    if (v['note'] !== undefined && v['note'] !== null) {
+      if (typeof v['note'] !== 'string') throw bad(`note of ${id} must be a string`);
+      if ([...v['note']].length > SHEET_NOTE_MAX) throw bad(`note of ${id} is longer than ${SHEET_NOTE_MAX} characters`);
+      entry.note = v['note'];
+    }
+    out.decisions[id] = entry;
+  }
+  const note = r['note'];
+  if (note !== undefined && note !== null) {
+    if (typeof note !== 'string') throw bad('note must be a string');
+    if ([...note].length > SHEET_NOTE_MAX) throw bad(`note is longer than ${SHEET_NOTE_MAX} characters`);
+    out.note = note;
+  }
+  return out;
+}
+
 
 /**
  * Ce qui, en changeant, justifie une diffusion : l'identite des questions et leur etat
@@ -218,6 +309,39 @@ export class AskBoard {
     const until = data['snoozed_until'];
     await this.refresh();
     return typeof until === 'number' ? Math.round(until * 1000) : 0;
+  }
+
+  /** Le contenu d'une fiche native et son brouillon (`get-sheet`). */
+  async sheet(askId: string): Promise<AskSheetResponse> {
+    this.requireAsk(askId);
+    const res = await this.ipc.request({ cmd: 'get-sheet', id: askId });
+    if (!res.ok) throw refusal(res, 'Kova refused to read the sheet');
+    const sheet = mapSheet(res.data);
+    if (!sheet) throw new AskError('ASK_NOT_FOUND', `question ${askId} has no readable sheet`);
+    return sheet;
+  }
+
+  /**
+   * Enregistre les reponses d'une fiche (`answer-sheet`). `done` repond a la question ;
+   * sinon c'est un brouillon, garde par Kova avec la question. L'etat ENTIER part a
+   * chaque fois : il remplace le brouillon.
+   */
+  async answerSheet(askId: string, answers: unknown, done: unknown): Promise<AskSheetAnswerResponse> {
+    this.requireAsk(askId);
+    if (typeof done !== 'boolean') throw new AskError('BAD_REQUEST', 'done must be a boolean');
+    const checked = checkSheetAnswers(answers);
+    const res = await this.ipc.request({ cmd: 'answer-sheet', id: askId, answers: checked, done });
+    if (!res.ok) throw refusal(res, 'Kova refused the sheet answers');
+    const d = (typeof res.data === 'object' && res.data !== null ? res.data : {}) as Record<string, unknown>;
+    if (done) await this.refresh();
+    return {
+      title: typeof d['title'] === 'string' ? d['title'] : '',
+      summary: typeof d['summary'] === 'string' ? d['summary'] : '',
+      answered: typeof d['answered'] === 'number' ? d['answered'] : 0,
+      total: typeof d['total'] === 'number' ? d['total'] : 0,
+      done: d['done'] === true,
+      followUp: typeof d['follow_up'] === 'string' ? d['follow_up'] : null,
+    };
   }
 
   private requireAsk(askId: string): AskItem {

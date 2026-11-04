@@ -82,6 +82,7 @@ import { TranscriptionError, transcribe } from '../voice/whisper.js';
 import { mintStreamToken } from '../voice/assemblyai.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { registerMiraRoutes } from './miraRoutes.js';
+import { registerPanelRoutes } from './panelRoutes.js';
 import { Hub, type Socket } from './hub.js';
 import type { Services } from './services.js';
 
@@ -1235,6 +1236,11 @@ export async function createHttpServer(
   // Trois routes, servies par `miraRoutes.ts`. Elles parlent a la socket de Mira, jamais
   // a Kova, et n'appellent jamais `focus-app`.
   registerMiraRoutes(app, services);
+
+  // --- Panneau lateral -----------------------------------------------------
+  // Trois routes, servies par `panelRoutes.ts` : l'historique du panneau de Kova (lecture
+  // seule) et les fiches de decisions natives (lire, enregistrer, rendre).
+  registerPanelRoutes(app, services);
 
   // --- WebSocket ---------------------------------------------------------
 
