@@ -40,7 +40,106 @@ export interface AskItem {
   waiting: boolean;
   sessionId: string | null;
   cwd: string | null;
+  /**
+   * `decision` pour une fiche de decisions, absent ou `null` pour une question simple.
+   * Optionnels : un daemon ou un Kova anterieurs ne les envoient pas.
+   */
+  kind?: string | null;
+  /** La page de la fiche (un artifact), http(s) seulement. S'ouvre dans le panneau. */
+  url?: string | null;
+  /** Vrai pour une fiche native de Kova : son contenu se lit par `ROUTES.askSheet`. */
+  sheet?: boolean;
 }
+
+/** Un lien de la fiche, http(s). */
+export interface SheetLink {
+  label: string;
+  url: string;
+}
+
+/** Une option d'une decision. `reco` marque la recommandation (une au plus). */
+export interface SheetOption {
+  id: string;
+  label: string;
+  detail?: string;
+  reco?: boolean;
+}
+
+export interface SheetDecision {
+  id: string;
+  title: string;
+  group?: string;
+  context?: string;
+  options: SheetOption[];
+}
+
+/** Une fiche de decisions native de Kova (`kova ask --decisions`), telle que Kova la valide. */
+export interface DecisionSheet {
+  title: string;
+  intro?: string;
+  links?: SheetLink[];
+  decisions: SheetDecision[];
+}
+
+/** Le choix qui veut dire « aucune de ces options » : la note est la reponse. */
+export const SHEET_OTHER = 'other';
+
+/** Une reponse du brouillon : un id d'option ou `other`, et/ou une note. */
+export interface SheetDecisionAnswer {
+  id: string;
+  choice?: string;
+  note?: string;
+}
+
+/** Le brouillon tel que Kova le garde : les decisions dans l'ordre de la fiche. */
+export interface SheetDraft {
+  decisions: SheetDecisionAnswer[];
+  note?: string;
+}
+
+/** Reponse de `GET /v1/asks/:askId/sheet` (`get-sheet` de Kova). */
+export interface AskSheetResponse {
+  id: string;
+  from: string;
+  message: string;
+  askedAtMs: number;
+  followUp: boolean;
+  sheet: DecisionSheet;
+  draft: SheetDraft;
+}
+
+/**
+ * Les reponses envoyees a Kova, dans la forme de sa page (`Sheet::answers_from`) : un
+ * objet par id de decision. Elles REMPLACENT le brouillon : une decision absente est
+ * effacee, donc l'etat entier part a chaque envoi.
+ */
+export interface SheetAnswersPayload {
+  decisions: Record<string, { choice?: string; note?: string }>;
+  note?: string;
+}
+
+/**
+ * Corps de `POST /v1/asks/:askId/sheet`. `done: false` garde un brouillon ;
+ * `done: true` repond, et les decisions restees ouvertes deviennent une question de suite.
+ */
+export interface AskSheetAnswerRequest {
+  answers: SheetAnswersPayload;
+  done: boolean;
+  nonce?: string;
+}
+
+export interface AskSheetAnswerResponse {
+  title: string;
+  summary: string;
+  answered: number;
+  total: number;
+  done: boolean;
+  /** La question de suite qui garde les decisions restees ouvertes. */
+  followUp: string | null;
+}
+
+/** Plafond d'une note de la fiche, le meme que celui de Kova (`MAX_NOTE`, en caracteres). */
+export const SHEET_NOTE_MAX = 8000;
 
 /** Un delai propose pour remettre une question a plus tard. Vient de Kova. */
 export interface AskSnoozeChoice {

@@ -114,6 +114,16 @@ export const ROUTES = {
   asks: '/v1/asks',
   askAnswer: (askId: string): string => `/v1/asks/${encodeURIComponent(askId)}/answer`,
   askSnooze: (askId: string): string => `/v1/asks/${encodeURIComponent(askId)}/snooze`,
+  /**
+   * Une fiche de decisions native : `GET` la lit (`get-sheet`), `POST` l'enregistre ou la
+   * rend (`answer-sheet`). Pas `KeyGate` non plus : c'est Kova qui repond a l'agent.
+   */
+  askSheet: (askId: string): string => `/v1/asks/${encodeURIComponent(askId)}/sheet`,
+  /**
+   * Ce que le panneau lateral de Kova a ouvert (`~/.config/kova/panel-history.json`).
+   * Lecture seule : le daemon n'ecrit jamais ce fichier.
+   */
+  kovaPanelHistory: '/v1/kova/panel-history',
   ws: '/ws',
 
   // --- Bloc C, les fichiers ---------------------------------------------
@@ -193,6 +203,8 @@ export const ROUTE_PATTERNS = {
   asks: '/v1/asks',
   askAnswer: '/v1/asks/:askId/answer',
   askSnooze: '/v1/asks/:askId/snooze',
+  askSheet: '/v1/asks/:askId/sheet',
+  kovaPanelHistory: '/v1/kova/panel-history',
   ws: '/ws',
   fsList: '/v1/fs/list',
   fsRead: '/v1/fs/read',
@@ -281,6 +293,29 @@ export interface RecentProject {
 export interface KovaRecentProjectsResponse {
   projects: RecentProject[];
 }
+
+/** Ce que le panneau lateral ouvre : une page, un fichier du Mac, une fiche de decisions. */
+export type PanelKind = 'web' | 'markdown' | 'html' | 'sheet';
+
+/**
+ * Une entree de `~/.config/kova/panel-history.json`, traduite par le daemon. `target` est
+ * une URL http(s), un chemin absolu du Mac, ou l'id de la question d'une fiche.
+ */
+export interface PanelHistoryEntry {
+  kind: PanelKind;
+  target: string;
+  title: string;
+  /** Millisecondes epoch de la derniere ouverture, 0 si Kova ne l'a pas ecrite. */
+  openedAtMs: number;
+}
+
+/** Reponse de `GET /v1/kova/panel-history` : la plus recente d'abord, 50 au plus. */
+export interface KovaPanelHistoryResponse {
+  entries: PanelHistoryEntry[];
+}
+
+/** Plafond de l'historique du panneau, celui de Kova (`panel_history::MAX`). */
+export const PANEL_HISTORY_MAX = 50;
 
 /**
  * Corps de `POST /v1/kova/new-tab`. `path` est une confirmation, pas une source : le
