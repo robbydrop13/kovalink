@@ -152,14 +152,18 @@ describe('questions de fiche : traduction', () => {
     assert.deepEqual(out?.draft, { decisions: [{ id: 'D1', choice: 'A' }], note: 'n' });
     assert.deepEqual(mapSheet({ id: ASK_ID, sheet: SHEET })?.draft, { decisions: [] });
     assert.equal(mapSheet({ id: ASK_ID, sheet: { title: 'x' } }), null);
+    assert.equal(mapSheet({ id: ASK_ID, sheet: { title: 'x', decisions: [{ id: 'D1', title: 't' }] } }), null);
+    assert.equal(mapSheet({ id: ASK_ID, sheet: { title: 'x', decisions: [null] } }), null);
   });
 
   it('verifie la forme des reponses, pas leur contenu (Kova le fait)', () => {
-    assert.deepEqual(checkSheetAnswers({ decisions: { D1: { choice: 'A', note: 'n' } }, note: 'g' }), {
-      decisions: { D1: { choice: 'A', note: 'n' } },
-      note: 'g',
-    });
-    assert.deepEqual(checkSheetAnswers({}), { decisions: {} });
+    const checked = checkSheetAnswers({ decisions: { D1: { choice: 'A', note: 'n' } }, note: 'g' });
+    assert.deepEqual(JSON.parse(JSON.stringify(checked)), { decisions: { D1: { choice: 'A', note: 'n' } }, note: 'g' });
+    assert.deepEqual({ ...checkSheetAnswers({}).decisions }, {});
+    assert.equal(
+      JSON.stringify(checkSheetAnswers(JSON.parse('{"decisions":{"__proto__":{"choice":"A"}}}'))),
+      '{"decisions":{"__proto__":{"choice":"A"}}}',
+    );
     assert.throws(() => checkSheetAnswers([]), AskError);
     assert.throws(() => checkSheetAnswers({ decisions: [{ id: 'D1' }] }), AskError);
     assert.throws(() => checkSheetAnswers({ decisions: { D1: { choice: 3 } } }), AskError);
@@ -182,7 +186,10 @@ describe('questions de fiche : le tableau', () => {
     const answers = { decisions: { D1: { choice: 'A' } }, note: '' };
     const out = await b.answerSheet(ASK_ID, answers, true);
     assert.deepEqual(out, { title: 'Launch plan', summary: 'D1: A (Now)', answered: 1, total: 2, done: true, followUp: 'f-1' });
-    assert.deepEqual(seen.find((s) => s['cmd'] === 'answer-sheet'), { cmd: 'answer-sheet', id: ASK_ID, answers, done: true });
+    assert.equal(
+      JSON.stringify(seen.find((s) => s['cmd'] === 'answer-sheet')),
+      JSON.stringify({ cmd: 'answer-sheet', id: ASK_ID, answers, done: true }),
+    );
   });
 
   it('un Kova anterieur a answer-sheet : KOVA_TOO_OLD', async () => {

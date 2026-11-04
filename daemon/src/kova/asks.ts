@@ -121,6 +121,17 @@ export function mapSheet(raw: unknown): AskSheetResponse | null {
   const sheet = r['sheet'] as DecisionSheet | undefined;
   if (typeof r['id'] !== 'string' || typeof sheet !== 'object' || sheet === null) return null;
   if (typeof sheet.title !== 'string' || !Array.isArray(sheet.decisions)) return null;
+  // Le telephone rend chaque decision et ses options : une seule mal formee ferait planter
+  // l'ecran, elle rend donc la fiche illisible ici, avec une erreur lisible.
+  const isText = (v: unknown): boolean => typeof v === 'string';
+  for (const d of sheet.decisions as unknown[]) {
+    const decision = (typeof d === 'object' && d !== null ? d : {}) as Record<string, unknown>;
+    if (!isText(decision['id']) || !isText(decision['title']) || !Array.isArray(decision['options'])) return null;
+    for (const o of decision['options'] as unknown[]) {
+      const option = (typeof o === 'object' && o !== null ? o : {}) as Record<string, unknown>;
+      if (!isText(option['id']) || !isText(option['label'])) return null;
+    }
+  }
   const draft = (typeof r['draft'] === 'object' && r['draft'] !== null ? r['draft'] : {}) as Partial<SheetDraft>;
   const askedAt = r['asked_at'];
   return {
@@ -151,7 +162,8 @@ export function checkSheetAnswers(raw: unknown): SheetAnswersPayload {
   if (typeof decisions !== 'object' || decisions === null || Array.isArray(decisions)) {
     throw bad('decisions must be an object keyed by decision id');
   }
-  const out: SheetAnswersPayload = { decisions: {} };
+  // Sans prototype : un id `__proto__` serait sinon perdu, et la fiche partirait vide.
+  const out: SheetAnswersPayload = { decisions: Object.create(null) as SheetAnswersPayload['decisions'] };
   for (const [id, value] of Object.entries(decisions as Record<string, unknown>)) {
     if (typeof value !== 'object' || value === null) throw bad(`decision ${id} must be an object`);
     const v = value as Record<string, unknown>;
