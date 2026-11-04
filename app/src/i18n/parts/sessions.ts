@@ -131,6 +131,7 @@ export const sessions = {
   homeTabComingBody: 'Coming in this build',
   homeTabAsksA11y: (count: number) => (count > 0 ? `Asks, ${count} waiting` : 'Asks'),
   homeTabMore: 'More',
+  sessionsNavRecent: 'Recently opened',
   homeDictateA11y: 'Dictate to claap-agent',
   homeDictateNoTarget: 'claap-agent is not open on the Mac',
 

@@ -11,10 +11,14 @@ import {
   type AgentActionResponse,
   type AgentsRosterResponse,
   type AskAnswerRequest,
+  type AskSheetAnswerRequest,
+  type AskSheetAnswerResponse,
+  type AskSheetResponse,
   type AskSnoozeRequest,
   type AskSnoozeResponse,
   type AsksResponse,
   type KovaLaunchResponse,
+  type KovaPanelHistoryResponse,
   type KovaNewTabRequest,
   type KovaNewTabResponse,
   type KovaSplitRequest,
@@ -308,6 +312,24 @@ export function postAskSnooze(
     body: { seconds, nonce } satisfies AskSnoozeRequest,
     timeoutMs,
   });
+}
+
+/** Une fiche de decisions native de Kova et son brouillon. */
+export function fetchAskSheet(askId: string, timeoutMs = 8000): Promise<AskSheetResponse> {
+  return request(ROUTES.askSheet(askId), { timeoutMs });
+}
+
+/**
+ * Les reponses d'une fiche, l'etat ENTIER : il remplace le brouillon de Kova. `done`
+ * repond a la question ; sinon c'est un brouillon, enregistre au fil de la saisie.
+ */
+export function postAskSheet(askId: string, body: AskSheetAnswerRequest, timeoutMs = 10_000): Promise<AskSheetAnswerResponse> {
+  return request(ROUTES.askSheet(askId), { method: 'POST', body, timeoutMs });
+}
+
+/** Ce que le panneau lateral de Kova a ouvert sur le Mac, le plus recent d'abord. */
+export function fetchPanelHistory(timeoutMs = 6000): Promise<KovaPanelHistoryResponse> {
+  return request(ROUTES.kovaPanelHistory, { timeoutMs });
 }
 
 /** Les commandes `/` de Claude Code visibles depuis le pane, pour l'autocomplétion. */

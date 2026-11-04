@@ -97,6 +97,18 @@ export default function RootLayout() {
           {/* Navigateur : le miroir de Mira, pour finir un flux web depuis le téléphone. */}
           <Stack.Screen name="browser/index" />
           <Stack.Screen name="browser/[tabId]" />
+          {/* Le panneau, comme celui de Kova : pages, fichiers .md et .html du Mac, fiches
+              de decisions, recents. Feuille a deux hauteurs, balayage vers le bas pour fermer. */}
+          <Stack.Screen
+            name="panel"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: [0.5, 1],
+              sheetGrabberVisible: true,
+              gestureEnabled: true,
+              animation: 'default',
+            }}
+          />
           <Stack.Screen name="activity" />
           {/* Journal d'une routine : lecture seule, ouvert depuis l'onglet Scheduled. */}
           <Stack.Screen name="routine-log" />

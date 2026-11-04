@@ -64,6 +64,7 @@ import { retryBoot, useBootError, useBootState } from '@/boot';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
 import { TabBar, TAB_BAR_HEIGHT } from '@/features/home/TabBar';
 import { dictateTarget } from '@/features/home/dictate';
+import { openPanelHistory } from '@/features/panel/open';
 import { ErrorScreen } from '@/ui/ErrorScreen';
 import { t } from '@/i18n/en';
 
@@ -216,17 +217,19 @@ export default function SessionsScreen() {
           t.sessionsPanesButton,
           t.sessionsNavFiles,
           t.sessionsNavBrowser,
+          t.sessionsNavRecent,
           t.sessionsNavSettings,
           t.actionCancel,
         ],
-        cancelButtonIndex: 4,
+        cancelButtonIndex: 5,
         userInterfaceStyle: 'dark',
       },
       (index) => {
         if (index === 0) router.push('/panes');
         if (index === 1) router.push('/files');
         if (index === 2) router.push('/browser');
-        if (index === 3) router.push('/settings');
+        if (index === 3) openPanelHistory();
+        if (index === 4) router.push('/settings');
       },
     );
   };

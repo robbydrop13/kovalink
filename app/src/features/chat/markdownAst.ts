@@ -8,6 +8,7 @@
 // le même analyseur, sans code maison.
 import MarkdownIt from 'markdown-it';
 import type Token from 'markdown-it/lib/token.mjs';
+import { codePanelPath, findPanelPaths } from '@/features/panel/target';
 
 export interface Span {
   text: string;
@@ -16,6 +17,8 @@ export interface Span {
   strike?: boolean;
   code?: boolean;
   href?: string;
+  /** Un fichier `.md` ou `.html` du Mac cite dans le texte : il s'ouvre dans le panneau. */
+  path?: string;
 }
 
 export type Align = 'left' | 'center' | 'right' | null;
@@ -42,7 +45,7 @@ interface Style {
 export function spansOf(children: readonly Token[] | null | undefined): Span[] {
   const out: Span[] = [];
   const style: Style = { bold: false, italic: false, strike: false, href: null };
-  const push = (text: string, code = false): void => {
+  const push = (text: string, code = false, path?: string): void => {
     if (text.length === 0) return;
     const span: Span = { text };
     if (style.bold) span.bold = true;
@@ -50,12 +53,24 @@ export function spansOf(children: readonly Token[] | null | undefined): Span[] {
     if (style.strike) span.strike = true;
     if (code) span.code = true;
     if (style.href) span.href = style.href;
+    if (path) span.path = path;
     out.push(span);
+  };
+  /** Un texte hors lien : les chemins de fichiers du panneau y deviennent des spans a part. */
+  const pushText = (text: string): void => {
+    if (style.href) return push(text);
+    let at = 0;
+    for (const m of findPanelPaths(text)) {
+      push(text.slice(at, m.start));
+      push(m.path, false, m.path);
+      at = m.end;
+    }
+    push(text.slice(at));
   };
   for (const t of children ?? []) {
     switch (t.type) {
       case 'text':
-        push(t.content);
+        pushText(t.content);
         break;
       case 'softbreak':
         push(' ');
@@ -64,7 +79,7 @@ export function spansOf(children: readonly Token[] | null | undefined): Span[] {
         push('\n');
         break;
       case 'code_inline':
-        push(t.content, true);
+        push(t.content, true, style.href ? undefined : (codePanelPath(t.content) ?? undefined));
         break;
       case 'strong_open':
         style.bold = true;
@@ -85,7 +100,9 @@ export function spansOf(children: readonly Token[] | null | undefined): Span[] {
         style.strike = false;
         break;
       case 'link_open':
-        style.href = t.attrGet('href') ?? null;
+        // `README.md` nu devient `http://README.md` pour linkify (`.md` est un domaine de
+        // pays) : ce n'est pas un lien, c'est un nom de fichier.
+        style.href = isFileNameLink(t) ? null : (t.attrGet('href') ?? null);
         break;
       case 'link_close':
         style.href = null;
@@ -110,7 +127,22 @@ export function spansOf(children: readonly Token[] | null | undefined): Span[] {
 }
 
 function sameStyle(a: Span, b: Span): boolean {
-  return !!a.bold === !!b.bold && !!a.italic === !!b.italic && !!a.strike === !!b.strike && !!a.code === !!b.code && a.href === b.href;
+  return (
+    !!a.bold === !!b.bold &&
+    !!a.italic === !!b.italic &&
+    !!a.strike === !!b.strike &&
+    !!a.code === !!b.code &&
+    a.href === b.href &&
+    a.path === undefined &&
+    b.path === undefined
+  );
+}
+
+/** Un lien que linkify a devine sans schema (`foo.md`, `index.html`) : un nom de fichier. */
+function isFileNameLink(t: Token): boolean {
+  if (t.markup !== 'linkify') return false;
+  const href = t.attrGet('href') ?? '';
+  return /^http:\/\/[^/]+\.(?:md|html?)$/i.test(href);
 }
 
 function alignOf(token: Token): Align {

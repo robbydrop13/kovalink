@@ -5,11 +5,14 @@
 // tient en largeur ; au delà, ou si le contenu est long, il vit dans un conteneur à
 // défilement horizontal, comme les blocs de code, jamais compressé jusqu'à l'illisible.
 // Blocs de code : monospace, langage, bouton `Copier` (presse-papiers de base de React
-// Native, `utils/clipboard`). Liens : Safari.
+// Native, `utils/clipboard`). Liens http(s) et chemins `.md` / `.html` du Mac : le panneau
+// (`app/panel.tsx`), comme le panneau lateral de Kova ; les autres schemas : le systeme.
 import { Fragment, type ReactNode } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useToast } from '@/store/toast';
 import { copyOrShare } from '@/utils/clipboard';
+import { usePanelOpener } from '@/features/panel/open';
+import { isWebUrl, pathTarget, type PanelTarget } from '@/features/panel/target';
 import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Txt } from '@/ui/Txt';
@@ -19,33 +22,44 @@ const CELL_MIN = 96;
 const CELL_MAX = 240;
 const CELL_FONT = 15;
 
-function openLink(href: string): void {
+function openLink(href: string, open: (target: PanelTarget) => void): void {
+  if (isWebUrl(href)) return open({ kind: 'web', target: href });
   void Linking.openURL(href).catch(() => undefined);
 }
 
 function Spans({ spans, variant = 'body' }: { spans: Span[]; variant?: 'body' | 'callout' | 'calloutStrong' }) {
+  const open = usePanelOpener();
   return (
     <>
       {spans.map((s, i) => {
+        const file = s.path ? pathTarget(s.path) : null;
         if (s.code) {
           return (
-            <Txt key={i} variant="monoCodeInline" color={colors.text.primary} style={styles.code}>
+            <Txt
+              key={i}
+              variant="monoCodeInline"
+              color={file ? colors.accent.primary : colors.text.primary}
+              style={styles.code}
+              {...(file ? { onPress: () => open(file) } : {})}
+            >
               {s.text}
             </Txt>
           );
         }
+        const linked = s.href !== undefined || file !== null;
         const style = [
           s.italic && styles.italic,
           s.strike && styles.strike,
-          s.href && styles.link,
+          linked && styles.link,
         ];
+        const onPress = file ? () => open(file) : s.href ? () => openLink(s.href as string, open) : null;
         return (
           <Txt
             key={i}
             variant={s.bold ? 'bodyStrong' : variant}
-            color={s.href ? colors.accent.primary : colors.text.primary}
+            color={linked ? colors.accent.primary : colors.text.primary}
             style={style}
-            {...(s.href ? { onPress: () => openLink(s.href as string) } : {})}
+            {...(onPress ? { onPress } : {})}
           >
             {s.text}
           </Txt>

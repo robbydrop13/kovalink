@@ -1,6 +1,7 @@
 // Ce qui part au Mac quand on répond à la question d'un agent, isolé de tout réseau pour
 // être testable : `src/actions/ask.ts` fait les appels, ces deux règles les encadrent.
 import { ASK_TEXT_MAX, type AskItem } from '@/protocol';
+import type { PanelTarget } from '@/features/panel/target';
 
 /** Le texte libre tel qu'il part : coupé au plafond du protocole, espaces en moins. */
 export function askText(raw: string): string {
@@ -24,6 +25,9 @@ export function isAskButton(ask: AskItem, action: string): boolean {
 export function okOption(ask: AskItem): string | null {
   return askOptions(ask)[0] ?? null;
 }
+
+/** Le bouton d'une fiche native a plusieurs decisions : la rendre telle quelle. */
+export const DECISION_DONE = 'Done';
 
 /** Le bouton que Kova ajoute aux questions qui acceptent du texte libre. */
 export const OTHER = 'Other';
@@ -57,4 +61,11 @@ export function briefAction(ask: AskItem, picked: string | null): string | null 
 /** Le corps d'une reponse : le bouton choisi, et le texte libre borne par le protocole. */
 export function askAnswerBody(action: string, text: string): { action: string; text: string } {
   return { action, text: askText(text) };
+}
+
+/** Ce que `Open` ouvre dans le panneau : la fiche native, sinon sa page, sinon rien. */
+export function askPanelTarget(ask: AskItem): PanelTarget | null {
+  if (ask.sheet === true) return { kind: 'sheet', target: ask.id };
+  if (ask.url) return { kind: 'web', target: ask.url };
+  return null;
 }

@@ -10,6 +10,11 @@
 // `promptHash` et `awaitingSince` du prompt affiche). Le composant ValidationBar n'est pas
 // incorpore : il est ancre au dessus d'un composer et empile toutes les options ; la carte
 // reprend seulement ses deux ou trois gestes, avec la meme porte de securite.
+//
+// Une fiche de decisions (`kind: decision`) porte en plus `Open` : sa page (`url`) ou la
+// fiche native de Kova (`sheet`) s'ouvre dans le panneau, ou elle se remplit en entier.
+// Les boutons de la carte restent ceux de Kova (`answer-ask`), sauf le `Done` seul d'une
+// fiche native : il rendrait une fiche vide, elle se rend depuis le panneau.
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
@@ -25,7 +30,8 @@ import { useAsks } from '@/store/asks';
 import { usePanes } from '@/store/panes';
 import { ImpactStyle, impact } from '@/utils/haptics';
 import { shortAgeMs } from '@/utils/time';
-import { koOption, okOption } from './answer';
+import { openInPanel } from '@/features/panel/open';
+import { DECISION_DONE, askPanelTarget, koOption, okOption } from './answer';
 import { BriefSheet } from './BriefSheet';
 
 /** Un agent qui n'a pas eu de reponse depuis deux heures passe en ambre (proto). */
@@ -90,7 +96,9 @@ export function AskCard({
   const [brief, setBrief] = useState(false);
 
   const pane = useMemo(() => paneForAsk(ask, panes), [ask, panes]);
-  const ok = okOption(ask);
+  const panelTarget = askPanelTarget(ask);
+  const fromCard = okOption(ask);
+  const ok = ask.sheet === true && fromCard === DECISION_DONE ? null : fromCard;
   const ko = koOption(ask);
   const sending = phase === 'sending';
   const sent = phase === 'sent';
@@ -143,13 +151,33 @@ export function AskCard({
       ) : (
         <>
           <View style={styles.actions}>
-            <IconButton
-              icon="check"
-              color={colors.status.success}
-              label={ok !== null ? t.askOkA11y(ok) : t.askOk}
-              disabled={unavailable || ok === null}
-              onPress={() => ok !== null && void send(ok, '')}
-            />
+            {panelTarget !== null ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t.askOpenSheetA11y(ask.from)}
+                disabled={unavailable && panelTarget.kind === 'sheet'}
+                hitSlop={6}
+                onPress={() => {
+                  impact(ImpactStyle.Light);
+                  openInPanel(panelTarget);
+                }}
+                style={({ pressed }) => [styles.open, pressed && styles.iconPressed]}
+              >
+                <Icon name="layout" size={16} color={colors.text.primary} />
+                <Txt variant="footnote" color={colors.text.primary}>
+                  {t.askOpenSheet}
+                </Txt>
+              </Pressable>
+            ) : null}
+            {panelTarget === null || ok !== null ? (
+              <IconButton
+                icon="check"
+                color={colors.status.success}
+                label={ok !== null ? t.askOkA11y(ok) : t.askOk}
+                disabled={unavailable || ok === null}
+                onPress={() => ok !== null && void send(ok, '')}
+              />
+            ) : null}
             {ko !== null ? (
               <IconButton
                 icon="x"
@@ -511,6 +539,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg.base,
   },
   menuChoicePressed: { backgroundColor: colors.bg.pressed },
+  open: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+    height: BUTTON_HEIGHT,
+    paddingHorizontal: space[3],
+    borderRadius: radius.md,
+    backgroundColor: colors.action.neutral.bg,
+  },
   always: {
     minHeight: BUTTON_HEIGHT,
     justifyContent: 'center',
