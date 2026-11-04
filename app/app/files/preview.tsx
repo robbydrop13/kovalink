@@ -7,7 +7,7 @@
 // Rendus couverts (PRD C2) : images, PDF, texte et code, markdown. Tout le reste affiche
 // ses métadonnées et propose l'enregistrement, ce qui est un état de premier ordre et non
 // un cas limite.
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Image,
   Platform,
@@ -27,7 +27,8 @@ import { Button, LinkAction } from '@/ui/Button';
 import { Banner, EmptyState, SkeletonList } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
 import { Icon } from '@/ui/Icon';
-import { fetchText, fileUrl, type DownloadPhase } from '@/net/files';
+import { type DownloadPhase } from '@/net/files';
+import { useFileSource } from '@/features/files/useFileSource';
 import { saveToDevice, shareFile } from '@/features/files/pick';
 import { humanSize, previewKind, truncateMiddle } from '@/features/files/format';
 import { describe } from '@/store/transfers';
@@ -54,50 +55,13 @@ export default function PreviewScreen() {
   const mime = params.mime ?? null;
   const kind = previewKind({ kind: 'file', mime, ext: meta.ext });
 
-  const [text, setText] = useState<string | null>(null);
-  const [truncated, setTruncated] = useState(false);
-  const [size, setSize] = useState<number | null>(null);
-  const [remote, setRemote] = useState<{ url: string; headers: Record<string, string> } | null>(null);
-  // Chemin déjà chargé. `loading` s'en DÉDUIT au lieu d'être posé dans le corps de
-  // l'effet, ce qui provoquerait un rendu en cascade à chaque montage.
-  const [loadedPath, setLoadedPath] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const mode = kind === 'text' || kind === 'markdown' ? 'text' : kind === 'image' || kind === 'pdf' ? 'url' : 'none';
+  const { text, truncated, size, remote, error: loadError, loading, retry } = useFileSource(path, mode);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savePhase, setSavePhase] = useState<DownloadPhase>('downloading');
   const [saved, setSaved] = useState<{ name: string; verified: boolean } | null>(null);
-  const loading = loadedPath !== path && error === null;
-
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      if (!path) {
-        if (alive) setError(t.previewNoPath);
-        return;
-      }
-      try {
-        if (kind === 'text' || kind === 'markdown') {
-          const res = await fetchText(path);
-          if (!alive) return;
-          setText(res.text);
-          setTruncated(res.truncated);
-          setSize(res.size);
-        } else if (kind === 'image' || kind === 'pdf') {
-          const r = await fileUrl(path);
-          if (!alive) return;
-          setRemote(r);
-        }
-        if (alive) {
-          setError(null);
-          setLoadedPath(path);
-        }
-      } catch (e) {
-        if (alive) setError(describe(e));
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [path, kind]);
+  const error = loadError ?? saveError;
 
   /**
    * Enregistrer sur l'iPhone : téléchargement en flux, vérification de l'empreinte
@@ -107,13 +71,13 @@ export default function PreviewScreen() {
   const save = async (): Promise<void> => {
     setSaving(true);
     setSavePhase('downloading');
-    setError(null);
+    setSaveError(null);
     try {
       const { file, verified } = await saveToDevice(path, meta.name, { onPhase: setSavePhase });
       setSaved({ name: file.name, verified });
       await shareFile(file, mime);
     } catch (e) {
-      setError(describe(e));
+      setSaveError(describe(e));
     } finally {
       setSaving(false);
     }
@@ -132,7 +96,12 @@ export default function PreviewScreen() {
       </View>
 
       {error ? (
-        <Banner tone="error" text={error} actionLabel={t.actionRetry} onAction={() => setError(null)} />
+        <Banner
+          tone="error"
+          text={error}
+          actionLabel={t.actionRetry}
+          onAction={() => (loadError ? retry() : setSaveError(null))}
+        />
       ) : null}
 
       {saved ? (
