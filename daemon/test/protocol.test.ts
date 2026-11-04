@@ -228,7 +228,7 @@ describe('tokens de design generes depuis ds.json', () => {
       tokenGenerator.renderSwift(generatedTokens),
     );
     assert.equal(
-      readFileSync(new URL('../../../app/targets/watch-widget/DSTokens.swift', import.meta.url), 'utf8'),
+      readFileSync(new URL('../../../app/targets-off/watch-widget/DSTokens.swift', import.meta.url), 'utf8'),
       tokenGenerator.renderSwift(generatedTokens),
     );
   });
