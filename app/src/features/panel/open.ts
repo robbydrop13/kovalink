@@ -21,19 +21,23 @@ export function usePanelOpener(): (target: PanelTarget) => void {
   return useContext(PanelOpener);
 }
 
-let home: string | null = null;
+let home: Promise<string | null> | null = null;
 
 /**
  * Le dossier personnel du Mac, pour les chemins en `~/` : le daemon refuse un chemin
  * relatif et ne developpe pas `~`. Lu une fois par la route des destinations rapides, qui
  * le porte deja ; un echec laisse `null` et sera retente a la prochaine ouverture.
  */
-export async function macHome(): Promise<string | null> {
-  if (home) return home;
-  try {
-    home = (await fetchQuickDests()).home || null;
-  } catch {
-    return null;
+export function macHome(): Promise<string | null> {
+  if (!home) {
+    home = fetchQuickDests().then(
+      (res) => res.home || null,
+      () => null,
+    );
+    // Un echec n'est pas garde : la prochaine ouverture redemande.
+    void home.then((h) => {
+      if (h === null) home = null;
+    });
   }
   return home;
 }

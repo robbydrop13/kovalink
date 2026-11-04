@@ -43,9 +43,14 @@ export const usePanelHistory = create<PanelHistoryState>((set, get) => ({
   },
 
   retitle: (target, title) => {
-    const entries = retitleEntry(get().entries, target, title);
-    if (entries === get().entries) return;
-    set({ entries });
-    void kvSet(KEY, entries).catch(() => undefined);
+    void get()
+      .hydrate()
+      .then(() => {
+        const entries = retitleEntry(get().entries, target, title);
+        if (entries === get().entries) return;
+        set({ entries });
+        return kvSet(KEY, entries);
+      })
+      .catch(() => undefined);
   },
 }));

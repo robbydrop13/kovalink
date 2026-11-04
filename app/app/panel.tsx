@@ -89,6 +89,8 @@ export default function PanelScreen() {
               onPress={() => {
                 setView(previous);
                 setPrevious(null);
+                setTitle('');
+                setPageUrl(null);
               }}
             />
           ) : null}
@@ -146,6 +148,7 @@ export default function PanelScreen() {
 function MacFile({ target }: { target: PanelTarget }) {
   const direct = expandHome(target.target, null);
   const [resolved, setResolved] = useState<{ path: string | null } | null>(direct ? { path: direct } : null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (direct) return;
@@ -156,14 +159,16 @@ function MacFile({ target }: { target: PanelTarget }) {
     return () => {
       alive = false;
     };
-  }, [direct, target.target]);
+  }, [direct, target.target, attempt]);
 
   useEffect(() => {
     if (resolved?.path) usePanelHistory.getState().record({ kind: target.kind, target: resolved.path }, '');
   }, [resolved, target.kind]);
 
   if (resolved === null) return <SkeletonList count={5} height={44} />;
-  if (resolved.path === null) return <Banner tone="error" text={t.panelNoHome} />;
+  if (resolved.path === null) {
+    return <Banner tone="error" text={t.panelNoHome} actionLabel={t.actionRetry} onAction={() => setAttempt((n) => n + 1)} />;
+  }
   return target.kind === 'markdown' ? <MarkdownFile path={resolved.path} /> : <HtmlFile path={resolved.path} />;
 }
 
@@ -187,21 +192,27 @@ function MarkdownFile({ path }: { path: string }) {
 }
 
 /**
- * Une page HTML du Mac, servie par `fsRead` avec le jeton en en-tete, comme le PDF de
- * l'apercu. Ses ressources relatives (images, feuilles de style) partent SANS jeton : le
- * daemon les refuse, la page s'affiche alors sans elles.
+ * Une page HTML du Mac, lue comme texte (`fsText`) puis rendue par la WebView. La route
+ * de lecture brute sert tout en `application/octet-stream`, qu'une WebView affiche comme
+ * un fichier et non comme une page. Les ressources relatives (images, feuilles de style)
+ * n'ont pas d'adresse ici : la page s'affiche sans elles.
  */
 function HtmlFile({ path }: { path: string }) {
-  const src = useFileSource(path, 'url');
+  const src = useFileSource(path, 'text');
   if (src.error) return <Banner tone="error" text={src.error} actionLabel={t.actionRetry} onAction={src.retry} />;
-  if (src.loading || src.remote === null) return <SkeletonList count={5} height={44} />;
+  if (src.loading || src.text === null) return <SkeletonList count={5} height={44} />;
   return (
-    <WebView
-      style={styles.web}
-      source={{ uri: src.remote.url, headers: src.remote.headers }}
-      originWhitelist={['https://*', 'http://*']}
-      allowsInlineMediaPlayback
-    />
+    <>
+      {src.truncated ? (
+        <Banner tone="warn" text={t.previewTruncated(humanSize(src.size), humanSize(TEXT_PREVIEW_TRUNCATED))} />
+      ) : null}
+      <WebView
+        style={styles.web}
+        source={{ html: src.text }}
+        originWhitelist={['about:*', 'https://*', 'http://*']}
+        allowsInlineMediaPlayback
+      />
+    </>
   );
 }
 

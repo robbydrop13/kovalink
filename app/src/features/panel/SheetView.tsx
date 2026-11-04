@@ -53,7 +53,9 @@ type Send = { state: 'idle' } | { state: 'sending' } | { state: 'sent'; open: nu
 
 function loadFailure(e: unknown): Load {
   if (e instanceof HttpError && e.code === 'KOVA_TOO_OLD') return { state: 'tooOld' };
-  if (e instanceof HttpError && e.status === 404) return { state: 'gone' };
+  // Seul ASK_NOT_FOUND dit « deja repondue » : un 404 sans ce code est un daemon anterieur
+  // a la route, son message le dit tel quel.
+  if (e instanceof HttpError && e.code === 'ASK_NOT_FOUND') return { state: 'gone' };
   return { state: 'error', message: e instanceof Error ? e.message : String(e) };
 }
 
@@ -65,6 +67,11 @@ export function SheetView({ askId, onTitle }: { askId: string; onTitle: (title: 
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Le brouillon pas encore parti : fermer la feuille ne doit pas perdre la derniere frappe.
   const pending = useRef<SheetAnswersPayload | null>(null);
+  // Les brouillons partent l'un apres l'autre : Kova remplace l'etat entier, un envoi plus
+  // ancien qui arriverait le dernier ecraserait le plus recent. Done attend la file.
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  // Done est parti : un brouillon refuse ensuite (la fiche n'attend plus) ne dit rien.
+  const finished = useRef(false);
   const open = usePanelOpener();
 
   useEffect(() => {
@@ -85,16 +92,27 @@ export function SheetView({ askId, onTitle }: { askId: string; onTitle: (title: 
       if (timer.current) clearTimeout(timer.current);
       const unsent = pending.current;
       pending.current = null;
-      if (unsent) void postAskSheet(askId, { answers: unsent, done: false }).catch(() => undefined);
+      if (unsent && !finished.current) {
+        void queue.current.then(() => postAskSheet(askId, { answers: unsent, done: false })).catch(() => undefined);
+      }
     };
   }, [askId, onTitle]);
 
+  if (send.state === 'sent') {
+    return (
+      <EmptyState
+        icon="check-circle"
+        title={t.panelSheetSent(load.state === 'ready' ? load.data.from : '')}
+        body={send.open > 0 ? t.panelSheetFollowUp(send.open) : ''}
+      />
+    );
+  }
   if (load.state === 'loading') return <SkeletonList count={4} height={88} />;
   if (load.state === 'tooOld') return <EmptyState icon="refresh-cw" title={t.panelSheetUpdateKova} body="" />;
   if (load.state === 'gone') return <EmptyState icon="check-circle" title={t.panelClosed} body={t.panelSheetGone} />;
   if (load.state === 'error') return <Banner tone="error" text={load.message} />;
 
-  const { sheet, from } = load.data;
+  const { sheet } = load.data;
 
   /** Chaque modification part en brouillon, regroupee : l'etat entier remplace le precedent. */
   const edit = (next: SheetState): void => {
@@ -105,14 +123,17 @@ export function SheetView({ askId, onTitle }: { askId: string; onTitle: (title: 
       const payload = pending.current;
       pending.current = null;
       if (!payload) return;
-      postAskSheet(askId, { answers: payload, done: false }).then(
-        () => setDraftError(null),
-        (e: unknown) => {
-          const failure = loadFailure(e);
-          if (failure.state === 'tooOld' || failure.state === 'gone') setLoad(failure);
-          else setDraftError(t.panelSheetDraftFailed(e instanceof Error ? e.message : String(e)));
-        },
-      );
+      queue.current = queue.current
+        .then(() => postAskSheet(askId, { answers: payload, done: false }))
+        .then(
+          () => setDraftError(null),
+          (e: unknown) => {
+            if (finished.current) return;
+            const failure = loadFailure(e);
+            if (failure.state === 'tooOld' || failure.state === 'gone') setLoad(failure);
+            else setDraftError(t.panelSheetDraftFailed(e instanceof Error ? e.message : String(e)));
+          },
+        );
     }, DRAFT_DEBOUNCE_MS);
   };
 
@@ -121,7 +142,9 @@ export function SheetView({ askId, onTitle }: { askId: string; onTitle: (title: 
     pending.current = null;
     setSend({ state: 'sending' });
     try {
+      await queue.current;
       const res = await postAskSheet(askId, { answers: answersPayload(sheet, answers), done: true, nonce: nonce() });
+      finished.current = true;
       impact(ImpactStyle.Medium);
       setSend({ state: 'sent', open: res.total - res.answered });
     } catch (e) {
@@ -135,15 +158,6 @@ export function SheetView({ askId, onTitle }: { askId: string; onTitle: (title: 
     }
   };
 
-  if (send.state === 'sent') {
-    return (
-      <EmptyState
-        icon="check-circle"
-        title={t.panelSheetSent(from)}
-        body={send.open > 0 ? t.panelSheetFollowUp(send.open) : ''}
-      />
-    );
-  }
 
   const count = answeredCount(sheet, answers);
   // Le titre d'un groupe s'affiche au dessus de sa premiere decision seulement.

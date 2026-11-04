@@ -24,7 +24,18 @@ const CELL_FONT = 15;
 
 function openLink(href: string, open: (target: PanelTarget) => void): void {
   if (isWebUrl(href)) return open({ kind: 'web', target: href });
+  // `[plan](~/notes/plan.md)` : un lien vers un fichier du Mac, encode par markdown-it.
+  const file = pathTarget(safeDecode(href));
+  if (file && (file.target.startsWith('/') || file.target.startsWith('~/'))) return open(file);
   void Linking.openURL(href).catch(() => undefined);
+}
+
+function safeDecode(href: string): string {
+  try {
+    return decodeURIComponent(href);
+  } catch {
+    return href;
+  }
 }
 
 function Spans({ spans, variant = 'body' }: { spans: Span[]; variant?: 'body' | 'callout' | 'calloutStrong' }) {

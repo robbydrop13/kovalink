@@ -30,6 +30,7 @@ const ICONS: Record<PanelHistoryEntry['kind'], IconName> = {
 export function HistoryList({ onOpen }: { onOpen: (target: PanelTarget) => void }) {
   const phone = usePanelHistory((s) => s.entries);
   const asks = useAsks((s) => s.asks);
+  const supported = useAsks((s) => s.supported);
   const [mac, setMac] = useState<PanelHistoryEntry[]>([]);
   const [macError, setMacError] = useState<string | null>(null);
   const [home, setHome] = useState<string | null>(null);
@@ -67,7 +68,8 @@ export function HistoryList({ onOpen }: { onOpen: (target: PanelTarget) => void 
         <EmptyState icon="clock" title={t.panelHistoryEmptyTitle} body={t.panelHistoryEmptyBody} />
       }
       renderItem={({ item }) => {
-        const closed = item.kind === 'sheet' && !waiting.has(item.target);
+        // Un Kova qui ne liste pas ses questions ne dit pas qu'une fiche est close.
+        const closed = item.kind === 'sheet' && supported && !waiting.has(item.target);
         const name = entryName(item);
         return (
           <Pressable
