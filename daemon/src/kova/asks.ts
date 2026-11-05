@@ -130,6 +130,15 @@ export function mapSheet(raw: unknown): AskSheetResponse | null {
     for (const o of decision['options'] as unknown[]) {
       const option = (typeof o === 'object' && o !== null ? o : {}) as Record<string, unknown>;
       if (!isText(option['id']) || !isText(option['label'])) return null;
+      // Une image mal formee est retiree, pas la fiche : les autres restent lisibles.
+      if ('images' in option) {
+        const images = Array.isArray(option['images']) ? (option['images'] as unknown[]) : [];
+        option['images'] = images.flatMap((i) => {
+          const img = (typeof i === 'object' && i !== null ? i : {}) as Record<string, unknown>;
+          if (!isText(img['path'])) return [];
+          return [{ label: isText(img['label']) ? (img['label'] as string) : '', path: img['path'] as string }];
+        });
+      }
     }
   }
   const draft = (typeof r['draft'] === 'object' && r['draft'] !== null ? r['draft'] : {}) as Partial<SheetDraft>;

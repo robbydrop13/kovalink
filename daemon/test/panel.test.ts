@@ -156,6 +156,37 @@ describe('questions de fiche : traduction', () => {
     assert.equal(mapSheet({ id: ASK_ID, sheet: { title: 'x', decisions: [null] } }), null);
   });
 
+  it('garde les images bien formees d une option et retire les autres, pas la fiche', () => {
+    const out = mapSheet({
+      id: ASK_ID,
+      sheet: {
+        title: 'UI',
+        decisions: [
+          {
+            id: 'D1',
+            title: 't',
+            options: [
+              {
+                id: 'A',
+                label: 'a',
+                images: [{ label: 'Before', path: '/tmp/b.png' }, { path: '/tmp/a.png' }, { label: 'x' }, null, 'p.png'],
+              },
+              { id: 'B', label: 'b', images: 'nope' },
+              { id: 'C', label: 'c' },
+            ],
+          },
+        ],
+      },
+    });
+    const options = out?.sheet.decisions[0]?.options;
+    assert.deepEqual(options?.[0]?.images, [
+      { label: 'Before', path: '/tmp/b.png' },
+      { label: '', path: '/tmp/a.png' },
+    ]);
+    assert.deepEqual(options?.[1]?.images, []);
+    assert.equal(options?.[2]?.images, undefined);
+  });
+
   it('verifie la forme des reponses, pas leur contenu (Kova le fait)', () => {
     const checked = checkSheetAnswers({ decisions: { D1: { choice: 'A', note: 'n' } }, note: 'g' });
     assert.deepEqual(JSON.parse(JSON.stringify(checked)), { decisions: { D1: { choice: 'A', note: 'n' } }, note: 'g' });

@@ -63,6 +63,17 @@ export interface SheetOption {
   label: string;
   detail?: string;
   reco?: boolean;
+  /**
+   * Jusqu'a deux images, typiquement « avant » et « apres » une decision d'interface.
+   * Kova ne les valide pas avec la fiche : ce qui ne s'affiche pas devient une note.
+   */
+  images?: SheetImage[];
+}
+
+/** Une image d'une option. `path` est absolu (Kova developpe `~/`) et se lit par `fs/read`. */
+export interface SheetImage {
+  label: string;
+  path: string;
 }
 
 export interface SheetDecision {
@@ -140,6 +151,12 @@ export interface AskSheetAnswerResponse {
 
 /** Plafond d'une note de la fiche, le meme que celui de Kova (`MAX_NOTE`, en caracteres). */
 export const SHEET_NOTE_MAX = 8000;
+
+/** Les images qu'une option montre au plus, et le poids d'une image, comme Kova (`MAX_IMAGE`). */
+export const SHEET_IMAGES_MAX = 2;
+export const SHEET_IMAGE_BYTES_MAX = 3 * 1024 * 1024;
+/** Les extensions qu'une image de fiche peut avoir, en minuscules. */
+export const SHEET_IMAGE_EXTENSIONS: readonly string[] = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
 
 /** Un delai propose pour remettre une question a plus tard. Vient de Kova. */
 export interface AskSnoozeChoice {

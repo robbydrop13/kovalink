@@ -1668,6 +1668,9 @@ persistante.
 - `denyRead` contient `~/.kovalink` (secrets et audit : un jeton compromis ne doit pas pouvoir
   effacer ses traces) et `~/Library/Logs/Kova` (les `.raw` en 0644 contiennent l'historique des
   panes, y compris le QR d'appairage affiché avant son effacement).
+- Les images d'une fiche de décisions (`images` d'une option, lues par `fs/read`) suivent la
+  même liste : une image rangée sous `~/.kovalink` ou `~/Library/Logs/Kova` ne s'affiche pas sur
+  le téléphone, la fiche le dit sous l'option avec la cause renvoyée par le daemon.
 
 - `name:package.json` : un `postinstall` s'exécuterait au prochain `npm install`.
 - `segment:node_modules` : même raison, et aucun usage légitime depuis un téléphone.
