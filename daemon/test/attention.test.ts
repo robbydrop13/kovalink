@@ -144,6 +144,45 @@ describe('attention : cache', () => {
     assert.deepEqual(h.calls[0], ['list', '--open', '--json']);
   });
 
+  it('une lecture partie avant invalidate ne fixe pas le cache et n est pas reprise', async () => {
+    let release: (v: ExecResult) => void = () => undefined;
+    const calls: string[][] = [];
+    let slow = true;
+    const exec: Exec = (argv) => {
+      calls.push(argv);
+      if (slow) {
+        slow = false;
+        return new Promise((resolve) => {
+          release = resolve;
+        });
+      }
+      return Promise.resolve({ code: 0, stdout: JSON.stringify([RAW[0]]), stderr: '' });
+    };
+    const board = new AttentionBoard(exec);
+    const old = board.list();
+    board.invalidate();
+    // Un appelant venu apres l'invalidation ne partage pas la lecture d'avant.
+    const neuf = await board.list();
+    assert.deepEqual(neuf.map((e) => e.id), ['a-36d0b2']);
+    release({ code: 0, stdout: JSON.stringify(RAW), stderr: '' });
+    assert.equal((await old).length, 2);
+    // La vieille lecture, arrivee en dernier, n'a ecrase ni la liste ni son heure.
+    assert.deepEqual(board.snapshot().map((e) => e.id), ['a-36d0b2']);
+    await board.list();
+    assert.equal(calls.length, 2, 'la lecture neuve sert encore depuis le cache');
+  });
+
+  it('le blocage du renvoi tombe apres 10 min', async () => {
+    let now = 1_000_000;
+    const h = fake();
+    const board = new AttentionBoard(h.exec, () => now);
+    await board.act('a-2555da', 'Envoyer', undefined);
+    await assert.rejects(board.act('a-2555da', 'Envoyer', undefined), (e: unknown) => e instanceof AttentionError && e.reason === 'already_sent');
+    now += 10 * 60_000;
+    await board.act('a-2555da', 'Envoyer', undefined);
+    assert.equal(h.calls.filter((argv) => argv[0] === 'act').length, 2);
+  });
+
   it('un echec garde la derniere lecture', async () => {
     let fail = false;
     const h = fake(RAW, (argv) => (fail && argv[0] === 'list' ? { code: 1, stdout: '', stderr: 'boom' } : undefined));
@@ -181,8 +220,12 @@ describe('attention : routes', () => {
       req.deviceId = 'iphone-test';
       done();
     });
-    // L'executeur est relu a chaque requete : chaque test pose le sien.
-    const board = new AttentionBoard((argv) => h.exec(argv));
+    // Chaque test a son executeur et son tableau (le blocage du renvoi vit dans le
+    // tableau) : les routes passent par ce relais, monte une seule fois.
+    const relay = {
+      list: () => boardRef.list(),
+      act: (id: unknown, button: unknown, text: unknown) => boardRef.act(id, button, text),
+    } as unknown as InstanceType<typeof AttentionBoard>;
     registerAttentionRoutes(
       app,
       {
@@ -190,13 +233,12 @@ describe('attention : routes', () => {
         nonces: new NonceStore(),
         refreshAttention: async (reason) => {
           refreshed.push(reason);
-          board.invalidate();
+          boardRef.invalidate();
         },
       },
-      board,
+      relay,
     );
     await app.ready();
-    boardRef = board;
   });
   after(async () => {
     await app.close();
@@ -204,7 +246,7 @@ describe('attention : routes', () => {
   beforeEach(() => {
     h = fake();
     refreshed = [];
-    boardRef.invalidate();
+    boardRef = new AttentionBoard((argv) => h.exec(argv));
   });
 
   const act = (id: string, body: unknown) =>
@@ -230,27 +272,26 @@ describe('attention : routes', () => {
   });
 
   it('Envoyer : attn act <id> Envoyer, puis relecture', async () => {
-    const res = await act('a-36d0b2', { button: 'Envoyer' });
+    const res = await act('a-2555da', { button: 'Envoyer' });
     assert.equal(res.statusCode, 200);
     assert.deepEqual(res.json(), { applied: true, op: 'act' });
     assert.deepEqual(h.calls, [
       ['list', '--open', '--json'],
-      ['act', 'a-36d0b2', 'Envoyer'],
+      ['act', 'a-2555da', 'Envoyer'],
     ]);
     assert.deepEqual(refreshed, ['act']);
   });
 
   it('Envoyer avec un texte : un seul element, meme s il commence par un tiret', async () => {
-    const res = await act('a-36d0b2', { button: 'Envoyer', text: '  --by robin; rm -rf ~  ' });
+    const res = await act('a-2555da', { button: 'Envoyer', text: '  --by robin; rm -rf ~\nligne 2  ' });
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(h.calls[1], ['act', 'a-36d0b2', 'Envoyer', '--text=--by robin; rm -rf ~']);
+    assert.deepEqual(h.calls[1], ['act', 'a-2555da', 'Envoyer', '--text=--by robin; rm -rf ~\nligne 2']);
   });
 
   it('Fait et Ignorer : attn close avec la note fixe, par robin', async () => {
     assert.equal((await act('a-36d0b2', { button: 'Fait' })).statusCode, 200);
     assert.deepEqual(h.calls[1], ['close', 'a-36d0b2', '--note', 'Fait (KovaLink)', '--by', 'robin']);
     h = fake();
-    boardRef.invalidate();
     const res = await act('a-2555da', { button: 'Ignorer' });
     assert.deepEqual(res.json(), { applied: true, op: 'close' });
     assert.deepEqual(h.calls[1], ['close', 'a-2555da', '--note', 'Ignore (KovaLink)', '--by', 'robin']);
@@ -271,6 +312,10 @@ describe('attention : routes', () => {
     ['texte sur Fait', 'a-36d0b2', { button: 'Fait', text: 'note' }],
     ['texte non textuel', 'a-36d0b2', { button: 'Envoyer', text: 42 }],
     ['texte trop long', 'a-36d0b2', { button: 'Envoyer', text: 'x'.repeat(ATTENTION_TEXT_MAX + 1) }],
+    ['texte avec un echappement', 'a-2555da', { button: 'Envoyer', text: 'ok\x1b[2J' }],
+    ['texte avec un retour chariot', 'a-2555da', { button: 'Envoyer', text: 'ok\rrm -rf ~' }],
+    ['texte avec un nul', 'a-2555da', { button: 'Envoyer', text: 'ok\x00' }],
+    ['texte avec DEL', 'a-2555da', { button: 'Envoyer', text: 'ok\x7f' }],
   ];
   for (const [name, id, body] of rejected) {
     it(`400 sans lancer attn : ${name}`, async () => {
@@ -281,6 +326,40 @@ describe('attention : routes', () => {
     });
   }
 
+  const misfit: [string, string, string][] = [
+    ['Envoyer sur une decision', 'a-36d0b2', 'Envoyer'],
+    ['Ignorer sur une decision', 'a-36d0b2', 'Ignorer'],
+    ['Fait sur un would', 'a-2555da', 'Fait'],
+  ];
+  for (const [name, id, button] of misfit) {
+    it(`400 sans geste quand le bouton ne va pas au genre : ${name}`, async () => {
+      const res = await act(id, { button });
+      assert.equal(res.statusCode, 400, res.body);
+      assert.deepEqual(h.calls, [['list', '--open', '--json']], 'seule la relecture part');
+    });
+  }
+
+  it('relit la file avant d agir : une entree fermee depuis la derniere lecture ne recoit rien', async () => {
+    // Le cache la voit ouverte...
+    assert.equal((await app.inject({ method: 'GET', url: ROUTES.attention })).statusCode, 200);
+    // ...puis elle est fermee sur le Mac.
+    h = fake([RAW[0]]);
+    const res = await act('a-2555da', { button: 'Envoyer' });
+    assert.equal(res.statusCode, 404);
+    assert.deepEqual(h.calls, [['list', '--open', '--json']]);
+  });
+
+  it('un second Envoyer sur la meme entree est refuse 10 min, meme avec un autre nonce', async () => {
+    assert.equal((await act('a-2555da', { button: 'Envoyer', nonce: 'n-a' })).statusCode, 200);
+    h = fake();
+    const again = await act('a-2555da', { button: 'Envoyer', nonce: 'n-b' });
+    assert.equal(again.statusCode, 409);
+    assert.equal(again.json().code, 'ATTENTION_ALREADY_SENT');
+    assert.deepEqual(h.calls, []);
+    // Ignorer reste possible : fermer n'envoie rien au chief.
+    assert.equal((await act('a-2555da', { button: 'Ignorer' })).statusCode, 200);
+  });
+
   it('404 pour une entree qui n est plus ouverte, sans geste', async () => {
     const res = await act('a-abcdef', { button: 'Fait' });
     assert.equal(res.statusCode, 404);
@@ -290,7 +369,7 @@ describe('attention : routes', () => {
 
   it('502 quand attn act echoue, sa sortie reste sur le Mac', async () => {
     h = fake(RAW, (argv) => (argv[0] === 'act' ? { code: 1, stdout: '', stderr: 'claap-agent injoignable' } : undefined));
-    const res = await act('a-36d0b2', { button: 'Envoyer' });
+    const res = await act('a-2555da', { button: 'Envoyer' });
     assert.equal(res.statusCode, 502);
     assert.equal(res.json().code, 'ATTENTION_ERROR');
     assert.equal(res.body.includes('injoignable'), false);
@@ -312,9 +391,9 @@ describe('attention : routes', () => {
         return { code: 0, stdout: '', stderr: '' };
       },
     };
-    const first = act('a-36d0b2', { button: 'Envoyer' });
+    const first = act('a-2555da', { button: 'Envoyer' });
     await new Promise((resolve) => setTimeout(resolve, 20));
-    const second = await act('a-36d0b2', { button: 'Envoyer' });
+    const second = await act('a-2555da', { button: 'Envoyer' });
     assert.equal(second.statusCode, 409);
     assert.equal(second.json().code, 'ATTENTION_BUSY');
     release();
@@ -323,9 +402,9 @@ describe('attention : routes', () => {
   });
 
   it('un nonce rejoue est refuse sans geste', async () => {
-    assert.equal((await act('a-36d0b2', { button: 'Envoyer', nonce: 'n-1' })).statusCode, 200);
+    assert.equal((await act('a-36d0b2', { button: 'Fait', nonce: 'n-1' })).statusCode, 200);
     h = fake();
-    const res = await act('a-36d0b2', { button: 'Envoyer', nonce: 'n-1' });
+    const res = await act('a-36d0b2', { button: 'Fait', nonce: 'n-1' });
     assert.equal(res.statusCode, 409);
     assert.deepEqual(h.calls, []);
   });

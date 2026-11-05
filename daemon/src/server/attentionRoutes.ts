@@ -26,6 +26,7 @@ function failAttention(reply: FastifyReply, e: AttentionError, id: string): void
   if (e.reason === 'bad_request') return fail(reply, 400, 'BAD_REQUEST', e.message);
   if (e.reason === 'not_found') return fail(reply, 404, 'ATTENTION_NOT_FOUND', e.message);
   if (e.reason === 'busy') return fail(reply, 409, 'ATTENTION_BUSY', e.message);
+  if (e.reason === 'already_sent') return fail(reply, 409, 'ATTENTION_ALREADY_SENT', e.message);
   logger.warn('attn en echec', { id, err: e.message });
   return fail(reply, 502, 'ATTENTION_ERROR', 'attn failed');
 }
@@ -80,8 +81,9 @@ export function registerAttentionRoutes(
           // Le texte ne va PAS au journal, seulement sa longueur : c'est du contenu.
           detail: `id=${id} button=${String(button)} len=${typeof text === 'string' ? text.length : 0}`,
         });
-        // La pastille et le message `asks` comptent les entrees `now` : relues tout de suite.
-        await services.refreshAttention?.('act');
+        // La pastille et le message `asks` comptent les entrees `now` : relues tout de suite,
+        // sans faire attendre la reponse (le telephone coupe a 25 s).
+        void services.refreshAttention?.('act');
         return res;
       } catch (e) {
         if (typeof nonce === 'string') services.nonces.release(nonce);

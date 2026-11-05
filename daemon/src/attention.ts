@@ -29,6 +29,24 @@ const ACT_TIMEOUT_MS = 20_000;
 const MAX_BUFFER = 4 * 1024 * 1024;
 const STDERR_MAX = 200;
 
+/**
+ * Un `Envoyer` reussi bloque le suivant sur la meme entree pendant ce delai, meme avec un
+ * nouveau nonce : l'entree reste ouverte jusqu'a ce que le chief la ferme, et un second
+ * clic lui arriverait comme une seconde demande.
+ */
+export const ATTENTION_RESEND_MS = 10 * 60_000;
+
+/** Ce que `attn` retape dans un pane : aucun caractere de controle sauf la tabulation et le saut de ligne. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_RE = /[\x00-\x08\x0b-\x1f\x7f]/;
+
+/** Les genres sur lesquels chaque bouton a un sens, comme les lignes de Kova. */
+const KINDS_OF: Record<string, readonly string[]> = {
+  Envoyer: ['would'],
+  Ignorer: ['would'],
+  Fait: ['decision', 'review', 'test'],
+};
+
 /** Les notes de fermeture, au mot pres : celles que Kova ecrit, marquees KovaLink. */
 export const NOTE_DONE = 'Fait (KovaLink)';
 export const NOTE_IGNORED = 'Ignore (KovaLink)';
@@ -65,7 +83,7 @@ export const execAttn: Exec = (argv) => {
  */
 export class AttentionError extends Error {
   constructor(
-    readonly reason: 'bad_request' | 'not_found' | 'busy' | 'attn_failed',
+    readonly reason: 'bad_request' | 'not_found' | 'busy' | 'already_sent' | 'attn_failed',
     message: string,
   ) {
     super(message);
@@ -154,13 +172,19 @@ export function attentionArgv(id: string, button: string, note: string): string[
  * La file cote daemon : une lecture gardee `ATTENTION_CACHE_MS`, un seul `attn list` en
  * vol, et les gestes. `snapshot()` rend la derniere lecture sans attendre, pour le calcul
  * synchrone de `waitsOnYou`.
+ *
+ * `generation` avance a chaque `invalidate()` : une lecture partie avant ne fixe ni
+ * l'heure de lecture ni la liste, et n'est pas reprise par un appelant venu apres.
  */
 export class AttentionBoard {
   private entries: AttentionEntry[] = [];
   private readAt = Number.NEGATIVE_INFINITY;
-  private running: Promise<AttentionEntry[]> | null = null;
+  private generation = 0;
+  private running: { gen: number; run: Promise<AttentionEntry[]> } | null = null;
   /** Un geste en cours pour cet identifiant : le second est refuse, pas lance deux fois. */
   private readonly acting = new Set<string>();
+  /** Le dernier `Envoyer` reussi par identifiant, en ms epoch. */
+  private readonly sentAt = new Map<string, number>();
 
   constructor(
     private readonly exec: Exec,
@@ -174,26 +198,37 @@ export class AttentionBoard {
 
   /** Oublie la lecture : la suivante relance `attn`. */
   invalidate(): void {
+    this.generation += 1;
     this.readAt = Number.NEGATIVE_INFINITY;
   }
 
   /** Les entrees ouvertes, relues si la derniere lecture a plus de 10 s. */
   async list(): Promise<AttentionEntry[]> {
     if (this.now() - this.readAt < ATTENTION_CACHE_MS) return this.entries;
-    if (this.running) return this.running;
-    const run = this.load().finally(() => {
-      if (this.running === run) this.running = null;
+    const gen = this.generation;
+    if (this.running && this.running.gen === gen) return this.running.run;
+    const run = this.load(gen).finally(() => {
+      if (this.running?.run === run) this.running = null;
     });
-    this.running = run;
+    this.running = { gen, run };
     return run;
   }
 
-  private async load(): Promise<AttentionEntry[]> {
+  /** Une lecture neuve, jamais celle du cache ni une lecture partie avant cet appel. */
+  fresh(): Promise<AttentionEntry[]> {
+    this.invalidate();
+    return this.list();
+  }
+
+  private async load(gen: number): Promise<AttentionEntry[]> {
     const res = await this.exec(['list', '--open', '--json']);
     if (res.code !== 0) throw new AttentionError('attn_failed', failure('list', res));
-    this.entries = parseAttention(res.stdout);
+    const entries = parseAttention(res.stdout);
+    // Invalidee pendant la lecture : son resultat sert a l'appelant, pas au cache.
+    if (gen !== this.generation) return entries;
+    this.entries = entries;
     this.readAt = this.now();
-    return this.entries;
+    return entries;
   }
 
   /**
@@ -212,6 +247,9 @@ export class AttentionBoard {
       throw new AttentionError('bad_request', 'text must be a string');
     }
     const body = typeof note === 'string' ? note.trim() : '';
+    if (CONTROL_RE.test(body)) {
+      throw new AttentionError('bad_request', 'text must not contain control characters');
+    }
     if (Buffer.byteLength(body, 'utf8') > ATTENTION_TEXT_MAX) {
       throw new AttentionError('bad_request', `text is longer than ${ATTENTION_TEXT_MAX} bytes`);
     }
@@ -221,12 +259,22 @@ export class AttentionBoard {
     const argv = attentionArgv(id, button, body);
     if (argv === null) throw new AttentionError('bad_request', 'Ouvrir opens on the phone, nothing to record');
     if (this.acting.has(id)) throw new AttentionError('busy', 'an action is already running on this entry');
+    const sent = this.sentAt.get(id);
+    if (button === 'Envoyer' && sent !== undefined && this.now() - sent < ATTENTION_RESEND_MS) {
+      throw new AttentionError('already_sent', 'Envoyer was already sent for this entry');
+    }
     this.acting.add(id);
     try {
-      const open = await this.list();
-      if (!open.some((e) => e.id === id)) throw new AttentionError('not_found', 'no open entry with this id');
+      // Lecture neuve : une entree fermee sur le Mac il y a 5 s ne recoit plus rien.
+      const entry = (await this.fresh()).find((e) => e.id === id);
+      if (!entry) throw new AttentionError('not_found', 'no open entry with this id');
+      if (!(KINDS_OF[button] ?? []).includes(entry.kind)) {
+        throw new AttentionError('bad_request', `${button} does not apply to a ${entry.kind} entry`);
+      }
       const res = await this.exec(argv);
       if (res.code !== 0) throw new AttentionError('attn_failed', failure(argv[0] ?? '', res));
+      if (button === 'Envoyer') this.sentAt.set(id, this.now());
+      for (const [key, at] of this.sentAt) if (this.now() - at >= ATTENTION_RESEND_MS) this.sentAt.delete(key);
       this.invalidate();
       return { applied: true, op: argv[0] === 'act' ? 'act' : 'close' };
     } finally {

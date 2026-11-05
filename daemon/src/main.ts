@@ -231,8 +231,8 @@ async function run(): Promise<void> {
    */
   const refreshAttention = async (reason: string): Promise<void> => {
     try {
-      if (reason !== 'sondage') attention.invalidate();
-      await attention.list();
+      // Toujours une lecture neuve : le cache de 10 s doublerait sinon l'intervalle du sondage.
+      await attention.fresh();
     } catch (e) {
       logger.debug('file d\'attention illisible', { reason, err: (e as Error).message });
       return;
