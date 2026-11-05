@@ -71,7 +71,11 @@ export const ATTENTION_ID_RE = /^a-[0-9a-f]{6}$/;
  * au chief (`attn act`), `Fait` et `Ignorer` ferment l'entree (`attn close`), `Ouvrir`
  * reste sur le telephone (le daemon le refuse, il n'a rien a noter).
  */
-export const ATTENTION_BUTTONS = ['Envoyer', 'Ignorer', 'Fait', 'Ouvrir'] as const;
+export const ATTENTION_SEND = 'Envoyer';
+export const ATTENTION_IGNORE = 'Ignorer';
+export const ATTENTION_DONE = 'Fait';
+export const ATTENTION_OPEN = 'Ouvrir';
+export const ATTENTION_BUTTONS = [ATTENTION_SEND, ATTENTION_IGNORE, ATTENTION_DONE, ATTENTION_OPEN] as const;
 export type AttentionButton = (typeof ATTENTION_BUTTONS)[number];
 
 export function isAttentionButton(v: unknown): v is AttentionButton {
