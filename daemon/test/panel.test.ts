@@ -156,7 +156,7 @@ describe('questions de fiche : traduction', () => {
     assert.equal(mapSheet({ id: ASK_ID, sheet: { title: 'x', decisions: [null] } }), null);
   });
 
-  it('garde les images bien formees d une option et retire les autres, pas la fiche', () => {
+  it('garde les images d une option, une mal formee avec un chemin vide, et la fiche', () => {
     const out = mapSheet({
       id: ASK_ID,
       sheet: {
@@ -182,6 +182,9 @@ describe('questions de fiche : traduction', () => {
     assert.deepEqual(options?.[0]?.images, [
       { label: 'Before', path: '/tmp/b.png' },
       { label: '', path: '/tmp/a.png' },
+      { label: 'x', path: '' },
+      { label: '', path: '' },
+      { label: '', path: '' },
     ]);
     assert.deepEqual(options?.[1]?.images, []);
     assert.equal(options?.[2]?.images, undefined);

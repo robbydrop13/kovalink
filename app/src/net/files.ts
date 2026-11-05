@@ -143,13 +143,26 @@ export async function fileUrl(path: string, download = false): Promise<{ url: st
  * contrairement à un `HEAD`, un refus revient avec son corps, donc avec sa cause (un
  * chemin en liste noire, un fichier absent). Sert aux images d'une fiche de décisions.
  */
-export async function fileSize(path: string): Promise<number> {
+export async function fileSize(path: string, timeoutMs = 10_000): Promise<number> {
   const { url, headers } = await fileUrl(path);
-  const res = await fetch(url, { headers: { ...headers, range: 'bytes=0-0' } });
-  if (!res.ok) throw await readError(res, ROUTES.fsRead);
-  await res.arrayBuffer().catch(() => undefined);
-  const total = Number(res.headers.get('content-range')?.split('/')[1] ?? res.headers.get('content-length'));
-  return Number.isFinite(total) ? total : 0;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal, headers: { ...headers, range: 'bytes=0-0' } });
+    if (!res.ok) throw await readError(res, ROUTES.fsRead);
+    // Un fichier vide repond 200 sans corps ; tout autre 200 ignorerait la plage et
+    // enverrait le fichier entier : on coupe, sans deviner une taille.
+    if (res.status === 200 && res.headers.get('content-length') === '0') return 0;
+    const total = res.status === 206 ? Number(res.headers.get('content-range')?.split('/')[1]) : NaN;
+    if (!Number.isFinite(total)) {
+      controller.abort();
+      throw new HttpError(res.status, 'INTERNAL', t.filesHttpError(res.status, ROUTES.fsRead));
+    }
+    await res.arrayBuffer().catch(() => undefined);
+    return total;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

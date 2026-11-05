@@ -26,13 +26,13 @@ export function SheetImages({ images }: { images: readonly SheetImage[] | undefi
     <View style={styles.root}>
       {plan.shown.length > 0 ? (
         <View style={styles.row}>
-          {plan.shown.map((image) => (
-            <SheetShot key={image.path} image={image} onOpen={(remote) => setOpen({ image, remote })} />
+          {plan.shown.map((image, i) => (
+            <SheetShot key={i} image={image} onOpen={(remote) => setOpen({ image, remote })} />
           ))}
         </View>
       ) : null}
-      {plan.notes.map((note) => (
-        <Txt key={note} variant="footnote" color={colors.text.tertiary}>
+      {plan.notes.map((note, i) => (
+        <Txt key={i} variant="footnote" color={colors.text.tertiary}>
           {note}
         </Txt>
       ))}
@@ -79,8 +79,11 @@ function SheetShot({ image, onOpen }: { image: SheetImage; onOpen: (remote: Remo
         <Pressable
           accessibilityRole="imagebutton"
           accessibilityLabel={t.panelSheetImageA11y(label || imageName(image))}
-          disabled={shot.state !== 'ready'}
-          onPress={() => shot.state === 'ready' && onOpen(shot.remote)}
+          // Jamais desactive : un appui pendant le chargement ne doit pas tomber sur
+          // l'option qui contient l'image et la choisir.
+          onPress={() => {
+            if (shot.state === 'ready') onOpen(shot.remote);
+          }}
           style={styles.frame}
         >
           {shot.state === 'ready' ? (

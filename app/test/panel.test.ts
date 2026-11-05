@@ -229,6 +229,15 @@ describe('images d une option de fiche', () => {
     ]);
   });
 
+  it('dit non affichee une entree mal formee au lieu de planter', () => {
+    const raw = [null, { path: 3 }] as unknown as Parameters<typeof planImages>[0];
+    assert.deepEqual(planImages(raw).notes, [
+      'Image image not shown: the path is not absolute',
+      'Image image not shown: the path is not absolute',
+    ]);
+    assert.deepEqual(planImages('a.png' as unknown as Parameters<typeof planImages>[0]), { shown: [], notes: [] });
+  });
+
   it('ne montre rien pour une option sans images', () => {
     assert.deepEqual(planImages(undefined), { shown: [], notes: [] });
   });

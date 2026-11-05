@@ -12,14 +12,28 @@ export interface ImagePlan {
 
 /** Le nom d'une image dans une note : son libelle, sinon son chemin. */
 export function imageName(image: SheetImage): string {
-  return image.label.trim() || image.path;
+  return image.label.trim() || image.path || 'image';
+}
+
+/**
+ * Un daemon anterieur aux images transmet la fiche telle quelle : une entree mal formee
+ * devient une image sans chemin, que la fiche dit non affichee, au lieu de la faire planter.
+ */
+function asImage(raw: unknown): SheetImage {
+  const r = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+  return {
+    label: typeof r['label'] === 'string' ? r['label'] : '',
+    path: typeof r['path'] === 'string' ? r['path'] : '',
+  };
 }
 
 export function planImages(images: readonly SheetImage[] | undefined): ImagePlan {
   const shown: SheetImage[] = [];
   const notes: string[] = [];
-  const list = images ?? [];
-  for (const image of list.slice(0, SHEET_IMAGES_MAX)) {
+  const list = Array.isArray(images) ? images : [];
+  for (const raw of list.slice(0, SHEET_IMAGES_MAX)) {
+    // L'objet d'origine quand il est bien forme : son identite garde l'image chargee.
+    const image = typeof raw?.label === 'string' && typeof raw?.path === 'string' ? raw : asImage(raw);
     const ext = image.path.split('.').pop()?.toLowerCase() ?? '';
     if (!image.path.startsWith('/')) notes.push(t.panelSheetImageNotShown(imageName(image), t.panelSheetImageNotAbsolute));
     else if (!SHEET_IMAGE_EXTENSIONS.includes(ext)) notes.push(t.panelSheetImageNotShown(imageName(image), t.panelSheetImageType));
