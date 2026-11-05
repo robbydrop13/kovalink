@@ -233,7 +233,16 @@ export function checkSheetAnswers(raw: unknown): SheetAnswersPayload {
  * visible. Le texte n'en fait pas partie, il ne change jamais pour une meme question.
  */
 export function asksSignature(asks: AskItem[], supported: boolean): string {
-  return JSON.stringify([supported, asks.map((a) => [a.id, a.due, a.snoozedUntilMs, a.waiting])]);
+  return JSON.stringify([
+    supported,
+    asks.map((a) => {
+      // Une passation dont l'entree change sur le Mac (erreur levee, commande modifiee)
+      // doit repartir : le telephone afficherait sinon l'ancienne.
+      const h = a.handoff ?? null;
+      const handoff = h === null ? null : [h.step, h.url, h.command, h.label, h.error];
+      return [a.id, a.due, a.snoozedUntilMs, a.waiting, handoff];
+    }),
+  ]);
 }
 
 /**

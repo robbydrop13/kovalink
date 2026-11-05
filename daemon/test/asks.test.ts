@@ -126,6 +126,21 @@ describe('questions des agents : passation', () => {
 });
 
 describe('questions des agents : porte de diffusion', () => {
+  it('une passation qui change sur le Mac change la signature', () => {
+    const base = { step: 'Lancer', url: null, run: 'aws-login', command: 'aws sso login', label: 'AWS', error: 'gone' };
+    const sig = (handoff: Record<string, unknown> | undefined) => {
+      const ask = mapAsk(raw({ kind: 'handoff', buttons: ['Lancer', 'Fait'], handoff }));
+      assert.ok(ask);
+      return asksSignature([ask], true);
+    };
+    const before = sig(base);
+    for (const change of [{ error: null }, { command: 'aws sso login --profile dev' }, { label: 'AWS dev' }]) {
+      assert.notEqual(sig({ ...base, ...change }), before, JSON.stringify(change));
+    }
+    assert.notEqual(sig(undefined), before);
+    assert.equal(sig({ ...base }), before);
+  });
+
   it('la signature ignore le texte et retient l etat visible', () => {
     const a = item({ id: '1' });
     assert.equal(
