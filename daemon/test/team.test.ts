@@ -104,6 +104,38 @@ describe('getRoster', () => {
     assert.deepEqual((await getRoster(h.exec)).managers, []);
   });
 
+  it('lit l etat declare (working, status, doing, waiting_on, status_at), ignore un status hors liste', async () => {
+    const h = fake({
+      managers: [
+        {
+          name: 'claap-agent',
+          role: 'chief-of-staff-pro',
+          state: 'working',
+          status: 'awaiting-review',
+          doing: 'PR #13752',
+          waiting_on: 'Francisco : la revue',
+          status_at: '2026-11-05T16:00:00+01:00',
+          extra: 'ignored',
+        },
+        { name: 'perso-agent', role: 'r', state: 'open', status: 'sleeping', doing: null, waiting_on: null, status_at: null },
+      ],
+      dedicated: [],
+      other_open: [],
+    });
+    assert.deepEqual((await getRoster(h.exec)).managers, [
+      {
+        name: 'claap-agent',
+        role: 'chief-of-staff-pro',
+        state: 'working',
+        status: 'awaiting-review',
+        doing: 'PR #13752',
+        waitingOn: 'Francisco : la revue',
+        statusAt: '2026-11-05T16:00:00+01:00',
+      },
+      { name: 'perso-agent', role: 'r', state: 'open' },
+    ]);
+  });
+
   it('un team list en echec leve team_failed', async () => {
     const h = fake(RAW, (argv) =>
       argv[0] === 'list' ? { code: 1, stdout: '', stderr: 'boom' } : undefined,

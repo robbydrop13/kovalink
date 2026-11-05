@@ -5,11 +5,12 @@
 import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type {
-  AgentActionResponse,
-  AgentState,
-  AgentsRosterResponse,
-  RosterEntry,
+import {
+  isTeamStatus,
+  type AgentActionResponse,
+  type AgentState,
+  type AgentsRosterResponse,
+  type RosterEntry,
 } from '@kovalink/protocol';
 import type { Exec } from './routines.js';
 
@@ -88,7 +89,9 @@ function state(v: unknown): AgentState | null {
 /**
  * Une entree de `team list --json` vers le protocole : les champs optionnels vides sont
  * omis, et une entree sans nom valide ou sans etat connu est ignoree. Elle ne peut pas
- * etre designee par la route de reouverture.
+ * etre designee par la route de reouverture. L'etat declare (`status`, `doing`,
+ * `waiting_on`, `status_at`, ecrits par `attn status`) passe en `camelCase` ; un `status`
+ * hors de la liste fermee est omis, l'app retombe alors sur l'affichage d'avant.
  */
 function toEntry(raw: Record<string, unknown>): RosterEntry | null {
   const name = str(raw['name']);
@@ -103,6 +106,14 @@ function toEntry(raw: Record<string, unknown>): RosterEntry | null {
   if (by) entry.by = by;
   if (project) entry.project = project;
   if (created) entry.created = created;
+  const status = raw['status'];
+  const doing = str(raw['doing']);
+  const waitingOn = str(raw['waiting_on']);
+  const statusAt = str(raw['status_at']);
+  if (isTeamStatus(status)) entry.status = status;
+  if (doing) entry.doing = doing;
+  if (waitingOn) entry.waitingOn = waitingOn;
+  if (statusAt) entry.statusAt = statusAt;
   return entry;
 }
 
