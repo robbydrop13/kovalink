@@ -15,6 +15,10 @@
 // fiche native de Kova (`sheet`) s'ouvre dans le panneau, ou elle se remplit en entier.
 // Les boutons de la carte restent ceux de Kova (`answer-ask`), sauf le `Done` seul d'une
 // fiche native : il rendrait une fiche vide, elle se rend depuis le panneau.
+//
+// Une passation (`kind: handoff`) montre son URL ou sa commande telles que Kova les rend,
+// puis deux boutons : le pas (`Ouvrir` ou `Lancer`, fait par Kova sur le Mac, la question
+// reste ouverte) et `Fait`, qui y repond. Les deux passent par `answer-ask`.
 import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
@@ -32,6 +36,7 @@ import { ImpactStyle, impact } from '@/utils/haptics';
 import { shortAgeMs } from '@/utils/time';
 import { openInPanel } from '@/features/panel/open';
 import { DECISION_DONE, askPanelTarget, isDecisionAsk, koOption, okOption } from './answer';
+import { handoffView, type HandoffView } from './handoff';
 import { BriefSheet } from './BriefSheet';
 
 /** Un agent qui n'a pas eu de reponse depuis deux heures passe en ambre (proto). */
@@ -94,6 +99,8 @@ export function AskCard({
   const tabs = usePanes((s) => s.tabs);
   const [menu, setMenu] = useState(false);
   const [brief, setBrief] = useState(false);
+  /** Le pas d'une passation a ete fait sur le Mac : reste `Fait`. */
+  const [stepped, setStepped] = useState(false);
 
   const pane = useMemo(() => paneForAsk(ask, panes), [ask, panes]);
   const panelTarget = askPanelTarget(ask);
@@ -103,6 +110,22 @@ export function AskCard({
   const ko = koOption(ask);
   const sending = phase === 'sending';
   const sent = phase === 'sent';
+  const handoff = handoffView(ask);
+
+  /** Le pas d'une passation : Kova le fait, la question reste ouverte jusqu'a `Fait`. */
+  const step = async (view: HandoffView): Promise<void> => {
+    useAsks.getState().setNotice(ask.id, null);
+    useAsks.getState().setPhase(ask.id, 'sending');
+    const out = await answerAsk(ask, view.step, '');
+    if (out.ok) {
+      impact(ImpactStyle.Medium);
+      useAsks.getState().setPhase(ask.id, 'idle');
+      setStepped(true);
+      return;
+    }
+    useAsks.getState().setPhase(ask.id, 'failed');
+    useAsks.getState().setNotice(ask.id, t.askFailed(out.cause));
+  };
 
   const send = async (action: string, text: string): Promise<void> => {
     useAsks.getState().setNotice(ask.id, null);
@@ -151,10 +174,30 @@ export function AskCard({
         </Txt>
       ) : null}
 
+      {handoff !== null ? <HandoffText view={handoff} /> : null}
+
       {sending ? (
         <StateLine icon="send" text={t.askSendingTo(ask.from)} />
       ) : sent ? (
         <StateLine icon="check-circle" color={colors.status.success} text={t.askSentTo(ask.from)} />
+      ) : handoff !== null ? (
+        <>
+          {stepped ? <StateLine icon="check-circle" text={t.handoffStepDone} /> : null}
+          <View style={styles.actions}>
+            <TextButton
+              label={handoff.run ? t.handoffRun : t.handoffOpen}
+              disabled={unavailable}
+              onPress={() => void step(handoff)}
+            />
+            {handoff.done !== null ? (
+              <TextButton
+                label={t.handoffDone}
+                disabled={unavailable}
+                onPress={() => handoff.done !== null && void send(handoff.done, '')}
+              />
+            ) : null}
+          </View>
+        </>
       ) : (
         <>
           <View style={styles.actions}>
@@ -305,6 +348,48 @@ function CardFrame({ decision, onOpen, children }: { decision: boolean; onOpen: 
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
     >
       {children}
+    </Pressable>
+  );
+}
+
+/** L'URL ou la commande d'une passation, verbatim, et l'erreur de Kova s'il n'a pas pu la relire. */
+function HandoffText({ view }: { view: HandoffView }) {
+  return (
+    <>
+      {view.text.length > 0 ? (
+        <View style={styles.code}>
+          <Txt variant="monoCode" color={colors.text.primary} selectable numberOfLines={6}>
+            {view.text}
+          </Txt>
+        </View>
+      ) : null}
+      {view.error !== null ? (
+        <Txt variant="footnote" color={colors.status.error}>
+          {t.handoffUnreadable(view.error)}
+        </Txt>
+      ) : null}
+    </>
+  );
+}
+
+/** Un bouton a libelle, de la hauteur des boutons de la carte. */
+function TextButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={6}
+      onPress={() => {
+        impact(ImpactStyle.Light);
+        onPress();
+      }}
+      style={({ pressed }) => [styles.open, pressed && styles.iconPressed]}
+    >
+      <Txt variant="footnote" color={disabled ? colors.text.disabled : colors.text.primary}>
+        {label}
+      </Txt>
     </Pressable>
   );
 }
