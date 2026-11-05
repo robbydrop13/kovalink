@@ -1,7 +1,8 @@
 /**
  * Ce qui attend Robin, dans l'ordre ou `Cmd+J` le parcourt : un tour mort sur une
  * erreur de fournisseur, une routine planifiee dont le dernier run a echoue, une
- * question de permission, une question `kova ask` ouverte.
+ * question de permission, une question `kova ask` ouverte, une entree de la file
+ * d'attention (`attn`) de niveau `now`.
  *
  * PORTAGE de `kova/src/window/needs.rs`. La forme d'entree garde les noms snake_case
  * des structs Rust, pour que `test/fixtures/waits_on_you.json` (copie de celle de
@@ -9,7 +10,8 @@
  * l'ordre : les deux implementations doivent rendre la meme liste, dans le meme ordre.
  *
  * `waitsOnYou` est plus etroit que `needItems` a dessein : il ne compte que ce qu'un
- * humain doit repondre, un prompt de permission et une question ouverte. Une erreur et
+ * humain doit repondre, un prompt de permission, une question ouverte et une entree
+ * d'attention `now`. Une erreur et
  * une routine en echec sont des need items pour que Next les parcoure, mais elles
  * n'attendent pas une reponse : le tour ou le run est simplement fini.
  */
@@ -18,19 +20,20 @@
  * Le type d'un element. L'ordre de declaration est le tie-break a `since` egal, et
  * l'ordre dans lequel les groupes sont poses.
  */
-export type NeedKind = 'error' | 'failed_routine' | 'permission' | 'ask';
+export type NeedKind = 'error' | 'failed_routine' | 'permission' | 'ask' | 'attention';
 
 const KIND_RANK: Record<NeedKind, number> = {
   error: 0,
   failed_routine: 1,
   permission: 2,
   ask: 3,
+  attention: 4,
 };
 
 /** Un element tel que la barre laterale et Next le voient. */
 export interface NeedItem {
   kind: NeedKind;
-  /** Stable d'un tick a l'autre : `pane:12`, `routine:<name>`, `ask:<id>`. */
+  /** Stable d'un tick a l'autre : `pane:12`, `routine:<name>`, `ask:<id>`, `attention:<id>`. */
   key: string;
   /** Le pane ou atterrir quand il y en a un ; une routine en echec n'en a pas. */
   pane_id: number | null;
@@ -76,11 +79,24 @@ export interface AskNeed {
   detail?: string | null;
 }
 
+/**
+ * Une entree de la file d'attention. Seul le niveau `now` est un need : `point` et
+ * `memo` attendent un coup d'oeil plus tard, l'ecran des questions les liste a part.
+ */
+export interface AttentionNeed {
+  id: string;
+  /** Secondes epoch de l'ajout de l'entree. */
+  since: number;
+  level: string;
+  title: string;
+}
+
 /** Tout ce que le modele doit savoir, a une seule lecture d'horloge. */
 export interface NeedInput {
   panes?: PaneNeed[];
   routines?: RoutineNeed[];
   asks?: AskNeed[];
+  attention?: AttentionNeed[];
   now: number;
 }
 
@@ -129,8 +145,9 @@ function paneItems(
 
 /**
  * Tous les need items, dans l'ordre ou `Next` les parcourt : erreurs du plus ancien au
- * plus recent, puis routines en echec, puis prompts de permission et questions ouvertes
- * melanges par age.
+ * plus recent, puis routines en echec, puis prompts de permission, questions ouvertes et
+ * entrees d'attention `now` melanges par age. Une entree d'attention n'a pas de pane :
+ * elle ne se replie sur rien.
  *
  * Un pane qui porte a la fois un prompt de permission et une question ouverte est UNE
  * chose a traiter, pas deux : seul le plus ancien des deux est garde, et la question
@@ -188,23 +205,35 @@ export function needItems(input: NeedInput): NeedItem[] {
     else keepAsk[oldest] = false;
   });
 
+  const attention = (input.attention ?? [])
+    .filter((entry) => entry.level === 'now')
+    .map((entry): NeedItem => ({
+      kind: 'attention',
+      key: `attention:${entry.id}`,
+      pane_id: null,
+      since: entry.since,
+      title: entry.title,
+      detail: '',
+    }));
+
   const merged = [
     ...permissions.filter((_, i) => keepPermission[i]),
     ...asks.filter((_, i) => keepAsk[i]),
+    ...attention,
   ].sort(byAge);
 
   return [...errors, ...routines, ...merged];
 }
 
 /**
- * Ce qu'un humain doit repondre maintenant, dans toute l'app : prompts de permission et
- * questions ouvertes, comptes comme `needItems` les dedoublonne. Les erreurs et les runs
+ * Ce qu'un humain doit repondre maintenant, dans toute l'app : prompts de permission,
+ * questions ouvertes et entrees d'attention `now`, comptes comme `needItems` les dedoublonne. Les erreurs et les runs
  * en echec n'en font pas partie : ils veulent un coup d'oeil, pas une reponse.
  */
 export function waitsOnYou(input: NeedInput): number {
   let count = 0;
   for (const item of needItems(input)) {
-    if (item.kind === 'permission' || item.kind === 'ask') count += 1;
+    if (item.kind === 'permission' || item.kind === 'ask' || item.kind === 'attention') count += 1;
   }
   return count;
 }

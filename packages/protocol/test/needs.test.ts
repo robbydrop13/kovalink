@@ -15,8 +15,11 @@ interface WaitsOnYouCase {
 
 /** La copie locale, lue par le test. */
 const FIXTURE = fileURLToPath(new URL('../test/fixtures/waits_on_you.json', import.meta.url));
-/** L'original dans le depot de Kova. Absent sur une machine qui n'a que KovaLink. */
-const KOVA_FIXTURE = '/Users/robinbonduelle/claap-worktrees/kova-ds/tests/fixtures/waits_on_you.json';
+/**
+ * L'original dans le depot de Kova. Absent sur une machine qui n'a que KovaLink. C'est le
+ * worktree de Kova qui porte les cas `attention` tant qu'ils ne sont pas sur sa `main`.
+ */
+const KOVA_FIXTURE = '/Users/robinbonduelle/claap-worktrees/kova-board/tests/fixtures/waits_on_you.json';
 
 const bytes = readFileSync(FIXTURE);
 const cases = JSON.parse(bytes.toString('utf8')) as WaitsOnYouCase[];
