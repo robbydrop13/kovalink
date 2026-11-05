@@ -97,6 +97,34 @@ describe('questions des agents : traduction', () => {
   });
 });
 
+describe('questions des agents : passation', () => {
+  it('garde le pas, l URL et la commande telles que Kova les rend', () => {
+    const ask = mapAsk(
+      raw({
+        kind: 'handoff',
+        buttons: ['Lancer', 'Fait'],
+        handoff: { step: 'Lancer', url: null, run: 'aws-login', command: 'aws sso login --profile dev', label: 'AWS login', error: null },
+      }),
+    );
+    assert.deepEqual(ask?.handoff, {
+      step: 'Lancer',
+      url: null,
+      run: 'aws-login',
+      command: 'aws sso login --profile dev',
+      label: 'AWS login',
+      error: null,
+    });
+  });
+
+  it('un pas hors des boutons, une URL non http(s) ou un bloc absent ne passent pas', () => {
+    const bad = mapAsk(raw({ buttons: ['Ouvrir', 'Fait'], handoff: { step: 'Lancer', url: 'https://x.y' } }));
+    assert.equal(bad?.handoff, null);
+    const js = mapAsk(raw({ buttons: ['Ouvrir', 'Fait'], handoff: { step: 'Ouvrir', url: 'javascript:alert(1)' } }));
+    assert.equal(js?.handoff?.url, null);
+    assert.equal(mapAsk(raw())?.handoff, null);
+  });
+});
+
 describe('questions des agents : porte de diffusion', () => {
   it('la signature ignore le texte et retient l etat visible', () => {
     const a = item({ id: '1' });

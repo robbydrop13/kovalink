@@ -15,6 +15,7 @@
 import {
   ASK_TEXT_MAX,
   SHEET_NOTE_MAX,
+  type AskHandoff,
   type AskItem,
   type AskSheetAnswerResponse,
   type AskSheetResponse,
@@ -98,6 +99,32 @@ export function mapAsk(raw: unknown): AskItem | null {
     // Meme garde que Kova (`is_panel_url`) : le telephone l'ouvre dans une WebView.
     url: isPanelUrl(r['url']) ? (r['url'] as string) : null,
     sheet: r['sheet'] === true,
+    handoff: mapHandoff(r['handoff'], buttons),
+  };
+}
+
+/**
+ * Le pas d'une passation, tel que `list-asks` le rend. Garde seulement si `step` est un
+ * des boutons de la question : c'est ce mot que l'app renverra par `answer-ask`. L'URL
+ * passe la meme garde que celle d'une fiche ; la commande est un texte a lire, jamais
+ * executee ici.
+ */
+export function mapHandoff(raw: unknown, buttons: readonly string[]): AskHandoff | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const step = r['step'];
+  if (typeof step !== 'string' || !buttons.includes(step)) return null;
+  const text = (key: string): string | null => {
+    const v = r[key];
+    return typeof v === 'string' && v.length > 0 ? v : null;
+  };
+  return {
+    step,
+    url: isPanelUrl(r['url']) ? (r['url'] as string) : null,
+    run: text('run'),
+    command: text('command'),
+    label: text('label'),
+    error: text('error'),
   };
 }
 
