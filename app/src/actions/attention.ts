@@ -8,8 +8,11 @@ import { nonce } from './nonce';
 
 export type AttentionOutcome =
   | { ok: true; result: AttentionActResponse }
-  /** `gone` : l'entree n'est plus ouverte (fermee sur le Mac entre temps). */
-  | { ok: false; kind: 'gone' | 'refused' | 'network'; cause: string };
+  /**
+   * `gone` : l'entree n'est plus ouverte (fermee sur le Mac entre temps). `status` porte le
+   * code HTTP d'un refus, absent sur une coupure ou un delai depasse.
+   */
+  | { ok: false; kind: 'gone' | 'refused' | 'network'; cause: string; status?: number; code?: string };
 
 export async function actOnAttention(id: string, button: AttentionButton, text = ''): Promise<AttentionOutcome> {
   if (!isAttentionButton(button)) return { ok: false, kind: 'refused', cause: 'unknown button' };
@@ -19,7 +22,7 @@ export async function actOnAttention(id: string, button: AttentionButton, text =
   } catch (e) {
     if (e instanceof HttpError) {
       if (e.status === 404) return { ok: false, kind: 'gone', cause: e.message };
-      return { ok: false, kind: 'refused', cause: `${e.code}: ${e.message}` };
+      return { ok: false, kind: 'refused', cause: `${e.code}: ${e.message}`, status: e.status, code: e.code };
     }
     return { ok: false, kind: 'network', cause: e instanceof Error ? e.message : String(e) };
   }

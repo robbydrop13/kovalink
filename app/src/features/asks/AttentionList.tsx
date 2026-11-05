@@ -92,6 +92,8 @@ export function AttentionRow({
         <StateLine icon="send" text={t.attnSending} />
       ) : phase === 'sent' ? (
         <StateLine icon="check-circle" color={colors.status.success} text={t.attnSent(entry.from)} />
+      ) : phase === 'unknown' ? (
+        <StateLine icon="help-circle" text={t.attnUnknown} />
       ) : null}
 
       {buttons.length > 0 ? (
@@ -195,7 +197,15 @@ function SectionToggle({ title, open, onToggle }: { title: string; open: boolean
   );
 }
 
-function StateLine({ icon, text, color = colors.text.secondary }: { icon: 'send' | 'check-circle'; text: string; color?: string }) {
+function StateLine({
+  icon,
+  text,
+  color = colors.text.secondary,
+}: {
+  icon: 'send' | 'check-circle' | 'help-circle';
+  text: string;
+  color?: string;
+}) {
   return (
     <View style={styles.stateLine}>
       <Icon name={icon} size={14} color={color} />

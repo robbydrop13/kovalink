@@ -54,6 +54,7 @@ export const asks = {
   attnSending: 'Envoi…',
   attnSent: (from: string) => `Envoyé, ${from} s'en occupe`,
   attnFailed: (cause: string) => `Pas envoyé. ${cause}`,
+  attnUnknown: 'Envoi non confirmé, vérifie sur le Mac',
   attnRowA11y: (title: string, from: string, age: string) => `${title}, ${from}, ${age}`,
   // Passation (`kova ask --open` / `--run`) : le pas se fait sur le Mac, puis `Fait`.
   handoffOpen: 'Ouvrir',

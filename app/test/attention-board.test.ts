@@ -9,6 +9,7 @@ import {
   attentionButtons,
   attentionOpenTarget,
   attentionSections,
+  phaseAfterSendFailure,
 } from '@/features/asks/attention';
 import { handoffView } from '@/features/asks/handoff';
 import { teamStatusLine } from '@/features/agents/teamStatus';
@@ -122,6 +123,18 @@ describe('attention : boutons', () => {
     assert.equal(attentionButtonEnabled('Envoyer', 'sent', e, false), false);
     assert.equal(attentionButtonEnabled('Ignorer', 'sent', e, false), false);
     assert.equal(attentionButtonEnabled('Ouvrir', 'sent', e, false), true);
+  });
+
+  it('Envoyer sans reponse claire est inconnu, jamais rejouable', () => {
+    assert.equal(phaseAfterSendFailure('network'), 'unknown');
+    assert.equal(phaseAfterSendFailure('refused', 502, 'ATTENTION_ERROR'), 'unknown');
+    assert.equal(phaseAfterSendFailure('refused', 409, 'ATTENTION_ALREADY_SENT'), 'sent');
+    assert.equal(phaseAfterSendFailure('refused', 400, 'BAD_REQUEST'), 'failed');
+    assert.equal(phaseAfterSendFailure('gone', 404), 'idle');
+    const e = entry({ kind: 'would', action: 'https://x.y' });
+    assert.equal(attentionButtonEnabled('Envoyer', 'unknown', e, false), false);
+    assert.equal(attentionButtonEnabled('Ignorer', 'unknown', e, false), true);
+    assert.equal(attentionButtonEnabled('Ouvrir', 'unknown', e, false), true);
   });
 
   it('Mac injoignable : seul Ouvrir d une URL reste actif', () => {

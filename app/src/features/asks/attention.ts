@@ -94,8 +94,28 @@ export function attentionButtons(entry: AttentionEntry): AttentionButton[] {
   return out;
 }
 
-/** Etat d'un geste sur une ligne. `sent` : `Envoyer` est parti, l'entree attend son chief. */
-export type AttentionPhase = 'idle' | 'sending' | 'sent' | 'failed';
+/**
+ * Etat d'un geste sur une ligne. `sent` : `Envoyer` est parti, l'entree attend son chief.
+ * `unknown` : `Envoyer` n'a pas eu de reponse claire (coupure, delai, 502), il a peut-etre
+ * ete transmis ; il ne se rejoue pas.
+ */
+export type AttentionPhase = 'idle' | 'sending' | 'sent' | 'unknown' | 'failed';
+
+/**
+ * Ce que devient la ligne apres un `Envoyer` refuse ou sans reponse. Une coupure, un delai
+ * ou un 502 ne disent pas si le clic est arrive au chief : `unknown`, jamais un echec qu'on
+ * retente. Un renvoi refuse par le daemon (deja parti) vaut `sent`. Le reste est un refus net.
+ */
+export function phaseAfterSendFailure(
+  kind: 'gone' | 'refused' | 'network',
+  status?: number,
+  code?: string,
+): AttentionPhase {
+  if (kind === 'gone') return 'idle';
+  if (code === 'ATTENTION_ALREADY_SENT') return 'sent';
+  if (kind === 'network' || status === 502 || status === 504) return 'unknown';
+  return 'failed';
+}
 
 /**
  * Un bouton est-il actif. Un geste en vol les eteint tous ; apres `Envoyer`, la ligne
@@ -114,5 +134,6 @@ export function attentionButtonEnabled(
     return !unavailable || attentionOpenTarget(entry.action)?.kind === 'web';
   }
   if (unavailable) return false;
+  if (phase === 'unknown') return button !== ATTENTION_SEND;
   return phase !== 'sent';
 }

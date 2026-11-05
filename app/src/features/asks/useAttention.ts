@@ -12,7 +12,7 @@ import { fetchAttention } from '@/net/http';
 import { actOnAttention } from '@/actions/attention';
 import { useAsks } from '@/store/asks';
 import { t } from '@/i18n/en';
-import type { AttentionPhase } from './attention';
+import { phaseAfterSendFailure, type AttentionPhase } from './attention';
 
 const POLL_MS = 10_000;
 
@@ -52,9 +52,21 @@ export const useAttentionStore = create<AttentionState>((set, get) => ({
   },
 
   act: async (id, button) => {
-    if (get().phase[id] === 'sending') return;
+    const current = get().phase[id];
+    if (current === 'sending') return;
+    // Un `Envoyer` parti, ou peut etre parti, ne repart pas d'ici.
+    if (button === ATTENTION_SEND && (current === 'sent' || current === 'unknown')) return;
     set((s) => ({ phase: { ...s.phase, [id]: 'sending' }, notice: { ...s.notice, [id]: null } }));
     const out = await actOnAttention(id, button);
+    if (!out.ok && button === ATTENTION_SEND) {
+      const phase = phaseAfterSendFailure(out.kind, out.status, out.code);
+      set((s) => ({
+        phase: { ...s.phase, [id]: phase },
+        notice: { ...s.notice, [id]: phase === 'failed' ? t.attnFailed(out.cause) : null },
+      }));
+      if (phase !== 'failed') void get().load();
+      return;
+    }
     if (!out.ok) {
       set((s) => ({
         phase: { ...s.phase, [id]: out.kind === 'gone' ? 'idle' : 'failed' },
