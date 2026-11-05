@@ -4,10 +4,23 @@
 import { createContext, useContext } from 'react';
 import { router } from 'expo-router';
 import { fetchQuickDests } from '@/net/files';
+import { askHref } from '@/features/asks/answer';
+import { useAsks } from '@/store/asks';
 import type { PanelTarget } from './target';
 
 export function openInPanel(target: PanelTarget): void {
   router.push({ pathname: '/panel', params: { kind: target.kind, target: target.target } });
+}
+
+/**
+ * Ouvrir une question, depuis n'importe quel point d'entree (onglet Asks, Needs you,
+ * cartes en attente, Next, montre de session, Agents) : une fiche de decisions va au
+ * panneau, toute autre question a son ecran.
+ */
+export function openAsk(askId: string, replace = false): void {
+  const href = askHref(askId, useAsks.getState().asks);
+  if (replace) router.replace(href);
+  else router.push(href);
 }
 
 /** La liste « Recently opened », seule. */

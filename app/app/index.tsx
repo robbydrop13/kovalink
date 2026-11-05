@@ -64,7 +64,8 @@ import { retryBoot, useBootError, useBootState } from '@/boot';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
 import { TabBar, TAB_BAR_HEIGHT } from '@/features/home/TabBar';
 import { dictateTarget } from '@/features/home/dictate';
-import { openPanelHistory } from '@/features/panel/open';
+import { openAsk, openPanelHistory } from '@/features/panel/open';
+import { isDecisionAsk } from '@/features/asks/answer';
 import { ErrorScreen } from '@/ui/ErrorScreen';
 import { t } from '@/i18n/en';
 
@@ -187,7 +188,7 @@ export default function SessionsScreen() {
     }
     if (target.kind === 'need') {
       const askId = askIdOf(target.item);
-      if (askId !== null) router.push(`/ask/${askId}`);
+      if (askId !== null) openAsk(askId);
       else if (target.item.pane_id !== null) open(target.item.pane_id);
       return;
     }
@@ -239,10 +240,22 @@ export default function SessionsScreen() {
     const pane = panes.find((p) => p.id === paneId);
     router.push(pane ? paneHref(pane) : `/session/${paneId}`);
   };
+  /**
+   * Le tap sur une ligne d'onglet. Une carte en attente dont la question est une fiche de
+   * decisions ouvre la fiche dans le panneau, jamais la conversation du pane.
+   */
+  const openRow = (paneId: number) => {
+    const pane = panes.find((p) => p.id === paneId);
+    const decision = pane?.awaiting
+      ? dueAsks(asks).find((item) => isDecisionAsk(item) && paneIdOfAsk(item, panes) === paneId)
+      : undefined;
+    if (decision) openAsk(decision.id);
+    else open(paneId);
+  };
   /** `Answer` d'une ligne qui attend : sa question si elle existe, sinon le pane. */
   const openAnswer = (pane: Pane) => {
     const ask = dueAsks(asks).find((item) => paneIdOfAsk(item, panes) === pane.id);
-    if (ask) router.push(`/ask/${ask.id}`);
+    if (ask) openAsk(ask.id);
     else open(pane.id);
   };
   const relaunch = (pane: Pane) =>
@@ -401,7 +414,7 @@ export default function SessionsScreen() {
         group={group}
         prompts={prompts}
         aging={aging}
-        onOpen={open}
+        onOpen={openRow}
         onAnswer={openAnswer}
         answerable={(id) => answerPanes.has(id)}
         onRelaunch={relaunch}
@@ -555,7 +568,7 @@ export default function SessionsScreen() {
           tone="warn"
           text={t.askBanner(askCount)}
           actionLabel={t.askBannerAction}
-          onAction={() => router.push(`/ask/${pendingAsk.id}`)}
+          onAction={() => openAsk(pendingAsk.id)}
         />
       ) : null}
 
@@ -627,7 +640,7 @@ export default function SessionsScreen() {
             items={needs.items}
             now={needs.now}
             onOpenPane={open}
-            onOpenAsk={(id) => router.push(`/ask/${id}`)}
+            onOpenAsk={(id) => openAsk(id)}
             onShowScheduled={() => setTab('scheduled')}
           />
         ) : null}

@@ -15,7 +15,7 @@
 // fiche native de Kova (`sheet`) s'ouvre dans le panneau, ou elle se remplit en entier.
 // Les boutons de la carte restent ceux de Kova (`answer-ask`), sauf le `Done` seul d'une
 // fiche native : il rendrait une fiche vide, elle se rend depuis le panneau.
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 
@@ -31,7 +31,7 @@ import { usePanes } from '@/store/panes';
 import { ImpactStyle, impact } from '@/utils/haptics';
 import { shortAgeMs } from '@/utils/time';
 import { openInPanel } from '@/features/panel/open';
-import { DECISION_DONE, askPanelTarget, koOption, okOption } from './answer';
+import { DECISION_DONE, askPanelTarget, isDecisionAsk, koOption, okOption } from './answer';
 import { BriefSheet } from './BriefSheet';
 
 /** Un agent qui n'a pas eu de reponse depuis deux heures passe en ambre (proto). */
@@ -97,6 +97,7 @@ export function AskCard({
 
   const pane = useMemo(() => paneForAsk(ask, panes), [ask, panes]);
   const panelTarget = askPanelTarget(ask);
+  const decision = isDecisionAsk(ask);
   const fromCard = okOption(ask);
   const ok = ask.sheet === true && fromCard === DECISION_DONE ? null : fromCard;
   const ko = koOption(ask);
@@ -133,13 +134,19 @@ export function AskCard({
   };
 
   return (
-    <View style={styles.card}>
+    <CardFrame decision={decision} onOpen={() => panelTarget !== null && openInPanel(panelTarget)}>
       {showHeader ? (
         <CardHeader from={ask.from} tab={paneTabTitle(pane, tabs)} at={ask.askedAtMs} now={now} />
       ) : null}
 
       {showMessage ? (
-        <Txt variant="callout" color={colors.text.primary} numberOfLines={8} selectable>
+        // Une fiche dit de quoi elle parle sur plusieurs lignes (titre, puis ses decisions) :
+        // rendue entiere, sans `selectable`, qui prendrait le tap de la carte.
+        <Txt
+          variant="callout"
+          color={colors.text.primary}
+          {...(decision ? {} : { numberOfLines: 8, selectable: true })}
+        >
           {ask.message}
         </Txt>
       ) : null}
@@ -277,7 +284,28 @@ export function AskCard({
         onClose={() => setBrief(false)}
         onSend={(action, text) => send(action, text)}
       />
-    </View>
+    </CardFrame>
+  );
+}
+
+/**
+ * Le cadre de la carte. Une fiche de decisions s'ouvre d'un tap n'importe ou : les boutons
+ * de la carte restent des `Pressable` enfants, qui prennent leur tap avant le cadre.
+ * `accessible={false}` garde ces boutons atteignables par VoiceOver, `Open` y suffit.
+ */
+function CardFrame({ decision, onOpen, children }: { decision: boolean; onOpen: () => void; children: ReactNode }) {
+  if (!decision) return <View style={styles.card}>{children}</View>;
+  return (
+    <Pressable
+      accessible={false}
+      onPress={() => {
+        impact(ImpactStyle.Light);
+        onOpen();
+      }}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+    >
+      {children}
+    </Pressable>
   );
 }
 
@@ -495,6 +523,7 @@ const styles = StyleSheet.create({
     padding: space[5],
     gap: space[2],
   },
+  cardPressed: { backgroundColor: colors.bg.pressed },
   header: { flexDirection: 'row', alignItems: 'center', gap: space[2], minHeight: 18 },
   from: { fontFamily: interFamily('600'), flexShrink: 1 },
   tab: { flexShrink: 1 },

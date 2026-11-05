@@ -7,7 +7,7 @@
 // Les gestes sont ceux de la carte de l'onglet Asks (`AskCard`) : check, croix, Brief et
 // report ne sont pas reecrits ici, sinon ils finiraient par diverger. L'ecran garde ce qui
 // n'a de sens que sur une question ouverte : le message entier, le chemin et le geste Copy.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +18,8 @@ import { Button, LinkAction } from '@/ui/Button';
 import { Banner, EmptyState } from '@/ui/States';
 import { Txt } from '@/ui/Txt';
 import { AskCard } from '@/features/asks/AskCard';
+import { isDecisionAsk } from '@/features/asks/answer';
+import { openAsk } from '@/features/panel/open';
 import { dueAsks, useAsks } from '@/store/asks';
 import { isDegraded, useConnection } from '@/store/connection';
 import { useToast } from '@/store/toast';
@@ -37,10 +39,17 @@ export default function AskScreen() {
   const degraded = isDegraded(useConnection((s) => s.link));
   const now = useClock(true, 30_000);
 
+  // Une fiche de decisions ne se lit pas ici : le lien profond d'une notification, ou un
+  // ecran deja ouvert quand la liste arrive, passe la main au panneau.
+  const decision = ask !== null && isDecisionAsk(ask);
+  useEffect(() => {
+    if (decision) openAsk(askId, true);
+  }, [decision, askId]);
+
   /** Apres un geste reussi : la question suivante, sinon on sort. */
   const leave = (): void => {
     const next = others[0];
-    if (next) router.replace(`/ask/${next.id}`);
+    if (next) openAsk(next.id, true);
     else router.back();
   };
 
@@ -67,7 +76,7 @@ export default function AskScreen() {
         <EmptyState title={t.askGoneTitle} body={t.askGoneBody}>
           <Button
             label={others.length > 0 ? t.askBannerAction : t.actionSeeSessions}
-            onPress={() => (others[0] ? router.replace(`/ask/${others[0].id}`) : router.replace('/'))}
+            onPress={() => (others[0] ? openAsk(others[0].id, true) : router.replace('/'))}
           />
         </EmptyState>
       </View>
@@ -119,7 +128,7 @@ export default function AskScreen() {
           <LinkAction
             icon="chevron-right"
             label={t.askMore(others.length)}
-            onPress={() => others[0] && router.replace(`/ask/${others[0].id}`)}
+            onPress={() => others[0] && openAsk(others[0].id, true)}
           />
         ) : null}
       </ScrollView>

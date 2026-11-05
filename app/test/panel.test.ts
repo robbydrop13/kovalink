@@ -20,7 +20,7 @@ import {
   pathTarget,
   targetOfParams,
 } from '@/features/panel/target';
-import { askPanelTarget } from '@/features/asks/answer';
+import { askHref, askPanelTarget, isDecisionAsk } from '@/features/asks/answer';
 
 const paths = (text: string): string[] => findPanelPaths(text).map((m) => m.path);
 
@@ -176,5 +176,31 @@ describe('Open sur la carte d une question', () => {
     assert.deepEqual(askPanelTarget({ ...ask, kind: 'decision', sheet: true, url: 'https://a.com' }), { kind: 'sheet', target: 'q1' });
     assert.deepEqual(askPanelTarget({ ...ask, kind: 'decision', url: 'https://a.com' }), { kind: 'web', target: 'https://a.com' });
     assert.equal(askPanelTarget(ask), null);
+  });
+});
+
+describe('ou mene le tap sur une question', () => {
+  const base = { from: 'a', message: 'Plan: 3 decisions', buttons: ['Done'], input: true, askedAtMs: 0, snoozedUntilMs: 0, due: true, waiting: true, sessionId: 's', cwd: null };
+  const sheet = { ...base, id: 'q-sheet', kind: 'decision', sheet: true, url: null };
+  const page = { ...base, id: 'q-page', kind: 'decision', sheet: false, url: 'https://claude.ai/artifact/x' };
+  const plain = { ...base, id: 'q-plain', buttons: ['OK', 'KO'] };
+  const asks = [sheet, page, plain];
+
+  it('une fiche native va au panneau, en fiche', () => {
+    assert.deepEqual(askHref('q-sheet', asks), { pathname: '/panel', params: { kind: 'sheet', target: 'q-sheet' } });
+  });
+
+  it('une fiche avec une page va au panneau, en page web', () => {
+    assert.deepEqual(askHref('q-page', asks), { pathname: '/panel', params: { kind: 'web', target: 'https://claude.ai/artifact/x' } });
+  });
+
+  it('une autre question, ou une question pas encore connue, garde son ecran', () => {
+    assert.equal(askHref('q-plain', asks), '/ask/q-plain');
+    assert.equal(askHref('q-unknown', asks), '/ask/q-unknown');
+    assert.equal(isDecisionAsk(plain), false);
+  });
+
+  it('une fiche sans page ni fiche native reste une question', () => {
+    assert.equal(isDecisionAsk({ ...base, id: 'q', kind: 'decision', sheet: false, url: null }), false);
   });
 });

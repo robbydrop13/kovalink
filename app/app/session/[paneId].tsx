@@ -103,6 +103,7 @@ import { bootWarn } from '@/env';
 import { useOutboxNotices } from '@/store/outboxNotices';
 import { useToast } from '@/store/toast';
 import { t } from '@/i18n/en';
+import { openAsk } from '@/features/panel/open';
 
 type ViewMode = 'chat' | 'term';
 
@@ -850,7 +851,7 @@ export default function SessionScreen() {
     if (target.kind === 'need') {
       const askId = askIdOf(target.item);
       if (askId !== null) {
-        router.push(`/ask/${askId}`);
+        openAsk(askId);
         return;
       }
       const dest = target.item.pane_id === null ? undefined : paneById(allPanes, target.item.pane_id);

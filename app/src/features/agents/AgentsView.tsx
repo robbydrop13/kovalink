@@ -42,6 +42,7 @@ import {
   type RosterRow,
 } from './agents';
 import { useRoster } from './useRoster';
+import { openAsk } from '@/features/panel/open';
 
 /** Rayon des cartes de l'accueil (proto : 12). */
 const CARD_RADIUS = 12;
@@ -305,7 +306,7 @@ export function AgentsView() {
           meta: shortAgeMs(now - ask.askedAtMs),
           metaColor: colors.status.awaiting,
           dot: FILTER_DOT.needYou,
-          onPress: () => router.push(`/ask/${ask.id}`),
+          onPress: () => openAsk(ask.id),
         }))
       : (filter === 'working' ? working : filter === 'idle' ? split.idle : split.error).map((pane) =>
           paneRow(pane, filter),

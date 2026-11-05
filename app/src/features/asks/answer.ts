@@ -69,3 +69,23 @@ export function askPanelTarget(ask: AskItem): PanelTarget | null {
   if (ask.url) return { kind: 'web', target: ask.url };
   return null;
 }
+
+/** Une fiche de decisions : elle s'ouvre dans le panneau, jamais dans la conversation du pane. */
+export function isDecisionAsk(ask: AskItem): boolean {
+  return (ask.kind === 'decision' || ask.sheet === true) && askPanelTarget(ask) !== null;
+}
+
+/** Ou mene le tap sur une question : le panneau pour une fiche, sinon l'ecran de la question. */
+export type AskHref = string | { pathname: '/panel'; params: { kind: string; target: string } };
+
+/**
+ * La destination d'une question nommee par son id, d'apres les questions connues. Une
+ * question encore inconnue (demarrage a froid depuis une notification) va a son ecran, qui
+ * redirige vers le panneau des que la liste arrive.
+ */
+export function askHref(askId: string, asks: readonly AskItem[]): AskHref {
+  const ask = asks.find((a) => a.id === askId);
+  const target = ask && isDecisionAsk(ask) ? askPanelTarget(ask) : null;
+  if (target) return { pathname: '/panel', params: { kind: target.kind, target: target.target } };
+  return `/ask/${askId}`;
+}
