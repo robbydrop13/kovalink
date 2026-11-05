@@ -5,6 +5,7 @@ import {
   WS_DEAD_AFTER_MISSED_PONGS,
   WS_PING_INTERVAL_MS,
   type AsksMsg,
+  type AttentionEntry,
   type C2S,
   type DevicePrefs,
   type ErrorCode,
@@ -602,7 +603,7 @@ export class Hub {
       asks: snapshot.asks,
       snoozeChoices: snapshot.snoozeChoices,
       supported: snapshot.supported,
-      waitsOnYou: waitsOnYouOf(this.services.panes.all(), snapshot.asks, this.now()),
+      waitsOnYou: waitsOnYouOf(this.services.panes.all(), snapshot.asks, this.now(), this.attention()),
     };
   }
 
@@ -611,7 +612,17 @@ export class Hub {
    * calcule sur les memes donnees pour que les deux ne divergent jamais.
    */
   waitsOnYou(): number {
-    return waitsOnYouOf(this.services.panes.all(), this.services.asks.snapshot().asks, this.now());
+    return waitsOnYouOf(
+      this.services.panes.all(),
+      this.services.asks.snapshot().asks,
+      this.now(),
+      this.attention(),
+    );
+  }
+
+  /** La derniere lecture de la file d'attention, vide quand le harnais n'en a pas. */
+  private attention(): AttentionEntry[] {
+    return this.services.attention?.snapshot() ?? [];
   }
 
   /**
@@ -622,7 +633,7 @@ export class Hub {
   syncCounts(): void {
     if (!this.onCounts) return;
     const { asks } = this.services.asks.snapshot();
-    this.onCounts(countsOf(this.services.panes.all(), asks, this.now()));
+    this.onCounts(countsOf(this.services.panes.all(), asks, this.now(), this.attention()));
   }
 
   /** Les questions des agents ont change : tout le monde remplace sa liste. */
@@ -635,9 +646,10 @@ export class Hub {
 
   /**
    * Une permission ou une question a change sans que la liste des questions bouge :
-   * le compte vit dans le message `asks`, on ne le rediffuse que s'il a bouge.
+   * le compte vit dans le message `asks`, on ne le rediffuse que s'il a bouge. Public :
+   * la relecture de la file d'attention (`main.ts`) passe par la meme porte.
    */
-  private syncWaitsOnYou(): void {
+  syncWaitsOnYou(): void {
     // `pushAsks` pousse deja les comptes : ne les calculer deux fois que s'il n'a pas
     // tourne (une erreur ou un age a change sans que le compte bouge).
     if (this.waitsOnYou() !== this.lastWaitsOnYou) this.pushAsks();

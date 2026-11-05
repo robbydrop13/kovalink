@@ -27,6 +27,9 @@ const RATE_RULES: Record<string, number> = {
   // Agents : le trombinoscope se relit rarement, et une reouverture relit `team list`
   // avant d'agir. 60 suffit large a un pull-to-refresh repete.
   agents: 60,
+  // File d'attention : l'ecran des questions la relit toutes les 10 s quand il est ouvert,
+  // et chaque geste relit `attn list` avant d'agir.
+  attention: 60,
   health: 60,
   pair: 10,
   authFail: 10,

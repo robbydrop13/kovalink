@@ -80,6 +80,7 @@ import { markPaneRead } from '../kova/read.js';
 import { sendToSession } from '../kova/sessionText.js';
 import { TranscriptionError, transcribe } from '../voice/whisper.js';
 import { mintStreamToken } from '../voice/assemblyai.js';
+import { registerAttentionRoutes } from './attentionRoutes.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { registerMiraRoutes } from './miraRoutes.js';
 import { registerPanelRoutes } from './panelRoutes.js';
@@ -1241,6 +1242,11 @@ export async function createHttpServer(
   // Trois routes, servies par `panelRoutes.ts` : l'historique du panneau de Kova (lecture
   // seule) et les fiches de decisions natives (lire, enregistrer, rendre).
   registerPanelRoutes(app, services);
+
+  // --- File d'attention ----------------------------------------------------
+  // Deux routes, servies par `attentionRoutes.ts` : les entrees ouvertes de `attn` et un
+  // geste sur une entree. Elles ne dependent pas de Kova.
+  if (services.attention) registerAttentionRoutes(app, services, services.attention);
 
   // --- WebSocket ---------------------------------------------------------
 

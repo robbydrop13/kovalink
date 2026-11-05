@@ -1,12 +1,18 @@
 // Ce que le daemon sait deja, mis dans la forme que `needs.ts` du protocole attend :
 // les panes avec leur prompt de permission et leur erreur, les questions de `kova ask`,
-// et une seule lecture d'horloge. Kova calcule le meme modele pour sa barre laterale ;
+// les entrees de la file d'attention (`attn`), et une seule lecture d'horloge. Kova calcule le meme modele pour sa barre laterale ;
 // ici il n'alimente que le compte `waitsOnYou` (message WS et pastille de l'icone).
 //
 // Les routines planifiees ne sont pas lues par le daemon : la liste est vide, jamais
 // inventee. Les deux fonctions sont pures et prennent l'horloge, pour se tester sans
 // attendre.
-import { waitsOnYou, type AskItem, type NeedInput, type Pane } from '@kovalink/protocol';
+import {
+  waitsOnYou,
+  type AskItem,
+  type AttentionEntry,
+  type NeedInput,
+  type Pane,
+} from '@kovalink/protocol';
 
 function epochSecondsOf(iso: string | null): number | null {
   if (iso === null) return null;
@@ -21,12 +27,14 @@ function epochSecondsOf(iso: string | null): number | null {
  * `awaiting` (PromptDetector) ou celui que Kova a donne. Une erreur n'a pas d'horodatage
  * chez Kova : `error_since` vaut `now`, l'instant ou on la voit pour la premiere fois.
  * Une question est rattachee a son pane par sa session, ce qui permet de la dedoublonner
- * avec le prompt de permission du meme pane.
+ * avec le prompt de permission du meme pane. Une entree d'attention est datee par son
+ * `ts` ; une date illisible l'ecarte (`attention.ts` les a deja filtrees).
  */
 export function needInputOf(
   panes: readonly Pane[],
   asks: readonly AskItem[],
   nowMs: number,
+  attention: readonly AttentionEntry[] = [],
 ): NeedInput {
   const now = Math.floor(nowMs / 1000);
   const paneOfSession = new Map<string, number>();
@@ -68,6 +76,10 @@ export function needInputOf(
         detail: rest.length > 0 ? rest.join('\n') : null,
       };
     }),
+    attention: attention.flatMap((entry) => {
+      const since = epochSecondsOf(entry.ts);
+      return since === null ? [] : [{ id: entry.id, since, level: entry.level, title: entry.title }];
+    }),
     now,
   };
 }
@@ -76,6 +88,11 @@ export function needInputOf(
  * La pastille de l'icone et le champ `waitsOnYou` du message `asks` : le meme calcul,
  * une seule definition.
  */
-export function waitsOnYouOf(panes: readonly Pane[], asks: readonly AskItem[], nowMs: number): number {
-  return waitsOnYou(needInputOf(panes, asks, nowMs));
+export function waitsOnYouOf(
+  panes: readonly Pane[],
+  asks: readonly AskItem[],
+  nowMs: number,
+  attention: readonly AttentionEntry[] = [],
+): number {
+  return waitsOnYou(needInputOf(panes, asks, nowMs, attention));
 }

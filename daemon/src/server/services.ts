@@ -1,5 +1,6 @@
 import { NONCE_TTL_MS } from '@kovalink/protocol';
 import type { KovalinkConfig } from '../config.js';
+import type { AttentionBoard } from '../attention.js';
 import type { AskBoard } from '../kova/asks.js';
 import type { KovaIpc } from '../kova/ipc.js';
 import type { KeyGate } from '../kova/keygate.js';
@@ -61,6 +62,11 @@ export interface Services {
   refs: PromptRefs;
   /** Les questions des agents (`kova ask`) lues sur la carte de Kova. */
   asks: AskBoard;
+  /**
+   * La file d'attention (`attn`). Optionnelle : les harnais de test n'en ont pas, et
+   * `waitsOnYou` compte alors sans elle.
+   */
+  attention?: AttentionBoard;
   /** `answerPrompt()` lie a ses dependances : le SEUL chemin vers `KeyGate.emitAnswer`. */
   answer: (req: AnswerRequest, deviceId?: string) => Promise<AnswerResult>;
   tailer: TranscriptTailer;
@@ -82,4 +88,9 @@ export interface Services {
    * appareils voient la question disparaitre tout de suite. Pose par `main.ts`.
    */
   refreshAsks?: (reason: string) => Promise<void>;
+  /**
+   * Relecture immediate de la file d'attention, la meme que le sondage de 10 s, puis
+   * rediffusion du message `asks` si le compte `waitsOnYou` a bouge. Pose par `main.ts`.
+   */
+  refreshAttention?: (reason: string) => Promise<void>;
 }

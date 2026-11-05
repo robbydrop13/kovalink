@@ -11,7 +11,7 @@
 //    envoi de CET appareil ;
 // 3. les reglages d'alerte (`onlyValidations`, heures calmes) ne s'appliquent pas : un
 //    push invisible n'a rien a taire. Un appareil sans jeton, lui, ne recoit rien.
-import type { AskItem, CountsPush, Pane } from '@kovalink/protocol';
+import type { AskItem, AttentionEntry, CountsPush, Pane } from '@kovalink/protocol';
 import { logger } from '../logger.js';
 import { waitsOnYouOf } from '../needs.js';
 import { pushTargets, type PushTarget } from './sender.js';
@@ -21,7 +21,7 @@ export const COUNTS_PUSH_MIN_INTERVAL_MS = 60_000;
 
 /** Ce que le daemon sait compter, sans aucun texte. */
 export interface CountsSnapshot {
-  /** Le meme compte que `waitsOnYou` : permissions et questions ouvertes. */
+  /** Le meme compte que `waitsOnYou` : permissions, questions ouvertes, entrees d'attention `now`. */
   asks: number;
   /** Les panes sur une erreur API. */
   errors: number;
@@ -48,6 +48,7 @@ export function countsOf(
   panes: readonly Pane[],
   asks: readonly AskItem[],
   nowMs: number,
+  attention: readonly AttentionEntry[] = [],
 ): CountsSnapshot {
   const now = Math.floor(nowMs / 1000);
   const liveSessions = new Set<string>();
@@ -75,7 +76,13 @@ export function countsOf(
     if (panes.length > 0 && ask.sessionId !== null && !liveSessions.has(ask.sessionId)) ended += 1;
   }
 
-  return { asks: waitsOnYouOf(panes, asks, nowMs), errors, ended, oldestAt };
+  for (const entry of attention) {
+    if (entry.level !== 'now') continue;
+    const since = epochSecondsOf(entry.ts);
+    if (since !== null && (oldestAt === null || since < oldestAt)) oldestAt = since;
+  }
+
+  return { asks: waitsOnYouOf(panes, asks, nowMs, attention), errors, ended, oldestAt };
 }
 
 /** Le trio qui declenche un envoi. `oldestAt` ne le declenche pas, il voyage avec. */

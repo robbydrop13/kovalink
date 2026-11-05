@@ -17,6 +17,7 @@ import { KovaIpc } from './kova/ipc.js';
 import { KeyGate } from './kova/keygate.js';
 import { PaneStore, type WorkingTransition } from './kova/panes.js';
 import { ASK_POLL_MS, AskBoard } from './kova/asks.js';
+import { ATTENTION_CACHE_MS, AttentionBoard, execAttn } from './attention.js';
 import { LAYOUT_POLL_MS, LayoutGate } from './kova/layoutPoll.js';
 import { purgeOrphanRaws, RAW_PURGE_INTERVAL_MS, realRawPurgeDeps } from './kova/rawPurge.js';
 import { logger } from './logger.js';
@@ -120,6 +121,7 @@ async function run(): Promise<void> {
   const prompts = new PromptState(ipc, refs);
   const tailer = new TranscriptTailer();
   const asks = new AskBoard(ipc);
+  const attention = new AttentionBoard(execAttn);
   // Le tailer sert de PREUVE de soumission a KeyGate : un message dans le JSONL est un
   // message que Claude a lu. Il est construit avant, pour cette seule raison.
   const keygate = new KeyGate(ipc, panes, prompts, tailer);
@@ -142,6 +144,7 @@ async function run(): Promise<void> {
     prompts,
     refs,
     asks,
+    attention,
     // Seul chemin vers `KeyGate.emitAnswer` : relecture, hash, awaitingSince, index.
     answer: (req, deviceId) => answerPrompt({ panes, prompts, keygate, nonces }, req, deviceId),
     tailer,
@@ -219,6 +222,27 @@ async function run(): Promise<void> {
   const askTimer = setInterval(() => void refreshAsks('sondage'), ASK_POLL_MS);
   askTimer.unref?.();
   services.refreshAsks = refreshAsks;
+
+  /**
+   * File d'attention (`attn`). Rien ne previent quand une entree arrive ou se ferme : on
+   * relit toutes les 10 s, et le message `asks` repart quand le compte `waitsOnYou` bouge
+   * (une entree `now` ouverte ou fermee). Un `attn` absent ou en echec garde la derniere
+   * lecture, jamais une file videe en silence.
+   */
+  const refreshAttention = async (reason: string): Promise<void> => {
+    try {
+      if (reason !== 'sondage') attention.invalidate();
+      await attention.list();
+    } catch (e) {
+      logger.debug('file d\'attention illisible', { reason, err: (e as Error).message });
+      return;
+    }
+    hub.syncWaitsOnYou();
+  };
+  void refreshAttention('demarrage');
+  const attentionTimer = setInterval(() => void refreshAttention('sondage'), ATTENTION_CACHE_MS);
+  attentionTimer.unref?.();
+  services.refreshAttention = refreshAttention;
 
   /** Relecture complete de `list-panes`, puis diffusion. Jamais sur le chemin d'une requete. */
   const refreshPanes = async (reason: string): Promise<void> => {
@@ -644,6 +668,7 @@ async function run(): Promise<void> {
     clearInterval(rawPurgeTimer);
     clearInterval(layoutTimer);
     clearInterval(askTimer);
+    clearInterval(attentionTimer);
     hub.stopHeartbeat();
     stopPeerRefresh();
     detector.stop();
