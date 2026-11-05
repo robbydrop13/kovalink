@@ -186,7 +186,7 @@ export function AskCard({
           <View style={styles.actions}>
             <TextButton
               label={handoff.run ? t.handoffRun : t.handoffOpen}
-              disabled={unavailable}
+              disabled={unavailable || stepped}
               onPress={() => void step(handoff)}
             />
             {handoff.done !== null ? (
@@ -352,13 +352,16 @@ function CardFrame({ decision, onOpen, children }: { decision: boolean; onOpen: 
   );
 }
 
-/** L'URL ou la commande d'une passation, verbatim, et l'erreur de Kova s'il n'a pas pu la relire. */
+/**
+ * L'URL ou la commande d'une passation, verbatim et en entier (sans plafond de lignes : ce
+ * qui tourne sur le Mac doit se lire tel quel), et l'erreur de Kova s'il n'a pas pu la relire.
+ */
 function HandoffText({ view }: { view: HandoffView }) {
   return (
     <>
       {view.text.length > 0 ? (
         <View style={styles.code}>
-          <Txt variant="monoCode" color={colors.text.primary} selectable numberOfLines={6}>
+          <Txt variant="monoCode" color={colors.text.primary} selectable>
             {view.text}
           </Txt>
         </View>
