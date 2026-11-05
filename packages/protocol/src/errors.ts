@@ -66,6 +66,12 @@ export const ERROR_CODES = [
   'AGENT_NOT_CLOSED',
   'AGENT_BUSY',
   'AGENT_ERROR',
+  // File d'attention : l'identifiant ou le bouton est hors format (400, rien n'est lance),
+  // l'entree n'est plus ouverte (404), un geste tourne deja sur elle (409), ou `attn` a
+  // echoue (502). Sa sortie reste sur le Mac.
+  'ATTENTION_NOT_FOUND',
+  'ATTENTION_BUSY',
+  'ATTENTION_ERROR',
   'INTERNAL',
 ] as const;
 

@@ -49,6 +49,28 @@ export interface AskItem {
   url?: string | null;
   /** Vrai pour une fiche native de Kova : son contenu se lit par `ROUTES.askSheet`. */
   sheet?: boolean;
+  /** Le pas d'une passation (`kind: handoff`), absent sur toute autre question. */
+  handoff?: AskHandoff | null;
+}
+
+/**
+ * Une passation : un seul pas que Robin doit faire pour que l'agent continue (une
+ * connexion dans le navigateur, un reglage macOS). Kova le fait sur le Mac quand on
+ * repond par `step` ; le telephone ne construit jamais la commande, il l'affiche telle
+ * que `handoff.toml` l'ecrit.
+ */
+export interface AskHandoff {
+  /** `Ouvrir` pour une URL, `Lancer` pour une commande declaree : un des `buttons`. */
+  step: string;
+  /** L'URL a ouvrir, http(s). */
+  url: string | null;
+  /** Le nom de l'entree de `handoff.toml`. */
+  run: string | null;
+  /** La commande telle que le fichier l'ecrit, pour la lire. */
+  command: string | null;
+  label: string | null;
+  /** L'entree ne se lit plus (fichier change, nom retire) : le pas echouera. */
+  error: string | null;
 }
 
 /** Un lien de la fiche, http(s). */

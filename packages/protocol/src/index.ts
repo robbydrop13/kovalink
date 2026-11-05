@@ -5,6 +5,7 @@
  * un type, une enumeration ou une constante presente ici.
  */
 export * from './ask.js';
+export * from './attention.js';
 export * from './errors.js';
 export * from './fs.js';
 export * from './keys.js';

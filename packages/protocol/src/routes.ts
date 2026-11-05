@@ -1,4 +1,5 @@
 import type { ActionResponse } from './errors.js';
+import type { TeamStatus } from './attention.js';
 /**
  * Table des routes HTTPS. SOURCE UNIQUE DE VERITE.
  *
@@ -163,6 +164,12 @@ export const ROUTES = {
   // fermeture depuis l'app : cela reste sur le Mac, dans `team`.
   agentsRoster: '/v1/agents/roster',
   agentReopen: (name: string): string => `/v1/agents/${encodeURIComponent(name)}/reopen`,
+
+  // --- File d'attention, pilotee par le CLI `attn` ------------------------
+  // Deux routes : les entrees ouvertes et un geste sur une entree (`Envoyer` transmet le
+  // clic au chief, `Fait` et `Ignorer` la ferment). Aucune creation depuis l'app.
+  attention: '/v1/attention',
+  attentionAct: (id: string): string => `/v1/attention/${encodeURIComponent(id)}/act`,
 } as const;
 
 /** Gabarits Fastify correspondants. Ecrits une fois, a cote des chemins clients. */
@@ -226,6 +233,9 @@ export const ROUTE_PATTERNS = {
   // Equipe d'agents : memes chemins que `ROUTES`, `:name` valide par le daemon.
   agentsRoster: '/v1/agents/roster',
   agentReopen: '/v1/agents/:name/reopen',
+  // File d'attention : memes chemins que `ROUTES`, `:id` valide par le daemon.
+  attention: '/v1/attention',
+  attentionAct: '/v1/attention/:id/act',
 } as const;
 
 /**
@@ -626,6 +636,14 @@ export interface RosterEntry {
   /** Date de creation, heure locale ISO. */
   created?: string;
   state: AgentState;
+  /** Ce que la session declare d'elle-meme (`attn status`), absent quand rien n'est dit. */
+  status?: TeamStatus;
+  /** Sur quoi elle travaille, en quelques mots. */
+  doing?: string;
+  /** Qui ou quoi elle attend, `qui : quoi`. */
+  waitingOn?: string;
+  /** Date ISO de la derniere declaration. */
+  statusAt?: string;
 }
 
 /** Reponse de `GET /v1/agents/roster`. `otherOpen` ne porte que des noms. */
