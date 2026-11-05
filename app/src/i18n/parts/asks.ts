@@ -18,7 +18,6 @@ export const asks = {
   askFailed: (cause: string) => `Not sent. ${cause}`,
   askOffline: 'No answer can be sent while the Mac is unreachable.',
   // Onglet Asks (P05).
-  askListSubtitle: (n: number) => `${n} need you · newest first`,
   askEmptyTitle: 'No open questions',
   askEmptyBody: 'Agents ask here when they need you',
   askSnoozed: (n: number) => `Snoozed ${n}`,
@@ -42,4 +41,24 @@ export const asks = {
   askBriefInstruction: 'Your instruction',
   askBriefHint: 'The instruction goes with the option you picked',
   askBriefNoPick: 'No option picked: sent as your own answer',
+  // File d'attention (`attn`). Mots de Robin, en francais comme dans Kova : les boutons
+  // sont aussi les mots que `attn` et Kova attendent.
+  attnNowTitle: (n: number) => `À toi maintenant (${n})`,
+  attnPointTitle: (n: number) => `Au prochain point (${n})`,
+  attnMemoTitle: (n: number) => `Pour mémoire (${n})`,
+  attnNoTopic: 'Sans sujet',
+  attnOpen: 'Ouvrir',
+  attnSend: 'Envoyer',
+  attnIgnore: 'Ignorer',
+  attnDone: 'Fait',
+  attnSending: 'Envoi…',
+  attnSent: (from: string) => `Envoyé, ${from} s'en occupe`,
+  attnFailed: (cause: string) => `Pas envoyé. ${cause}`,
+  attnRowA11y: (title: string, from: string, age: string) => `${title}, ${from}, ${age}`,
+  // Passation (`kova ask --open` / `--run`) : le pas se fait sur le Mac, puis `Fait`.
+  handoffOpen: 'Ouvrir',
+  handoffRun: 'Lancer sur le Mac',
+  handoffDone: 'Fait',
+  handoffStepDone: 'Fait sur le Mac, réponds Fait une fois terminé',
+  handoffUnreadable: (why: string) => `Commande illisible sur le Mac : ${why}`,
 } as const;

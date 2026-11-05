@@ -17,6 +17,9 @@ import {
   type AskSnoozeRequest,
   type AskSnoozeResponse,
   type AsksResponse,
+  type AttentionActRequest,
+  type AttentionActResponse,
+  type AttentionResponse,
   type KovaLaunchResponse,
   type KovaPanelHistoryResponse,
   type KovaNewTabRequest,
@@ -496,4 +499,24 @@ export function fetchAgentsRoster(timeoutMs = 25_000): Promise<AgentsRosterRespo
  */
 export function postAgentReopen(name: string, timeoutMs = 50_000): Promise<AgentActionResponse> {
   return request(ROUTES.agentReopen(name), { method: 'POST', timeoutMs });
+}
+
+// --- File d'attention (`attn`) ----------------------------------------------
+
+/** Les entrees ouvertes. Le daemon garde sa lecture 10 s. */
+export function fetchAttention(timeoutMs = 15_000): Promise<AttentionResponse> {
+  return request(ROUTES.attention, { timeoutMs });
+}
+
+/**
+ * Un geste sur une entree : `Envoyer` (le clic part au chief), `Fait` ou `Ignorer` (elle
+ * se ferme). Le daemon construit l'argv de `attn` ; un refus (400, 404, 409, 502) leve un
+ * `HttpError`. `attn act` peut attendre que le chief recoive le clic : 25 s.
+ */
+export function postAttentionAct(
+  id: string,
+  body: AttentionActRequest,
+  timeoutMs = 25_000,
+): Promise<AttentionActResponse> {
+  return request(ROUTES.attentionAct(id), { method: 'POST', body, timeoutMs });
 }
