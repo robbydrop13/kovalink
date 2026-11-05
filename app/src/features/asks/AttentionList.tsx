@@ -70,7 +70,8 @@ export function AttentionRow({
   return (
     <View style={styles.card} accessibilityLabel={t.attnRowA11y(entry.title, entry.from, age)}>
       <View style={styles.header}>
-        <StatusGlyph state="awaiting" size={8} />
+        {/* Ambre pour ce qui attend maintenant, neutre pour le prochain point. */}
+        <StatusGlyph state={entry.level === 'now' ? 'awaiting' : 'idle'} size={8} />
         <Txt variant="footnote" color={colors.text.primary} numberOfLines={1} style={styles.from}>
           {entry.from}
         </Txt>

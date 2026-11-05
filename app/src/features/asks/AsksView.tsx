@@ -34,7 +34,7 @@ import { useClock } from '@/utils/useClock';
 import { NotifyType, notify } from '@/utils/haptics';
 import { clockTime } from '@/utils/time';
 import { AskCard, PermissionCard, paneTabTitle } from './AskCard';
-import { attentionAtMs, attentionSections } from './attention';
+import { asksScreenEmpty, attentionAtMs, attentionSections } from './attention';
 import { AttentionRow, MemoSection, PointSection } from './AttentionList';
 import { useAttention } from './useAttention';
 
@@ -197,7 +197,7 @@ export function AsksView() {
           </Txt>
         ) : null}
 
-        {feed.length === 0 ? (
+        {asksScreenEmpty(feed.length, sections) ? (
           <EmptyState icon="check-circle" title={t.askEmptyTitle} body={t.askEmptyBody} />
         ) : null}
 

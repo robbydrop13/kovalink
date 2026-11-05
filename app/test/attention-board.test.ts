@@ -8,6 +8,7 @@ import {
   attentionButtonEnabled,
   attentionButtons,
   attentionOpenTarget,
+  asksScreenEmpty,
   attentionSections,
   phaseAfterSendFailure,
 } from '@/features/asks/attention';
@@ -64,6 +65,13 @@ describe('attention : sections et comptes', () => {
     // Le compte est la longueur de ce que la section liste, tous groupes confondus.
     assert.equal(s.pointCount, s.point.reduce((n, g) => n + g.entries.length, 0));
     assert.equal(s.pointCount, 5);
+  });
+
+  it('l etat vide ne s affiche que si rien du tout n attend, point et memo compris', () => {
+    assert.equal(asksScreenEmpty(0, attentionSections([])), true);
+    assert.equal(asksScreenEmpty(0, attentionSections([entry({ level: 'point' })])), false);
+    assert.equal(asksScreenEmpty(0, attentionSections([entry({ level: 'memo' })])), false);
+    assert.equal(asksScreenEmpty(1, attentionSections([])), false);
   });
 
   it('une file vide ne donne rien a afficher', () => {

@@ -64,6 +64,15 @@ export function attentionSections(entries: readonly AttentionEntry[]): Attention
 }
 
 /**
+ * Rien du tout a montrer : ni question, ni permission, ni entree d'attention a aucun
+ * niveau. Seul ce cas affiche l'etat vide ; une file qui n'a que du `point` ou du `memo`
+ * montre ses sections, sans « aucune question » au dessus.
+ */
+export function asksScreenEmpty(feedLength: number, sections: AttentionSections): boolean {
+  return feedLength === 0 && sections.now.length === 0 && sections.pointCount === 0 && sections.memo.length === 0;
+}
+
+/**
  * Ce que `Ouvrir` ouvre dans le panneau : une URL http(s), ou un fichier `.md` / `.html`
  * du Mac (absolu ou en `~/`), l'ancre retiree. Un texte libre ou un autre fichier : rien,
  * et la ligne n'offre pas `Ouvrir`. L'app ne peut pas savoir si le fichier existe : le
