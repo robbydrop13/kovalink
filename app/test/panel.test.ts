@@ -12,6 +12,7 @@ import {
   setNote,
   stateFromDraft,
 } from '@/features/panel/sheetAnswers';
+import { planImages } from '@/features/panel/imagePlan';
 import {
   codePanelPath,
   expandHome,
@@ -202,5 +203,33 @@ describe('ou mene le tap sur une question', () => {
 
   it('une fiche sans page ni fiche native reste une question', () => {
     assert.equal(isDecisionAsk({ ...base, id: 'q', kind: 'decision', sheet: false, url: null }), false);
+  });
+});
+
+describe('images d une option de fiche', () => {
+  it('montre deux images au plus, et dit pourquoi les autres manquent', () => {
+    const plan = planImages([
+      { label: "Aujourd'hui", path: '/Users/me/before.PNG' },
+      { label: 'Avec la decision', path: '/Users/me/after.webp' },
+      { label: 'Third', path: '/Users/me/third.png' },
+    ]);
+    assert.deepEqual(plan.shown.map((i) => i.path), ['/Users/me/before.PNG', '/Users/me/after.webp']);
+    assert.deepEqual(plan.notes, ['1 more image left out: an option shows 2 at most']);
+  });
+
+  it('laisse de cote un chemin relatif ou une extension inconnue, avec une note', () => {
+    const plan = planImages([
+      { label: 'Rel', path: 'shots/a.png' },
+      { label: '', path: '/Users/me/doc.svg' },
+    ]);
+    assert.deepEqual(plan.shown, []);
+    assert.deepEqual(plan.notes, [
+      'Image Rel not shown: the path is not absolute',
+      'Image /Users/me/doc.svg not shown: not a png, jpg, webp or gif file',
+    ]);
+  });
+
+  it('ne montre rien pour une option sans images', () => {
+    assert.deepEqual(planImages(undefined), { shown: [], notes: [] });
   });
 });

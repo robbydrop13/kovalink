@@ -139,6 +139,20 @@ export async function fileUrl(path: string, download = false): Promise<{ url: st
 }
 
 /**
+ * Taille d'un fichier du Mac, lue par un `fs/read` d'un seul octet (`Range: bytes=0-0`) :
+ * contrairement à un `HEAD`, un refus revient avec son corps, donc avec sa cause (un
+ * chemin en liste noire, un fichier absent). Sert aux images d'une fiche de décisions.
+ */
+export async function fileSize(path: string): Promise<number> {
+  const { url, headers } = await fileUrl(path);
+  const res = await fetch(url, { headers: { ...headers, range: 'bytes=0-0' } });
+  if (!res.ok) throw await readError(res, ROUTES.fsRead);
+  await res.arrayBuffer().catch(() => undefined);
+  const total = Number(res.headers.get('content-range')?.split('/')[1] ?? res.headers.get('content-length'));
+  return Number.isFinite(total) ? total : 0;
+}
+
+/**
  * Empreinte et taille annoncées par le Mac, lues par un `HEAD ?digest=true` AVANT le
  * téléchargement (CA-101, sens Mac vers iPhone). `File.downloadFileAsync` n'expose pas
  * les en-têtes de réponse, d'où cette requête séparée. Le daemon calcule l'empreinte en

@@ -26,6 +26,15 @@ export const panel = {
   panelSheetGone: 'This sheet is no longer waiting: it was answered on the Mac',
   panelSheetDraftFailed: (cause: string) => `Draft not saved. ${cause}`,
   panelSheetFailed: (cause: string) => `Not sent. ${cause}`,
+  panelSheetImageNotShown: (name: string, why: string) => `Image ${name} not shown: ${why}`,
+  panelSheetImageNotAbsolute: 'the path is not absolute',
+  panelSheetImageType: 'not a png, jpg, webp or gif file',
+  panelSheetImageUnreadable: 'the file does not read as an image',
+  panelSheetImageTooLarge: (mb: number) => `larger than ${mb} MB`,
+  panelSheetImagesExtra: (n: number, max: number) =>
+    `${n} more image${n === 1 ? '' : 's'} left out: an option shows ${max} at most`,
+  panelSheetImageA11y: (label: string) => `${label}, tap to enlarge`,
+  panelSheetImageClose: 'Close image',
   askOpenSheet: 'Open',
   askOpenSheetA11y: (from: string) => `Open the decisions of ${from}`,
 } as const;

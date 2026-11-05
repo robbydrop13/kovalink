@@ -2,6 +2,8 @@
 // telephone : chaque decision et ses options (la recommandee marquee), une note libre par
 // decision, une note globale, puis Done.
 //
+// Une option peut montrer deux images (avant / apres), lues sur le Mac : `SheetImages`.
+//
 // Le brouillon part a Kova au fil de la saisie (`done: false`, l'etat entier, il remplace
 // le precedent) : la fiche reprend la ou elle en etait, sur le Mac comme ici. Done repond
 // a l'agent ; les decisions restees ouvertes deviennent une question de suite dans Asks.
@@ -38,6 +40,7 @@ import {
   type SheetState,
 } from './sheetAnswers';
 import { usePanelOpener } from './open';
+import { SheetImages } from './SheetImages';
 
 /** Delai entre la derniere frappe et l'enregistrement du brouillon. */
 const DRAFT_DEBOUNCE_MS = 800;
@@ -257,8 +260,14 @@ function DecisionCard({
   onNote: (note: string) => void;
 }) {
   const options = [
-    ...decision.options.map((o) => ({ id: o.id, label: o.label, detail: o.detail ?? '', reco: o.reco === true })),
-    { id: SHEET_OTHER, label: t.panelSheetOther, detail: t.panelSheetOtherHint, reco: false },
+    ...decision.options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      detail: o.detail ?? '',
+      reco: o.reco === true,
+      images: o.images,
+    })),
+    { id: SHEET_OTHER, label: t.panelSheetOther, detail: t.panelSheetOtherHint, reco: false, images: undefined },
   ];
   return (
     <View style={styles.card}>
@@ -307,6 +316,7 @@ function DecisionCard({
                   {o.detail}
                 </Txt>
               ) : null}
+              <SheetImages images={o.images} />
             </View>
           </Pressable>
         );
