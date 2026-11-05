@@ -199,6 +199,9 @@ export const sessions = {
   agentsBusy: 'Already opening, wait a moment',
   agentsRowHint: 'Opens this session',
   agentsOpenHint: 'Asks team to reopen this session on the Mac',
+  // Etat declare d'une session (`attn status`) : le mot de la liste fermee, tel quel.
+  teamStatusWord: (status: string) => status,
+  teamWaitingOn: (who: string) => `attend : ${who}`,
   sessionsBootFailedTitle: 'Could not start',
   sessionsBootFailedHint: 'Local storage did not respond. Retry, then relaunch the app if the error persists.',
   sessionsOfflineBanner: (time: string) => `iPhone offline, last state at ${time}`,

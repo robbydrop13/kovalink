@@ -5,7 +5,9 @@
 // « Need you » vient du compte `waitsOnYou` (permissions comprises), avec les questions
 // dues en repli quand le daemon est plus ancien. Le trombinoscope est une lecture de
 // `team list --json` sur le Mac : il se relit a l'ouverture et chaque minute, et un seul
-// geste y est possible, rouvrir une session fermee, toujours confirme.
+// geste y est possible, rouvrir une session fermee, toujours confirme. Une session ouverte
+// qui declare son etat (`attn status`) le montre en une ligne : glyphe, mot, ce qu'elle
+// attend.
 import { useMemo, useState, type ReactNode } from 'react';
 import {
   ActionSheetIOS,
@@ -22,6 +24,7 @@ import type { Pane } from '@/protocol';
 import { colors, layout, radius, space } from '@/theme';
 import { Banner, SkeletonList } from '@/ui/States';
 import { Txt, interFamily } from '@/ui/Txt';
+import { Icon } from '@/ui/Icon';
 import { TAB_BAR_HEIGHT } from '@/features/home/TabBar';
 import { paneHref, paneLabel } from '@/features/sessions/SessionRow';
 import { tabTint } from '@/features/sessions/TabGroupView';
@@ -42,6 +45,7 @@ import {
   type RosterRow,
 } from './agents';
 import { useRoster } from './useRoster';
+import { teamStatusLine, type StatusTone } from './teamStatus';
 import { openAsk } from '@/features/panel/open';
 
 /** Rayon des cartes de l'accueil (proto : 12). */
@@ -69,6 +73,14 @@ const FILTER_TITLE: Record<AgentFilter, string> = {
   needYou: t.agentsNeedYou,
   idle: t.agentsIdle,
   error: t.agentsError,
+};
+
+const TONE_COLOR: Record<StatusTone, string> = {
+  awaiting: colors.status.awaiting,
+  error: colors.status.error,
+  working: colors.status.working,
+  success: colors.status.success,
+  muted: colors.text.tertiary,
 };
 
 function SectionHeader({ title, meta }: { title: string; meta?: string }) {
@@ -186,7 +198,13 @@ function RosterCard({
       ) : (
         rows.map((row, index) => {
           const role = row.entry.role;
-          const line = row.open ? role : [role, t.agentsNotOpen].filter((part) => part.length > 0).join(' · ');
+          const status = row.open ? teamStatusLine(row.entry) : null;
+          const line =
+            status !== null
+              ? status.text
+              : row.open
+                ? role
+                : [role, t.agentsNotOpen].filter((part) => part.length > 0).join(' · ');
           const dotColor =
             row.entry.state === 'working'
               ? colors.status.working
@@ -202,9 +220,18 @@ function RosterCard({
                 <Txt variant="callout" color={colors.text.primary} numberOfLines={1} style={styles.rowTitle}>
                   {row.entry.name}
                 </Txt>
-                <Txt variant="footnote" color={colors.text.tertiary} numberOfLines={1}>
-                  {line}
-                </Txt>
+                {status !== null ? (
+                  <View style={styles.statusLine}>
+                    <Icon name={status.glyph} size={12} color={TONE_COLOR[status.tone]} />
+                    <Txt variant="footnote" color={colors.text.tertiary} numberOfLines={1} style={styles.statusText}>
+                      {status.text}
+                    </Txt>
+                  </View>
+                ) : (
+                  <Txt variant="footnote" color={colors.text.tertiary} numberOfLines={1}>
+                    {line}
+                  </Txt>
+                )}
               </View>
             </>
           );
@@ -476,6 +503,8 @@ export function AgentsView() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
+  statusText: { flexShrink: 1 },
   content: { paddingHorizontal: layout.screenPaddingH, paddingTop: space[1], gap: space[6] },
   subtitle: { paddingHorizontal: space[1] },
   section: { gap: space[3] },
