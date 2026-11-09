@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import type { TranscribeResponse } from '@kovalink/protocol';
 import { logger } from '../logger.js';
 import { paths } from '../paths.js';
+import { loadKeyterms } from './assemblyai.js';
 
 export const OPENAI_TRANSCRIPTIONS_URL = 'https://api.openai.com/v1/audio/transcriptions';
 export const WHISPER_MODEL = 'gpt-4o-transcribe';
@@ -140,6 +141,17 @@ function reasonFor(status: number, message: string, kind: string, converted: boo
 }
 
 /**
+ * Consigne envoyee avec l'audio. Un clip de 2 ou 3 s (la montre) laisse le modele
+ * hesiter malgre `language=fr` : le 09/11, "C'est un test" est revenu en italien. Une
+ * phrase francaise et le glossaire de la dictee en direct l'ancrent.
+ */
+export function whisperPrompt(keyterms: string[]): string {
+  const base = 'Dictée en français de Robin, parfois avec des mots anglais.';
+  const terms = keyterms.slice(0, 60).join(', ');
+  return terms ? `${base} Vocabulaire : ${terms}.` : base;
+}
+
+/**
  * Transcrit un enregistrement. `audio` est le corps complet (10 Mo max, verifie par la
  * route), `mime` son type. Rend le texte ; `response_format=json` ne donne ni langue ni duree.
  */
@@ -147,7 +159,7 @@ export async function transcribe(
   audio: Buffer,
   mime: string,
   filename: string,
-  deps: { fetch?: Fetch; key?: string | null; timeoutMs?: number; convert?: Convert } = {},
+  deps: { fetch?: Fetch; key?: string | null; timeoutMs?: number; convert?: Convert; keyterms?: string[] } = {},
 ): Promise<TranscribeResponse> {
   const key = deps.key === undefined ? readOpenaiKey() : deps.key;
   if (!key) {
@@ -180,6 +192,7 @@ export async function transcribe(
   form.append('file', new Blob([new Uint8Array(payload)], { type: payloadMime }), payloadName);
   form.append('model', WHISPER_MODEL);
   form.append('language', WHISPER_LANGUAGE);
+  form.append('prompt', whisperPrompt(deps.keyterms ?? loadKeyterms()));
   form.append('response_format', 'json');
 
   let res: Response;
