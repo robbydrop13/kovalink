@@ -6,6 +6,8 @@ private let targets = ["claap-agent", "perso-agent"]
 
 /// En dessous, un appui est un tap : rien n'est envoyé.
 private let minHold: TimeInterval = 0.5
+/// Ce que le micro garde après le relâché.
+private let tailAfterRelease: TimeInterval = 0.35
 
 /// Un bouton par session : appuyer et tenir enregistre, relâcher envoie. Pas de clavier, pas
 /// de confirmation : l'iPhone fait transcrire l'audio par le daemon et relaie le texte.
@@ -22,6 +24,8 @@ struct ContentView: View {
     /// Le dernier enregistrement qui n'est pas passé. Retry le renvoie avec le même nonce :
     /// le daemon ignore un doublon si le premier envoi était en fait arrivé.
     @State private var retry: Take?
+    /// Le micro tourne encore un instant après le relâché, pour ne pas couper le dernier mot.
+    @State private var finishing = false
 
     struct Take: Equatable {
         let file: URL
@@ -121,7 +125,7 @@ struct ContentView: View {
     // MARK: Appui
 
     private func press(_ target: String) {
-        guard pressed == nil, !sending else { return }
+        guard pressed == nil, !sending, !finishing else { return }
         pressed = target
         recorder.start { ok in
             // Relâché pendant la demande du micro : l'appui est déjà compté comme un tap. Si un
@@ -150,8 +154,17 @@ struct ContentView: View {
         guard let target = pressed else { return }
         pressed = nil
         recordingSince = nil
+        finishing = true
+        // Le doigt se lève souvent sur la dernière syllabe : 0,35 s de plus la garde.
+        DispatchQueue.main.asyncAfter(deadline: .now() + tailAfterRelease) {
+            finishing = false
+            finish(target)
+        }
+    }
+
+    private func finish(_ target: String) {
         let take = recorder.stop()
-        guard let take, take.duration >= minHold else {
+        guard let take, take.duration >= minHold + tailAfterRelease else {
             if let take { try? FileManager.default.removeItem(at: take.url) }
             WKInterfaceDevice.current().play(.click)
             state = .tooShort

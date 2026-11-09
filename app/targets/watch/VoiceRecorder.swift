@@ -21,6 +21,12 @@ final class VoiceRecorder {
     private var recorder: AVAudioRecorder?
     private var startedAt: Date?
 
+    /// La catégorie posée d'avance : à l'appui il ne reste qu'à activer la session, et le
+    /// début de la phrase n'est plus perdu pendant ce réglage.
+    init() {
+        try? AVAudioSession.sharedInstance().setCategory(.record, mode: .default)
+    }
+
     /// Demande le micro au premier appel, puis enregistre. `completion` sur la file principale.
     func start(completion: @escaping (Bool) -> Void) {
         AVAudioApplication.requestRecordPermission { granted in
