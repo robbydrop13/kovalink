@@ -5,7 +5,8 @@ import WidgetKit
 /// Le seul canal de la montre : l'iPhone, par WatchConnectivity. L'iPhone relaie au daemon.
 ///
 /// Message envoyé : `kind=send`, `session`, `text`, `nonce`. Réponse : `ok`, puis `session`
-/// (le nom résolu) ou `error` (une phrase lisible, déjà rédigée par l'iPhone).
+/// (le nom résolu) ou `error` (une phrase lisible, déjà rédigée par l'iPhone). La voix part
+/// en `kind=audio`, voir `send(audio:)`.
 final class PhoneLink: NSObject, ObservableObject, WCSessionDelegate {
     /// Une seule instance, et c'est elle qui porte le délégué `WCSession` : elle doit vivre
     /// dès le lancement du processus, y compris quand iOS réveille l'app en arrière-plan
@@ -50,6 +51,70 @@ final class PhoneLink: NSObject, ObservableObject, WCSessionDelegate {
                 errorHandler: { error in done(.failed(error.localizedDescription)) }
             )
         }
+    }
+
+    /// Une tranche d'audio par message. La taille maximale d'un message n'est pas documentée
+    /// (`WCError.payloadTooLarge`) ; `transferFile` n'existe pas en simulateur et ne promet
+    /// pas de réveiller l'iPhone, là où `sendMessage` le fait.
+    private static let audioChunkBytes = 48 * 1024
+    /// Joignabilité, tranches, transcription (130 s au plus côté iPhone) et relais compris.
+    private static let audioTimeout: TimeInterval = 180
+
+    /// Envoie un enregistrement à l'iPhone, qui le fait transcrire par le daemon puis relaie le
+    /// texte à la session, comme `send(text:)`.
+    ///
+    /// Message : `kind=audio`, `id` (propre à cet essai : un Retry ne réécrit jamais le fichier
+    /// d'un essai encore en cours sur l'iPhone), `offset`, `chunk`, `last`, et sur la dernière
+    /// tranche `session` et `nonce`. Les tranches partent une à une, chacune attend sa réponse : l'iPhone
+    /// les écrit dans l'ordre, et ne répond avec l'issue finale qu'à la dernière.
+    func send(audio file: URL, to session: String, nonce: String, completion: @escaping (Outcome) -> Void) {
+        // Une seule issue. Une réponse qui ne vient jamais (mesuré en simulateur : l'iPhone
+        // éteint passe pour joignable) ne doit pas laisser les boutons bloqués.
+        var finished = false
+        let done: (Outcome) -> Void = { outcome in
+            DispatchQueue.main.async {
+                guard !finished else { return }
+                finished = true
+                completion(outcome)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.audioTimeout) { done(.failed("No answer from the iPhone")) }
+        guard WCSession.isSupported() else { return done(.failed("WatchConnectivity unavailable")) }
+        guard let data = try? Data(contentsOf: file), !data.isEmpty else { return done(.failed("Recording lost")) }
+        whenReachable(deadline: Date().addingTimeInterval(Self.reachabilityWait)) { reachable in
+            guard reachable else { return done(.failed("iPhone unreachable")) }
+            let attempt = UUID().uuidString
+            self.sendChunk(of: data, from: 0, attempt: attempt, to: session, nonce: nonce, isOver: { finished }, done: done)
+        }
+    }
+
+    /// `isOver` se lit sur la file principale : passé le délai, la chaîne s'arrête au lieu de
+    /// faire transcrire et livrer un message que la montre a déjà déclaré en échec.
+    private func sendChunk(
+        of data: Data, from offset: Int, attempt: String, to session: String, nonce: String,
+        isOver: @escaping () -> Bool, done: @escaping (Outcome) -> Void
+    ) {
+        let end = min(offset + Self.audioChunkBytes, data.count)
+        let last = end == data.count
+        var message: [String: Any] = ["kind": "audio", "id": attempt, "offset": offset, "chunk": data.subdata(in: offset..<end), "last": last]
+        if last {
+            message["session"] = session
+            message["nonce"] = nonce
+        }
+        WCSession.default.sendMessage(
+            message,
+            replyHandler: { reply in
+                guard reply["ok"] as? Bool == true else {
+                    return done(.failed(reply["error"] as? String ?? "Refused by the Mac"))
+                }
+                if last { return done(.delivered(session: reply["session"] as? String ?? session)) }
+                DispatchQueue.main.async {
+                    guard !isOver() else { return }
+                    self.sendChunk(of: data, from: end, attempt: attempt, to: session, nonce: nonce, isOver: isOver, done: done)
+                }
+            },
+            errorHandler: { error in done(.failed(error.localizedDescription)) }
+        )
     }
 
     private func whenReachable(deadline: Date, _ then: @escaping (Bool) -> Void) {
