@@ -8,12 +8,15 @@ import WatchConnectivity
 ///
 /// Message attendu de la montre : `kind=send`, `session`, `text`, `nonce`. Reponse a la
 /// montre : `ok` puis `session` (nom resolu par le daemon) ou `error` (phrase courte,
-/// affichee telle quelle).
+/// affichee telle quelle). La voix arrive en `kind=audio`, voir `receiveAudio`.
 final class WatchRelay: NSObject, WCSessionDelegate {
     static let shared = WatchRelay()
 
     /// `ROUTES.sessionText` de `packages/protocol/src/routes.ts`.
     private static let sessionTextPath = "/v1/sessions/text"
+    /// `ROUTES.transcribe` et `TRANSCRIBE_MAX_BYTES` de `packages/protocol/src/routes.ts`.
+    private static let transcribePath = "/v1/transcribe"
+    private static let transcribeMaxBytes = 10 * 1024 * 1024
     private static let keychainService = "io.claap.kovalink.watch-relay"
     private static let keychainAccount = "config"
 
@@ -153,19 +156,29 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
-        guard message["kind"] as? String == "send",
-              let target = message["session"] as? String,
-              let text = message["text"] as? String,
-              let nonce = message["nonce"] as? String
-        else {
-            return replyHandler(["ok": false, "error": "Unknown request, update KovaLink"])
+        switch message["kind"] as? String {
+        case "send":
+            guard let target = message["session"] as? String,
+                  let text = message["text"] as? String,
+                  let nonce = message["nonce"] as? String
+            else { break }
+            log.notice("message for \(target, privacy: .public)")
+            return respond(replyHandler) { reply in self.post(session: target, text: text, nonce: nonce, reply: reply) }
+        case "audio":
+            return receiveAudio(message, replyHandler: replyHandler)
+        default:
+            break
         }
-        // L'app peut avoir été réveillée en arrière-plan rien que pour ce message : on garde
-        // le processus en vie jusqu'à la réponse. `performExpiringActivity` est sûr depuis la
-        // file de WatchConnectivity, contrairement à `UIApplication.shared`.
-        log.notice("message for \(target, privacy: .public)")
-        // Une seule réponse à la montre, quel que soit le chemin (réponse du Mac ou temps
-        // d'arrière-plan retiré par iOS).
+        replyHandler(["ok": false, "error": "Unknown request, update KovaLink"])
+    }
+
+    /// Une seule réponse à la montre, quel que soit le chemin (réponse du Mac ou temps
+    /// d'arrière-plan retiré par iOS).
+    ///
+    /// L'app peut avoir été réveillée en arrière-plan rien que pour ce message : on garde le
+    /// processus en vie jusqu'à la réponse. `performExpiringActivity` est sûr depuis la file
+    /// de WatchConnectivity, contrairement à `UIApplication.shared`.
+    private func respond(_ replyHandler: @escaping ([String: Any]) -> Void, work: @escaping (@escaping ([String: Any]) -> Void) -> Void) {
         let lock = NSLock()
         var answered = false
         let answer: ([String: Any]) -> Void = { [log] reply in
@@ -181,11 +194,63 @@ final class WatchRelay: NSObject, WCSessionDelegate {
                 return answer(["ok": false, "error": "iPhone ran out of background time, retry"])
             }
             let done = DispatchSemaphore(value: 0)
-            self.post(session: target, text: text, nonce: nonce) { reply in
+            work { reply in
                 answer(reply)
                 done.signal()
             }
             done.wait()
+        }
+    }
+
+    // MARK: Voix de la montre
+
+    /// Les tranches d'un enregistrement de la montre, dans l'ordre : `id` (un UUID propre à
+    /// chaque essai, pour qu'un Retry n'écrive jamais dans le fichier d'un essai encore en
+    /// cours), `offset`, `chunk`, `last`, et `session` et `nonce` sur la dernière. Elles s'ajoutent à un fichier
+    /// temporaire ; un `offset` qui ne tombe pas sur sa taille veut dire une tranche perdue.
+    /// La dernière part au daemon pour la transcription, puis le texte suit le chemin de
+    /// `kind=send`, avec le nonce du message : le daemon ignore un doublon.
+    private func receiveAudio(_ message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        guard let id = message["id"] as? String, UUID(uuidString: id) != nil,
+              let offset = message["offset"] as? Int,
+              let chunk = message["chunk"] as? Data,
+              let last = message["last"] as? Bool
+        else {
+            return replyHandler(["ok": false, "error": "Unknown request, update KovaLink"])
+        }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("watch-audio-\(id).aac")
+        let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
+        guard offset == 0 || offset == size, offset + chunk.count <= Self.transcribeMaxBytes else {
+            try? FileManager.default.removeItem(at: file)
+            return replyHandler(["ok": false, "error": "Recording incomplete, retry"])
+        }
+        do {
+            if offset == 0 {
+                try chunk.write(to: file, options: .atomic)
+            } else {
+                let handle = try FileHandle(forWritingTo: file)
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                try handle.write(contentsOf: chunk)
+            }
+        } catch {
+            return replyHandler(["ok": false, "error": "iPhone storage error, retry"])
+        }
+        guard last else { return replyHandler(["ok": true]) }
+        guard let target = message["session"] as? String, let nonce = message["nonce"] as? String else {
+            return replyHandler(["ok": false, "error": "Unknown request, update KovaLink"])
+        }
+        log.notice("audio for \(target, privacy: .public) bytes=\(offset + chunk.count)")
+        respond(replyHandler) { reply in
+            self.transcribe(file: file) { result in
+                try? FileManager.default.removeItem(at: file)
+                switch result {
+                case .success(let text):
+                    self.post(session: target, text: text, nonce: nonce, reply: reply)
+                case .failure(let failure):
+                    reply(failure.reply)
+                }
+            }
         }
     }
 
@@ -209,6 +274,57 @@ final class WatchRelay: NSObject, WCSessionDelegate {
             let json = (data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
             reply(Self.outcome(status: status, json: json, asked: session))
         }.resume()
+    }
+
+    /// Une phrase pour la montre, déjà rédigée.
+    struct RelayFailure: Error {
+        let message: String
+        var reply: [String: Any] { ["ok": false, "error": message] }
+    }
+
+    /// `POST /v1/transcribe`, corps brut `audio/aac`, comme la dictée de l'app.
+    private func transcribe(file: URL, completion: @escaping (Result<String, RelayFailure>) -> Void) {
+        guard let config = loadConfig(), let url = URL(string: config.baseUrl + Self.transcribePath) else {
+            return completion(.failure(RelayFailure(message: "Open KovaLink on the iPhone once")))
+        }
+        guard let audio = try? Data(contentsOf: file) else {
+            return completion(.failure(RelayFailure(message: "Recording lost, retry")))
+        }
+        // Au-delà du budget du daemon (120 s chez OpenAI) : un appel lent mais réussi ne doit
+        // pas passer pour un échec, que Retry ferait transcrire une deuxième fois.
+        var request = URLRequest(url: url, timeoutInterval: 130)
+        request.httpMethod = "POST"
+        request.setValue("audio/aac", forHTTPHeaderField: "content-type")
+        request.setValue("Bearer \(config.token)", forHTTPHeaderField: "authorization")
+        request.httpBody = audio
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error {
+                let timedOut = (error as? URLError)?.code == .timedOut
+                return completion(.failure(RelayFailure(message: timedOut ? "Transcription took too long, retry" : "Mac unreachable")))
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let json = (data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+            completion(Self.transcription(status: status, json: json))
+        }.resume()
+    }
+
+    static func transcription(status: Int, json: [String: Any]) -> Result<String, RelayFailure> {
+        switch status {
+        case 200:
+            let text = (json["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? .failure(RelayFailure(message: "Nothing heard")) : .success(text)
+        case 401:
+            return .failure(RelayFailure(message: "Open KovaLink on the iPhone to refresh access"))
+        case 429:
+            return .failure(RelayFailure(message: "Too many sends, wait a moment"))
+        case 503:
+            return .failure(RelayFailure(message: "Transcription is off on the Mac"))
+        default:
+            // Le daemon rédige déjà la raison (plus de crédits OpenAI, limite atteinte...).
+            let message = json["message"] as? String ?? "HTTP \(status)"
+            return .failure(RelayFailure(message: "Transcription failed: \(message)"))
+        }
     }
 
     static func outcome(status: Int, json: [String: Any], asked: String) -> [String: Any] {

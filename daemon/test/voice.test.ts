@@ -74,7 +74,15 @@ describe('client Whisper', () => {
     assert.equal(form.get('model'), 'gpt-4o-transcribe');
     assert.equal(form.get('response_format'), 'json');
     assert.equal(form.get('language'), 'fr');
+    assert.match(String(form.get('prompt')), /^Dictée en français/);
     assert.deepEqual(await sentFile(calls[0]), { name: 'voice.wav', type: 'audio/wav', bytes: 'fake wav bytes' });
+  });
+
+  it('consigne : phrase francaise puis glossaire', async () => {
+    const { fetchImpl, calls } = fakeOpenai();
+    await transcribe(AUDIO, 'audio/mp4', 'voice.m4a', { fetch: fetchImpl, key: 'k', convert: fakeConvert().convert, keyterms: ['Claap', 'Kova'] });
+    const form = calls[0]?.init?.body as FormData;
+    assert.equal(form.get('prompt'), 'Dictée en français de Robin, parfois avec des mots anglais. Vocabulaire : Claap, Kova.');
   });
 
   it('conversion impossible : le fichier d origine part tel quel', async () => {
