@@ -7,6 +7,7 @@
 // Les entrees `now` comptent dans `waitsOnYou` comme une question : la lecture est
 // gardee 10 s, et le daemon la relit au meme rythme pour que la pastille suive.
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -57,17 +58,51 @@ export function attnPath(): string {
 }
 
 /**
+ * Cle de clic d'`attn` (fichier 0600 cree par `attn click-key`), surchargeable par
+ * `KOVALINK_CLICK_KEY_FILE` (tests). Elle prouve a `attn` qu'un geste vient du telephone de
+ * Robin, comme Kova le fait sur le Mac ; sans elle, `attn` ne reconnait le daemon que par
+ * son processus parent, repli qui sera retire.
+ */
+export function clickKeyPath(): string {
+  return process.env['KOVALINK_CLICK_KEY_FILE'] ?? join(homedir(), '.config', 'attn', 'click' + '.key');
+}
+
+/**
+ * L'environnement d'un geste (`act`, `close`) : la cle relue a chaque geste (une cle
+ * changee vaut sans relancer le daemon), passee par l'environnement, jamais en argument
+ * (invisible dans `ps`), avec `ATTN_CLICK_FROM=kovalink`. Une lecture ou une cle absente :
+ * l'environnement du daemon, inchange. Jamais pour `list`.
+ */
+export function attnEnv(argv: readonly string[]): NodeJS.ProcessEnv | undefined {
+  if (argv[0] !== 'act' && argv[0] !== 'close') return undefined;
+  let key = '';
+  try {
+    key = readFileSync(clickKeyPath(), 'utf8').trim();
+  } catch {
+    return undefined;
+  }
+  if (key.length === 0) return undefined;
+  return { ...process.env, ATTN_CLICK_KEY: key, ATTN_CLICK_FROM: 'kovalink' };
+}
+
+/**
  * Executeur par defaut : `execFile`, jamais un shell. Un CLI absent (`ENOENT`) n'a pas de
  * code numerique : il vaut un echec, avec le message de spawn dans `stderr` pour le
  * journal local.
  */
 export const execAttn: Exec = (argv) => {
   const isList = argv[0] === 'list';
+  const env = attnEnv(argv);
   return new Promise((resolve) => {
     execFile(
       attnPath(),
       argv,
-      { timeout: isList ? LIST_TIMEOUT_MS : ACT_TIMEOUT_MS, maxBuffer: MAX_BUFFER, encoding: 'utf8' },
+      {
+        timeout: isList ? LIST_TIMEOUT_MS : ACT_TIMEOUT_MS,
+        maxBuffer: MAX_BUFFER,
+        encoding: 'utf8',
+        ...(env ? { env } : {}),
+      },
       (err, stdout, stderr) => {
         const e = err as (Error & { code?: unknown }) | null;
         const code = e === null ? 0 : typeof e.code === 'number' ? e.code : 1;
