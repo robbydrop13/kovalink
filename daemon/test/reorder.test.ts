@@ -74,6 +74,9 @@ before(async () => {
   ipc = new KovaIpc({ ...realDeps, socketDir: fake.dir, commOf: () => `${KOVA_EXEC}\n` });
   ipc.start();
   await new Promise((r) => ipc.once('ready', r));
+  // Les sondes du demarrage (list-panes, list-tabs, get-pane-content) ne comptent pas
+  // comme des commandes du premier test.
+  fake.received.length = 0;
 });
 after(() => {
   ipc.stop();
