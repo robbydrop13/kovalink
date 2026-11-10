@@ -130,7 +130,18 @@ export class SlackBridge {
           detail: `user=${ev.user ?? '-'} channel=${ev.channel ?? '-'} reason=${auth.reason}`,
         });
       } else {
-        logger.debug('slack: evenement ignore', { reason: auth.reason });
+        // Jamais le contenu : de quoi diagnostiquer un rejet (route, type, origine).
+        logger.debug('slack: evenement ignore', {
+          reason: auth.reason,
+          route,
+          type: ev.type,
+          subtype: ev.subtype ?? null,
+          botId: ev.bot_id ?? null,
+          user: ev.user ?? null,
+          channel: ev.channel ?? null,
+          channelType: ev.channel_type ?? null,
+          ts: ev.ts ?? null,
+        });
       }
       return;
     }
