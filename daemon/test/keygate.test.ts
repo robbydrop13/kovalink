@@ -225,6 +225,17 @@ describe('KeyGate', () => {
     assert.equal(sent[1]?.text, KEY_TABLE.enter);
   });
 
+  it('emitText note la source du message (montre ou telephone) dans l audit', async () => {
+    const { gate } = makeFixture();
+    await gate.emitText(66, 'dicte depuis la montre', 'dev-watch', 'watch');
+    await gate.emitText(66, 'tape sur le telephone', 'dev-phone', 'phone');
+    const lines = auditText()
+      .split('\n')
+      .filter((l) => l.includes('"pane.sendText"') && l.includes('"result":"ok"'));
+    assert.ok(lines.some((l) => l.includes('"deviceId":"dev-watch"') && l.includes('"via":"watch"')));
+    assert.ok(lines.some((l) => l.includes('"deviceId":"dev-phone"') && l.includes('"via":"phone"')));
+  });
+
   it('emitText attend que le composer montre le texte avant le retour chariot (image collee)', async () => {
     // Mesure : Claude Code convertit un chemin d'image en `[Image #n]` en 300 a 700 ms
     // et perd tout retour chariot recu pendant ce temps. Le message du 12 septembre a

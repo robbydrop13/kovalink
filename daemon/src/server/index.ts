@@ -574,7 +574,7 @@ export async function createHttpServer(
       }
       if (!services.nonces.reserve(nonce)) return { applied: false, reason: 'duplicate' };
       try {
-        const res = await services.keygate.emitText(Number(req.params.paneId), text, deviceId);
+        const res = await services.keygate.emitText(Number(req.params.paneId), text, deviceId, 'phone');
         if (!res.applied) services.nonces.release(nonce);
         return res;
       } catch (e) {
@@ -610,7 +610,7 @@ export async function createHttpServer(
       const res = await sendToSession(
         {
           panes: () => services.panes.all(),
-          emitText: (id, t, d) => services.keygate.emitText(id, t, d),
+          emitText: (id, t, d) => services.keygate.emitText(id, t, d, 'watch'),
         },
         session,
         text,

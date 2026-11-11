@@ -19,6 +19,12 @@ export interface AuditEntry {
   direction?: AuditDirection;
   result: 'ok' | 'denied' | 'error';
   /**
+   * Par ou est arrive un message libre : `watch` (POST /v1/sessions/text, relaye par
+   * l'iPhone, donc avec SON deviceId), `phone` (route du pane). Sans lui, une dictee de
+   * la montre et une du micro de l'iPhone laissaient la meme ligne.
+   */
+  via?: 'watch' | 'phone';
+  /**
    * Jamais de contenu. Pour une reponse : l'index et la nature de l'option, jamais
    * le libelle. Pour un message libre : la longueur seulement, jamais le texte.
    */
