@@ -546,3 +546,17 @@ describe('push.sessions : seuls les chiefs sonnent sur le telephone (choix du 11
     assert.deepEqual(notifierWith(undefined).notifier.notify(turnEnd, pane), { kind: 'sent' });
   });
 });
+
+describe('push.sessions pour les questions (kova ask)', async () => {
+  const { sessionNameAllowed } = await import('../src/push/policy.js');
+  const chiefs = DEFAULT_CONFIG.push.sessions;
+  it('une question d une autre session ne sonne pas, celles des chiefs oui', () => {
+    assert.equal(sessionNameAllowed('lem-prd', chiefs), false);
+    assert.equal(sessionNameAllowed('LinkedIn inbox', chiefs), false);
+    assert.equal(sessionNameAllowed('claap-agent', chiefs), true);
+    assert.equal(sessionNameAllowed('perso-agent', chiefs), true);
+  });
+  it('liste vide : tout sonne', () => {
+    assert.equal(sessionNameAllowed('lem-prd', []), true);
+  });
+});

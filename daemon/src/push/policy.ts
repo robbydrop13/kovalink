@@ -122,11 +122,15 @@ export function paneSessionName(pane: Pane): string | null {
   return pane.agent_session_name ?? pane.claude_session_name ?? null;
 }
 
+/** Vrai si cette session (par son nom) a le droit de sonner sur le telephone. */
+export function sessionNameAllowed(name: string | null, allowed: readonly string[] | undefined): boolean {
+  if (!allowed || allowed.length === 0) return true;
+  return name !== null && allowed.includes(name);
+}
+
 /** Vrai si ce pane a le droit de sonner sur le telephone. */
 export function sessionAllowed(pane: Pane, allowed: readonly string[] | undefined): boolean {
-  if (!allowed || allowed.length === 0) return true;
-  const name = paneSessionName(pane);
-  return name !== null && allowed.includes(name);
+  return sessionNameAllowed(paneSessionName(pane), allowed);
 }
 
 export interface NotifierDeps {

@@ -28,7 +28,7 @@ import { PromptDetector, type AwaitingPrompt } from './prompt/detector.js';
 import { PromptRefs } from './prompt/refs.js';
 import { PromptState } from './prompt/state.js';
 import { CountsPusher } from './push/counts.js';
-import { PushNotifier } from './push/policy.js';
+import { PushNotifier, sessionNameAllowed } from './push/policy.js';
 import { PushSender } from './push/sender.js';
 import { startPeerRefresh } from './net/tailscale.js';
 import { BIND_RESCAN_MS, currentBinds } from './security/bind.js';
@@ -216,6 +216,12 @@ async function run(): Promise<void> {
     logger.debug('questions des agents relues', { reason, n: asks.snapshot().asks.length });
     for (const ask of appeared) {
       logger.info('question d\'un agent', { askId: ask.id, from: ask.from, waiting: ask.waiting });
+      // Choix de Robin (11/11) : seuls les chiefs sonnent. La question reste sur la carte
+      // de Kova et dans la liste de KovaLink, seule la notification tombe.
+      if (!sessionNameAllowed(ask.from, cfg().push.sessions)) {
+        logger.info('push de question supprime, session hors de push.sessions', { askId: ask.id, from: ask.from });
+        continue;
+      }
       void push.sendAsk(ask, badge());
     }
   };
