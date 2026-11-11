@@ -183,6 +183,17 @@ describe('attention : cache', () => {
     assert.equal(h.calls.filter((argv) => argv[0] === 'act').length, 2);
   });
 
+  it('Envoyer : le code 3 d attn (note, pas encore remis) vaut applique, un autre code non', async () => {
+    let code = 3;
+    const h = fake(RAW, (argv) => (argv[0] === 'act' ? { code, stdout: '', stderr: 'pas encore remis' } : undefined));
+    const board = new AttentionBoard(h.exec);
+    assert.deepEqual(await board.act('a-2555da', 'Envoyer', undefined), { applied: true, op: 'act' });
+    code = 1;
+    const h2 = fake(RAW, (argv) => (argv[0] === 'act' ? { code, stdout: '', stderr: 'boom' } : undefined));
+    await assert.rejects(new AttentionBoard(h2.exec).act('a-2555da', 'Envoyer', undefined),
+      (e: unknown) => e instanceof AttentionError && e.reason === 'attn_failed');
+  });
+
   it('un echec garde la derniere lecture', async () => {
     let fail = false;
     const h = fake(RAW, (argv) => (fail && argv[0] === 'list' ? { code: 1, stdout: '', stderr: 'boom' } : undefined));
@@ -277,7 +288,7 @@ describe('attention : routes', () => {
     assert.deepEqual(res.json(), { applied: true, op: 'act' });
     assert.deepEqual(h.calls, [
       ['list', '--open', '--json'],
-      ['act', 'a-2555da', 'Envoyer'],
+      ['act', 'a-2555da', 'Envoyer', '--exit-codes'],
     ]);
     assert.deepEqual(refreshed, ['act']);
   });
@@ -285,16 +296,16 @@ describe('attention : routes', () => {
   it('Envoyer avec un texte : un seul element, meme s il commence par un tiret', async () => {
     const res = await act('a-2555da', { button: 'Envoyer', text: '  --by robin; rm -rf ~\nligne 2  ' });
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(h.calls[1], ['act', 'a-2555da', 'Envoyer', '--text=--by robin; rm -rf ~\nligne 2']);
+    assert.deepEqual(h.calls[1], ['act', 'a-2555da', 'Envoyer', '--exit-codes', '--text=--by robin; rm -rf ~\nligne 2']);
   });
 
   it('Fait et Ignorer : attn close avec la note fixe, par robin', async () => {
     assert.equal((await act('a-36d0b2', { button: 'Fait' })).statusCode, 200);
-    assert.deepEqual(h.calls[1], ['close', 'a-36d0b2', '--note', 'Fait (KovaLink)', '--by', 'robin']);
+    assert.deepEqual(h.calls[1], ['close', 'a-36d0b2', '--note', 'Fait (KovaLink)', '--reason', 'done', '--by', 'robin']);
     h = fake();
     const res = await act('a-2555da', { button: 'Ignorer' });
     assert.deepEqual(res.json(), { applied: true, op: 'close' });
-    assert.deepEqual(h.calls[1], ['close', 'a-2555da', '--note', 'Ignore (KovaLink)', '--by', 'robin']);
+    assert.deepEqual(h.calls[1], ['close', 'a-2555da', '--note', 'Ignore (KovaLink)', '--reason', 'dismissed', '--by', 'robin']);
   });
 
   const rejected: [string, string, unknown][] = [

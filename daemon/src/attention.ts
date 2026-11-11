@@ -196,10 +196,13 @@ export function attentionArgv(id: string, button: string, note: string): string[
   if (button === 'Envoyer') {
     // `--text=` en un seul element : un texte qui commence par `-` ne se lit pas comme
     // une option.
-    return note.length > 0 ? ['act', id, 'Envoyer', `--text=${note}`] : ['act', id, 'Envoyer'];
+    // `--exit-codes` : 3 = clic note, pas encore remis (le crochet ou le gardien le remet), pas un echec.
+    const act = ['act', id, 'Envoyer', '--exit-codes'];
+    return note.length > 0 ? [...act, `--text=${note}`] : act;
   }
-  if (button === 'Fait') return ['close', id, '--note', NOTE_DONE, '--by', 'robin'];
-  if (button === 'Ignorer') return ['close', id, '--note', NOTE_IGNORED, '--by', 'robin'];
+  // `--reason` : le jugement de Robin, compte par `attn feedback` comme les croix et coches de Kova.
+  if (button === 'Fait') return ['close', id, '--note', NOTE_DONE, '--reason', 'done', '--by', 'robin'];
+  if (button === 'Ignorer') return ['close', id, '--note', NOTE_IGNORED, '--reason', 'dismissed', '--by', 'robin'];
   return null;
 }
 
@@ -307,7 +310,9 @@ export class AttentionBoard {
         throw new AttentionError('bad_request', `${button} does not apply to a ${entry.kind} entry`);
       }
       const res = await this.exec(argv);
-      if (res.code !== 0) throw new AttentionError('attn_failed', failure(argv[0] ?? '', res));
+      if (res.code !== 0 && !(argv[0] === 'act' && res.code === 3)) {
+        throw new AttentionError('attn_failed', failure(argv[0] ?? '', res));
+      }
       if (button === 'Envoyer') this.sentAt.set(id, this.now());
       for (const [key, at] of this.sentAt) if (this.now() - at >= ATTENTION_RESEND_MS) this.sentAt.delete(key);
       this.invalidate();
