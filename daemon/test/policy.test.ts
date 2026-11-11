@@ -493,3 +493,56 @@ describe('journal a l emission d un push (CA-12)', () => {
     assert.equal(lines.length, 1);
   });
 });
+
+describe('push.sessions : seuls les chiefs sonnent sur le telephone (choix du 11/11)', () => {
+  function notifierWith(allowed: readonly string[] | undefined) {
+    const sent: Prompt[] = [];
+    const notifier = new PushNotifier({
+      isWatchedLive: () => false,
+      isMacFocused: () => false,
+      pane: () => pane,
+      isRefValid: () => true,
+      send: async (prompt) => {
+        sent.push(prompt);
+      },
+      ...(allowed !== undefined ? { allowedSessions: () => allowed } : {}),
+    });
+    return { notifier, sent };
+  }
+  const chiefs = DEFAULT_CONFIG.push.sessions;
+
+  it('la config par defaut ne laisse sonner que claap-agent et perso-agent', () => {
+    assert.deepEqual([...chiefs], ['claap-agent', 'perso-agent']);
+  });
+
+  it('une fin de tour d un pane hors chiefs ne part pas', () => {
+    const h = notifierWith(chiefs);
+    const worker: Pane = { ...pane, agent_session_name: 'kovalink-watch' };
+    assert.deepEqual(h.notifier.notify(turnEnd, worker), { kind: 'suppressed', reason: 'session_not_allowed' });
+    assert.equal(h.sent.length, 0);
+  });
+
+  it('un pane sans nom de session ne sonne pas non plus', () => {
+    const h = notifierWith(chiefs);
+    assert.deepEqual(h.notifier.notify(turnEnd, pane), { kind: 'suppressed', reason: 'session_not_allowed' });
+    assert.equal(h.sent.length, 0);
+  });
+
+  it('une fin de tour de claap-agent part', () => {
+    const h = notifierWith(chiefs);
+    const chief: Pane = { ...pane, agent_session_name: 'claap-agent' };
+    assert.deepEqual(h.notifier.notify(turnEnd, chief), { kind: 'sent' });
+    assert.equal(h.sent.length, 1);
+  });
+
+  it('le nom claude_session_name suffit quand agent_session_name manque', () => {
+    const h = notifierWith(chiefs);
+    const chief: Pane = { ...pane, claude_session_name: 'perso-agent' };
+    assert.deepEqual(h.notifier.notify(turnEnd, chief), { kind: 'sent' });
+  });
+
+  it('liste vide ou absente : tous les panes sonnent', () => {
+    assert.deepEqual(notifierWith([]).notifier.notify(turnEnd, pane), { kind: 'sent' });
+    assert.deepEqual(notifierWith(undefined).notifier.notify(turnEnd, pane), { kind: 'sent' });
+  });
+});

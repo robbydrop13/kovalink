@@ -415,6 +415,7 @@ async function run(): Promise<void> {
     isRefValid: (ref) => refs.resolve(ref) !== null,
     // Badge d'icone : le nombre REEL de panes en attente. Il valait 1 en dur.
     send: (prompt, pane) => push.send(prompt, pane, { cfg: cfg() }, badge()),
+    allowedSessions: () => cfg().push.sessions,
   });
 
   // --- Detection d'un prompt de permission (lot 2, A6) ---------------------

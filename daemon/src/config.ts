@@ -13,6 +13,12 @@ export interface KovalinkConfig {
     minWorkingMsForTurnEnd: number;
     quietHours: boolean;
     onlyValidations: boolean;
+    /**
+     * Sessions dont les fins de tour et questions detectees sonnent sur le telephone,
+     * par `agent_session_name` (ou `claude_session_name`) du pane. Liste vide : toutes.
+     * Les cartes `kova ask` et le pont Slack ne passent pas par ce filtre.
+     */
+    sessions: string[];
   };
   /** Liste noire en ECRITURE. La lecture reste totale (choix de Robin). */
   denyWrite: string[];
@@ -35,6 +41,7 @@ export const DEFAULT_CONFIG: KovalinkConfig = {
     minWorkingMsForTurnEnd: 60_000,
     quietHours: true,
     onlyValidations: false,
+    sessions: ['claap-agent', 'perso-agent'],
   },
   denyWrite: [
     '~/Library/LaunchAgents',

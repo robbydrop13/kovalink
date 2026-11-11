@@ -110,6 +110,23 @@ export interface NotifierPorts {
   /** Faux quand la reference a ete invalidee : le pane a repris la main entre temps. */
   isRefValid: (promptRef: string) => boolean;
   send: (prompt: Prompt, pane: Pane) => Promise<unknown>;
+  /**
+   * Sessions autorisees a sonner (`push.sessions` de la config). Absent ou liste vide :
+   * tous les panes. Lu a chaque evenement, donc un changement de config vaut tout de suite.
+   */
+  allowedSessions?: () => readonly string[];
+}
+
+/** Nom de session du pane, celui que lisent aussi le hook Mac et le pont Slack. */
+export function paneSessionName(pane: Pane): string | null {
+  return pane.agent_session_name ?? pane.claude_session_name ?? null;
+}
+
+/** Vrai si ce pane a le droit de sonner sur le telephone. */
+export function sessionAllowed(pane: Pane, allowed: readonly string[] | undefined): boolean {
+  if (!allowed || allowed.length === 0) return true;
+  const name = paneSessionName(pane);
+  return name !== null && allowed.includes(name);
 }
 
 export interface NotifierDeps {
@@ -130,7 +147,7 @@ const realNotifierDeps: NotifierDeps = {
 
 export type NotifyOutcome =
   | { kind: 'sent' }
-  | { kind: 'suppressed'; reason: 'session_open' }
+  | { kind: 'suppressed'; reason: 'session_open' | 'session_not_allowed' }
   | { kind: 'deferred'; delayMs: number };
 
 /**
@@ -157,6 +174,15 @@ export class PushNotifier {
 
   notify(prompt: Prompt, pane: Pane): NotifyOutcome {
     this.cancel(pane.id);
+    // Choix de Robin (11/11) : seuls les chiefs (claap-agent, perso-agent) sonnent sur le
+    // telephone, comme sur le Mac (hook notify.sh). L'evenement reste dans le WebSocket.
+    if (!sessionAllowed(pane, this.ports.allowedSessions?.())) {
+      logger.info('push supprime, session hors de push.sessions', {
+        paneId: pane.id,
+        session: paneSessionName(pane),
+      });
+      return { kind: 'suppressed', reason: 'session_not_allowed' };
+    }
     return this.evaluate(prompt, pane, false);
   }
 
