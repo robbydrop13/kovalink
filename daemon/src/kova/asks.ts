@@ -274,6 +274,13 @@ export class AskBoard {
   private choices: AskSnoozeChoice[] = [];
   private supported = true;
   private signature = '';
+  /**
+   * Faux tant que la carte n'a pas ete lue une premiere fois depuis le demarrage du
+   * daemon ou le retour de Kova. Cette premiere lecture sert de base : les questions
+   * deja ouvertes ne sont pas « apparues ». Avant, chaque relance du daemon renvoyait
+   * une notification pour toutes les questions ouvertes (6 d'un coup le 11/11).
+   */
+  private primed = false;
 
   constructor(private readonly ipc: KovaIpc) {}
 
@@ -290,6 +297,7 @@ export class AskBoard {
   reset(): void {
     this.asks = [];
     this.signature = '';
+    this.primed = false;
   }
 
   /**
@@ -325,10 +333,12 @@ export class AskBoard {
     this.supported = true;
     this.asks = asks;
     if (choices.length > 0) this.choices = choices;
+    const baseline = !this.primed;
+    this.primed = true;
     const next = asksSignature(asks, true);
     if (next === this.signature) return { changed: false, appeared: [] };
     this.signature = next;
-    return { changed: true, appeared: newlyDue(before, asks) };
+    return { changed: true, appeared: baseline ? [] : newlyDue(before, asks) };
   }
 
   /**

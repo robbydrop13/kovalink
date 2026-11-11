@@ -209,7 +209,8 @@ describe('questions des agents : le tableau', () => {
     const board = new AskBoard({ request: async () => ({ ok: true, data }) } as never);
     const first = await board.refresh();
     assert.equal(first.changed, true);
-    assert.equal(first.appeared.length, 1);
+    // La premiere lecture est la base : rien n'est « apparu ».
+    assert.equal(first.appeared.length, 0);
     assert.deepEqual(board.snapshot().snoozeChoices, [{ label: '5 min', seconds: 300 }]);
     const second = await board.refresh();
     assert.equal(second.changed, false);
@@ -288,5 +289,28 @@ describe('questions des agents : le tableau', () => {
     assert.equal(board.snapshot().asks.length, 0);
     // Sans la remise a zero de la signature, cette relecture ne rediffuserait rien.
     assert.equal((await board.refresh()).changed, true);
+  });
+
+  it('relance du daemon ou retour de Kova : les questions deja ouvertes ne renotifient pas', async () => {
+    const old = raw();
+    const fresh = raw({ id: '6f1c0000-0000-4000-8000-0000000000aa' });
+    const { ipc } = fakeIpc([
+      { ok: true, data: { asks: [old] } },
+      { ok: true, data: { asks: [old, fresh] } },
+      { ok: true, data: { asks: [old, fresh] } },
+      { ok: true, data: { asks: [old, fresh, raw({ id: '6f1c0000-0000-4000-8000-0000000000bb' })] } },
+    ]);
+    const board = new AskBoard(ipc);
+    // Demarrage : une question deja ouverte, pas de notification.
+    assert.equal((await board.refresh()).appeared.length, 0);
+    // Une vraie nouvelle question ensuite : une notification.
+    const next = await board.refresh();
+    assert.deepEqual(next.appeared.map((a) => a.id), [fresh['id']]);
+    // Kova repart : la relecture est une nouvelle base, rien ne renotifie.
+    board.reset();
+    const back = await board.refresh();
+    assert.equal(back.changed, true);
+    assert.equal(back.appeared.length, 0);
+    assert.equal((await board.refresh()).appeared.length, 1);
   });
 });
