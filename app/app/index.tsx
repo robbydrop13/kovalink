@@ -61,6 +61,7 @@ import { forceReconnect } from '@/net/connection';
 import { fetchPanes, fetchSessions, postKovaLaunch, postSplit } from '@/net/http';
 import { clockTime } from '@/utils/time';
 import { retryBoot, useBootError, useBootState } from '@/boot';
+import { openPendingRoute } from '@/notifications/quickAction';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
 import { TabBar, TAB_BAR_HEIGHT } from '@/features/home/TabBar';
 import { dictateTarget } from '@/features/home/dictate';
@@ -116,6 +117,12 @@ export default function SessionsScreen() {
   const [toast, setToast] = useState<string | null>(null);
   /** Sessions en favori dans Kova, pour l'étoile et le libellé du balayage. */
   const [bookmarked, setBookmarked] = useState<Set<string>>(new Set());
+
+  // Après un changement de Mac déclenché par une notification d'un autre Mac : ouvrir son
+  // pane, une fois l'app prête sur ce Mac (`notifications/hostRoute.ts`).
+  useEffect(() => {
+    if (boot === 'ready') void openPendingRoute();
+  }, [boot]);
 
   useEffect(() => {
     if (!toast) return;

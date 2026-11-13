@@ -15,6 +15,19 @@ import { registerNotificationCategories } from './categories';
 import { handleNotificationResponse } from './quickAction';
 import { setPushToken } from '@/net/connection';
 import { usePrefs } from '@/store/prefs';
+import { activeHostId } from '@/store/credentials';
+import { showSystemBannerInForeground } from './hostRoute';
+
+/** Vrai pour une bannière d'un autre Mac que l'actif. Un trousseau illisible dit non. */
+async function fromOtherHost(notification: Notifications.Notification): Promise<boolean> {
+  const host = (notification.request.content.data as { host?: unknown } | null)?.host;
+  if (typeof host !== 'string') return false;
+  try {
+    return showSystemBannerInForeground(host, await activeHostId());
+  } catch {
+    return false;
+  }
+}
 
 // Le gestionnaire de premier plan est posé paresseusement, jamais à l'import du module : une
 // exception au chargement d'un module remonte jusqu'à l'entrée et éteint l'app en silence.
@@ -24,14 +37,19 @@ function installForegroundHandler(): void {
   if (handlerInstalled || !pushAvailable) return;
   try {
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
+      handleNotification: async (notification) => {
         // App au premier plan : aucune bannière système, un bandeau interne à la place
-        // (design 5.4). Le badge d'icône reste le nombre de panes en attente.
-        shouldShowBanner: false,
-        shouldShowList: false,
-        shouldPlaySound: false,
-        shouldSetBadge: true,
-      }),
+        // (design 5.4). Le badge d'icône reste le nombre de panes en attente. Sauf pour un
+        // autre Mac que l'actif : le bandeau interne ne le connaît pas, la bannière système
+        // est le seul endroit où Robin la voit, et la toucher change de Mac.
+        const other = await fromOtherHost(notification);
+        return {
+          shouldShowBanner: other,
+          shouldShowList: other,
+          shouldPlaySound: false,
+          shouldSetBadge: true,
+        };
+      },
     });
     handlerInstalled = true;
   } catch (error) {

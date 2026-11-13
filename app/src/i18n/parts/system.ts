@@ -183,4 +183,7 @@ export const system = {
   notifAnswerSent: (index: number) => `Answer sent: option ${index}`,
   notifPromptChanged: 'The question changed, your answer was not sent. Open the app.',
   notifAlreadyAnswered: 'Already answered.',
+  notifOtherMacOpenApp: (name: string) => `From ${name}, not the Mac in use. Tap to open it.`,
+  notifOpenAppToAct: 'Open the app to handle this notification.',
+  notifSwitchFailed: (cause: string) => `Could not switch Mac: ${cause}`,
 } as const;
