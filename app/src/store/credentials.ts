@@ -42,6 +42,12 @@ const HOSTS_KEY = 'kl.hosts';
 const FAILOVER_KEYS = { auto: 'kl.failover.auto', from: 'kl.failover.from' } as const;
 
 /**
+ * Pane à ouvrir après un changement de Mac déclenché par une notification
+ * (`notifications/hostRoute.ts`). Il doit survivre au rechargement qui suit la bascule.
+ */
+const PENDING_ROUTE_KEY = 'kl.notif.pendingRoute';
+
+/**
  * Groupe de trousseau partagé avec la NSE. Il vaut `<AppIdentifierPrefix>io.claap.kovalink`
  * et n'est connu qu'une fois l'identifiant d'équipe Apple renseigné. Laissé à null, les
  * entrées restent privées à l'app et la NSE retombe sur son état 3 (bannière sans action
@@ -170,6 +176,7 @@ export async function clearCredentials(): Promise<void> {
     ...Object.values(KEYS),
     HOSTS_KEY,
     ...Object.values(FAILOVER_KEYS),
+    PENDING_ROUTE_KEY,
     ...hosts.flatMap((h) => Object.values(hostKeys(h.id))),
   ];
   await Promise.all(
@@ -340,4 +347,18 @@ export async function loadFailedOverFrom(): Promise<string | null> {
 export async function setFailedOverFrom(name: string | null): Promise<void> {
   if (name) await SecureStore.setItemAsync(FAILOVER_KEYS.from, name, opts());
   else await SecureStore.deleteItemAsync(FAILOVER_KEYS.from, opts()).catch(() => undefined);
+}
+
+// --- Notification d'un autre Mac ---------------------------------------------
+
+export async function setPendingRoute(raw: string | null): Promise<void> {
+  if (raw) await SecureStore.setItemAsync(PENDING_ROUTE_KEY, raw, opts());
+  else await SecureStore.deleteItemAsync(PENDING_ROUTE_KEY, opts()).catch(() => undefined);
+}
+
+/** Lit la route en attente et l'efface : elle ne sert qu'une fois. */
+export async function takePendingRoute(): Promise<string | null> {
+  const raw = await SecureStore.getItemAsync(PENDING_ROUTE_KEY, opts());
+  if (raw) await setPendingRoute(null);
+  return raw;
 }

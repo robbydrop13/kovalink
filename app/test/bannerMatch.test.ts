@@ -20,4 +20,11 @@ describe('bannerBelongsTo (CA-14)', () => {
     assert.equal(bannerBelongsTo(null, pane, []), false);
     assert.equal(bannerBelongsTo({}, pane, []), false);
   });
+  it("bannière d'un autre Mac : jamais celle d'un pane du Mac actif (plan M1, étape 5)", () => {
+    assert.equal(bannerBelongsTo({ paneId: 7, host: 'm1.ts.net' }, pane, [], 'mbp.ts.net'), false);
+    assert.equal(bannerBelongsTo({ paneId: 7, host: 'mbp.ts.net' }, pane, [], 'mbp.ts.net'), true);
+    // Daemon sans `host`, ou Mac actif illisible : comportement d'avant.
+    assert.equal(bannerBelongsTo({ paneId: 7 }, pane, [], 'mbp.ts.net'), true);
+    assert.equal(bannerBelongsTo({ paneId: 7, host: 'm1.ts.net' }, pane, []), true);
+  });
 });

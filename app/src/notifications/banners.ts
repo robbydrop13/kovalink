@@ -13,6 +13,7 @@ import * as Notifications from 'expo-notifications';
 import type { PushPayload } from '@/protocol';
 import { pushAvailable } from '@/env';
 import { bannerBelongsTo, type PaneIdentity } from './bannerMatch';
+import { activeHostId } from '@/store/credentials';
 
 export { paneIdentity } from './bannerMatch';
 
@@ -20,10 +21,13 @@ export { paneIdentity } from './bannerMatch';
 export async function dismissBannersForPane(pane: PaneIdentity, promptRefs: readonly string[]): Promise<void> {
   if (!pushAvailable) return;
   try {
-    const presented = await Notifications.getPresentedNotificationsAsync();
+    const [presented, activeHost] = await Promise.all([
+      Notifications.getPresentedNotificationsAsync(),
+      activeHostId(),
+    ]);
     for (const n of presented) {
       const data = n.request.content.data as Partial<PushPayload> | undefined;
-      if (bannerBelongsTo(data, pane, promptRefs)) {
+      if (bannerBelongsTo(data, pane, promptRefs, activeHost)) {
         await Notifications.dismissNotificationAsync(n.request.identifier);
       }
     }

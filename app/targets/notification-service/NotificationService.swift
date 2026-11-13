@@ -49,7 +49,9 @@ final class NotificationService: UNNotificationServiceExtension {
 
         guard let content = mutable,
               let promptRef = content.userInfo["promptRef"] as? String,
-              let config = SharedKeychain.load()
+              // `host` : le Mac qui a sonné (plan M1, étape 5). Absent chez un daemon plus
+              // ancien : les clés du Mac actif, comme avant.
+              let config = SharedKeychain.load(host: content.userInfo["host"] as? String)
         else {
             // Aucun jeton, aucune référence : on rend la charge utile telle quelle. Elle
             // porte déjà `KL_AWAITING_BLIND` et son texte de repli, donc la bannière n'est
@@ -207,6 +209,13 @@ struct Prompt: Decodable {
 }
 
 /// Lecture du trousseau partagé. L'extension n'y lit que ce dont elle a besoin.
+///
+/// Les entrées sont écrites par expo-secure-store (`app/src/store/credentials.ts`), qui
+/// range chaque clé sous le service `<keychainService>:no-auth`, avec le compte en `Data`
+/// (`SecureStoreModule.swift`, `query(with:options:requireAuthentication:)`), dans le groupe
+/// `<AppIdentifierPrefix>io.claap.kovalink`. La requête ne nomme pas le groupe : le préfixe
+/// d'équipe n'est pas connu ici, et sans groupe iOS cherche dans tous ceux de l'extension,
+/// c'est à dire ce seul groupe partagé.
 enum SharedKeychain {
     struct Config {
         let tsDns: String
@@ -214,31 +223,68 @@ enum SharedKeychain {
         let nseToken: String
     }
 
-    private static let service = "io.claap.kovalink"
-    private static let accessGroup = "io.claap.kovalink"
+    /// Service actuel d'expo-secure-store, puis l'ancien nom sans suffixe.
+    private static let services = ["io.claap.kovalink:no-auth", "io.claap.kovalink"]
 
-    static func load() -> Config? {
-        guard let tsDns = read("kl.tsDns"), let nseToken = read("kl.nseToken") else { return nil }
+    /// `host` : `tsDns` du daemon émetteur, porté par la charge. S'il désigne un autre Mac
+    /// que l'actif, on lit l'emplacement de ce Mac (`kl.h.<host>.*`). Sans emplacement, pas
+    /// de configuration : la bannière reste dans son état sans bouton d'option.
+    static func load(host: String?) -> Config? {
+        let active = read("kl.tsDns")
+        if let host, !host.isEmpty, host != active {
+            return loadHost(host)
+        }
+        guard let tsDns = active, let nseToken = read("kl.nseToken") else { return nil }
         // `kl.port` est ecrit par l'app a l'appairage (credentials.ts). Le repli est la
         // constante GENEREE depuis le protocole, jamais un nombre ecrit ici.
         let port = read("kl.port").flatMap(Int.init) ?? KovaLinkProtocol.defaultPort
         return Config(tsDns: tsDns, port: port, nseToken: nseToken)
     }
 
-    private static func read(_ key: String) -> String? {
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        query[kSecAttrAccessGroup as String] = accessGroup
-
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data
+    /// Un Mac du registre `kl.hosts` seulement : le jeton ne part jamais vers un nom venu de
+    /// la seule charge. Le port vient du registre (`hosts.ts`, `HostEntry.port`).
+    private static func loadHost(_ host: String) -> Config? {
+        guard let raw = read("kl.hosts"),
+              let data = raw.data(using: .utf8),
+              let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]],
+              let entry = list.first(where: { ($0["id"] as? String) == host }),
+              let nseToken = read("kl.h.\(safeKey(host)).nseToken")
         else { return nil }
-        return String(data: data, encoding: .utf8)
+        let stored = (entry["port"] as? NSNumber)?.intValue ?? 0
+        let port = stored > 0 ? stored : KovaLinkProtocol.defaultPort
+        return Config(tsDns: host, port: port, nseToken: nseToken)
+    }
+
+    /// Miroir de `hostKeys` (`app/src/store/hosts.ts`) : chaque unité UTF-16 hors de
+    /// `[A-Za-z0-9._-]` devient `_`, comme la regex JS sans drapeau `u`.
+    static func safeKey(_ id: String) -> String {
+        String(id.utf16.map { unit -> Character in
+            switch unit {
+            case 0x30...0x39, 0x41...0x5A, 0x61...0x7A, 0x2E, 0x5F, 0x2D:
+                return Character(Unicode.Scalar(UInt8(unit)))
+            default:
+                return "_"
+            }
+        })
+    }
+
+    private static func read(_ key: String) -> String? {
+        let account = Data(key.utf8)
+        for service in services {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne,
+            ]
+            var item: CFTypeRef?
+            if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+               let data = item as? Data,
+               let value = String(data: data, encoding: .utf8) {
+                return value
+            }
+        }
+        return nil
     }
 }
