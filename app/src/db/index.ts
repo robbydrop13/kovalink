@@ -6,13 +6,27 @@
 // `expo-sqlite` est importé PARESSEUSEMENT, à la première ouverture : ce module est
 // importé par l'outbox, dont la logique est testée sous Node, où le module natif n'existe
 // pas. Importer le natif à la première ligne rendait toute la couche `db` intestable.
+//
+// Une base par Mac appairé (`store/hosts.ts`) : le premier garde `kovalink.db`, les suivants
+// `kovalink-<empreinte>.db`. File d'envoi, brouillons, marques de lecture, cache des panes et
+// réglages deviennent ainsi propres à chaque Mac sans toucher un seul store. Le nom est lu à
+// la première ouverture ; changer de Mac recharge l'app, donc rouvre la bonne base.
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 let dbPromise: Promise<SQLiteDatabase> | null = null;
+let openName: string | null = null;
 
 async function open(): Promise<SQLiteDatabase> {
   const SQLite = await import('expo-sqlite');
-  const db = await SQLite.openDatabaseAsync('kovalink.db');
+  const { activeDbName } = await import('@/store/credentials');
+  let name = 'kovalink.db';
+  try {
+    name = await activeDbName();
+  } catch {
+    /* trousseau illisible : la base historique, comme avant le multi Mac */
+  }
+  openName = name;
+  const db = await SQLite.openDatabaseAsync(name);
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS kv (
@@ -68,6 +82,23 @@ export async function kvDel(key: string): Promise<void> {
     await (await db()).runAsync('DELETE FROM kv WHERE key = ?', key);
   } catch {
     // Idem : un cache qui ne se vide pas n'est pas une panne.
+  }
+}
+
+/**
+ * Efface la base d'un Mac retiré. Celle qui est ouverte est vidée (l'app se recharge juste
+ * après) ; une autre est supprimée. Jamais bloquant : un fichier restant n'est qu'un cache.
+ */
+export async function dropHostDb(name: string): Promise<void> {
+  if (name === openName) {
+    await kvClear();
+    return;
+  }
+  try {
+    const SQLite = await import('expo-sqlite');
+    await SQLite.deleteDatabaseAsync(name);
+  } catch {
+    /* base jamais ouverte sur cet iPhone, ou déjà supprimée */
   }
 }
 

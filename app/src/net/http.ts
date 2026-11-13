@@ -190,10 +190,12 @@ export async function pairClaim(
   };
 }
 
-export function revokeDevice(deviceId: string): Promise<{ ok: boolean }> {
+/** `credentials` vise un Mac du registre qui n'est pas l'actif ; absent, le Mac actif. */
+export function revokeDevice(deviceId: string, credentials?: Credentials): Promise<{ ok: boolean }> {
   return request(ROUTES.pairDevice(deviceId), {
     method: 'DELETE',
     timeoutMs: 5000,
+    ...(credentials ? { credentials } : {}),
   });
 }
 

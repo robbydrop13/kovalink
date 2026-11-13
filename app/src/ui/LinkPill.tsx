@@ -1,9 +1,13 @@
 // Pastille de liaison. Affichée en permanence, jamais bloquante (P5). Cinq états, dont deux
 // qui se ressemblent et ne doivent surtout pas être confondus : `Offline` est actionnable
 // par Robin, `Mac injoignable` ne l'est pas.
+//
+// Avec plus d'un Mac appairé, le nom du Mac passe devant l'état (« M1 · Relayed ») : du
+// texte, jamais la couleur seule pour dire lequel répond.
 import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, radius } from '@/theme';
 import { LINK_LABEL, useConnection, type LinkState } from '@/store/connection';
+import { linkLabelWithHost } from '@/store/hosts';
 import { Txt } from './Txt';
 import { Icon } from './Icon';
 import { t } from '@/i18n/en';
@@ -19,11 +23,16 @@ const TINT: Record<LinkState, string> = {
 export function LinkPill({ compact = false, onPress }: { compact?: boolean; onPress?: () => void }) {
   const link = useConnection((s) => s.link);
   const latency = useConnection((s) => s.latencyMs);
+  const hostName = useConnection((s) => s.hostName);
+  const hostCount = useConnection((s) => s.hostCount);
   const tint = TINT[link];
-  const label =
+  const label = linkLabelWithHost(
     (link === 'direct' || link === 'relayed') && latency !== null
       ? `${LINK_LABEL[link]} ${latency} ms`
-      : LINK_LABEL[link];
+      : LINK_LABEL[link],
+    hostName,
+    hostCount,
+  );
 
   if (compact) {
     return <View accessibilityLabel={label} style={[styles.dot, { backgroundColor: tint }]} />;
@@ -38,7 +47,7 @@ export function LinkPill({ compact = false, onPress }: { compact?: boolean; onPr
       style={styles.pill}
     >
       <Icon name={link === 'offline' || link === 'macUnreachable' ? 'wifi-off' : 'wifi'} size={12} color={tint} />
-      <Txt variant="caption" color={tint}>
+      <Txt variant="caption" color={tint} numberOfLines={1} style={styles.label}>
         {label}
       </Txt>
     </Pressable>
@@ -55,5 +64,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     backgroundColor: colors.accent.subtleBg,
   },
+  // Un nom de Mac long ne doit pas pousser les boutons voisins hors de l'en tête.
+  label: { maxWidth: 200 },
   dot: { width: 8, height: 8, borderRadius: 4 },
 });
