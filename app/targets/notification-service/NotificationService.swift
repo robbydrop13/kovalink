@@ -31,6 +31,9 @@ final class NotificationService: UNNotificationServiceExtension {
         static let blind = "KL_AWAITING_BLIND"
     }
 
+    /// Catégories qui portent des boutons de réponse chiffrés.
+    private static let answerCategories: Set<String> = [Category.awaiting2, Category.awaiting3]
+
     /// Budget interne. iOS accorde environ 30 s, on s'arrête bien avant : au delà, Robin
     /// regarde un écran vide en attendant une bannière.
     private static let budget: TimeInterval = 4.0
@@ -71,6 +74,12 @@ final class NotificationService: UNNotificationServiceExtension {
                 return
             }
             self.apply(prompt: prompt, to: content)
+            // Bannière d'un autre Mac que l'actif : jamais de bouton de réponse. Une action
+            // rapide n'agirait pas (l'app ne répond qu'au Mac actif) ; toucher la bannière
+            // ouvre l'app, qui change de Mac puis ouvre le pane.
+            if !config.isActiveHost, NotificationService.answerCategories.contains(content.categoryIdentifier) {
+                content.categoryIdentifier = Category.blind
+            }
             handler(content)
         }
     }
@@ -221,6 +230,8 @@ enum SharedKeychain {
         let tsDns: String
         let port: Int
         let nseToken: String
+        /// Faux pour l'emplacement d'un autre Mac que l'actif (`kl.h.<host>.*`).
+        let isActiveHost: Bool
     }
 
     /// Service actuel d'expo-secure-store, puis l'ancien nom sans suffixe.
@@ -238,7 +249,7 @@ enum SharedKeychain {
         // `kl.port` est ecrit par l'app a l'appairage (credentials.ts). Le repli est la
         // constante GENEREE depuis le protocole, jamais un nombre ecrit ici.
         let port = read("kl.port").flatMap(Int.init) ?? KovaLinkProtocol.defaultPort
-        return Config(tsDns: tsDns, port: port, nseToken: nseToken)
+        return Config(tsDns: tsDns, port: port, nseToken: nseToken, isActiveHost: true)
     }
 
     /// Un Mac du registre `kl.hosts` seulement : le jeton ne part jamais vers un nom venu de
@@ -252,7 +263,7 @@ enum SharedKeychain {
         else { return nil }
         let stored = (entry["port"] as? NSNumber)?.intValue ?? 0
         let port = stored > 0 ? stored : KovaLinkProtocol.defaultPort
-        return Config(tsDns: host, port: port, nseToken: nseToken)
+        return Config(tsDns: host, port: port, nseToken: nseToken, isActiveHost: false)
     }
 
     /// Miroir de `hostKeys` (`app/src/store/hosts.ts`) : chaque unité UTF-16 hors de

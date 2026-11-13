@@ -148,8 +148,18 @@ async function switchThenOpen(data: PushPayload, hostId: string): Promise<void> 
   }
 }
 
+/**
+ * Une seule lecture par chargement du bundle. Lire puis effacer au trousseau n'est pas
+ * atomique : deux appels rapprochés (effet rejoué) liraient la même route et ouvriraient
+ * le pane deux fois. La réponse de notification elle même n'est pas rejouée après le
+ * rechargement (expo-notifications 57 vide sa file native dès qu'un écouteur l'a reçue).
+ */
+let pendingRouteTaken = false;
+
 /** Appelé quand l'app est prête : ouvre le pane d'une notification d'un autre Mac. */
 export async function openPendingRoute(): Promise<void> {
+  if (pendingRouteTaken) return;
+  pendingRouteTaken = true;
   try {
     const raw = await takePendingRoute();
     if (!raw) return;
