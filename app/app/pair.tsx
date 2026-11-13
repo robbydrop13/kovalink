@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState, useRef } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import Constants from 'expo-constants';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { NotifyType, notify } from '@/utils/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -24,8 +24,9 @@ import {
   PAIRING_PAYLOAD_VERSION,
   type PairPayload,
 } from '@/protocol';
-import { saveCredentials } from '@/store/credentials';
-import { startConnection } from '@/net/connection';
+import { activeHostId, addHost, loadCredentials, saveCredentials } from '@/store/credentials';
+import { startConnection, stopConnection } from '@/net/connection';
+import { useConnection } from '@/store/connection';
 import { setupNotifications } from '@/notifications/register';
 import { shortAgeMs } from '@/utils/time';
 import { PUSH_UNAVAILABLE_LABEL, bootLog, bootWarn, pushAvailable } from '@/env';
@@ -77,6 +78,10 @@ export default function PairScreen() {
   const [manualCode, setManualCode] = useState('');
   const [relay, setRelay] = useState<string | null>(null);
   const [expiresIn, setExpiresIn] = useState<number | null>(null);
+  // Vrai quand un Mac est déjà appairé : ce Mac s'ajoute au registre, l'actif ne change pas.
+  const [added, setAdded] = useState(false);
+  // Ouvert depuis « Add a Mac » des Réglages : on peut renoncer et y revenir.
+  const fromSettings = useLocalSearchParams<{ add?: string }>().add === '1';
 
   useEffect(() => {
     if (expiresIn === null) return;
@@ -129,19 +134,38 @@ export default function PairScreen() {
       return;
     }
 
+    let adding = false;
     try {
       const result = await pairClaim(target, payload.code, deviceName());
-      await saveCredentials({
+      const creds = {
         deviceId: result.deviceId,
         token: result.token,
         nseToken: result.nseToken ?? null,
         tsDns: result.tsDns,
         port: result.port,
-      });
-      // L'appareil est appairé dès cet instant : l'état de démarrage doit suivre, sinon
-      // l'écran Sessions renverrait vers l'appairage qu'on vient de terminer.
-      markPaired();
-      setChecks((c) => ({ ...c, token: 'ok', notifications: 'running' }));
+      };
+      // « Ajouter un Mac » : un Mac est déjà appairé, celui ci rejoint le registre sans
+      // devenir actif. Robin le choisit ensuite dans les Réglages.
+      // Décidé sur l'emplacement actif, pas sur le registre : c'est lui qui fait l'état
+      // « appairé » du démarrage.
+      adding = (await loadCredentials()) !== null;
+      if (adding) {
+        const active = await activeHostId();
+        const hosts = await addHost(creds, payload.name);
+        // La pastille nomme le Mac dès qu'il y en a deux, sans attendre un rechargement.
+        useConnection.getState().setHost(hosts.find((h) => h.id === active)?.name ?? null, hosts.length);
+        if (active === creds.tsDns) {
+          // Réappairage du Mac actif : la liaison repart avec le nouveau jeton.
+          stopConnection();
+          void startConnection().catch((error: unknown) => bootWarn('reconnect after re-pair', error));
+        }
+      } else {
+        await saveCredentials(creds, payload.name);
+        // L'appareil est appairé dès cet instant : l'état de démarrage doit suivre, sinon
+        // l'écran Sessions renverrait vers l'appairage qu'on vient de terminer.
+        markPaired();
+      }
+      setChecks((c) => ({ ...c, token: 'ok', notifications: adding ? 'skipped' : 'running' }));
     } catch (error) {
       setChecks((c) => ({ ...c, token: 'failed' }));
       // Le message exact, jamais un libelle generique : sans lui, le diagnostic est aveugle.
@@ -154,6 +178,16 @@ export default function PairScreen() {
             : String(error);
       setError(t.pairRefused(detail));
       claiming.current = false;
+      return;
+    }
+
+    if (adding) {
+      // La liaison et les notifications restent celles du Mac actif. Le jeton push part
+      // vers ce Mac quand il devient actif (`hello`).
+      bootLog('mac added');
+      setAdded(true);
+      notify(NotifyType.Success);
+      setStep('done');
       return;
     }
 
@@ -212,6 +246,7 @@ export default function PairScreen() {
           }}
         />
         <LinkAction label={t.pairManualLink} onPress={() => setStep('manual')} />
+        {fromSettings ? <LinkAction label={t.pairCancel} onPress={() => router.back()} /> : null}
       </ScrollView>
     );
   }
@@ -344,20 +379,37 @@ export default function PairScreen() {
       <Txt variant="body" color={colors.text.primary}>
         {macName}
       </Txt>
+      {added ? (
+        <>
+          <Txt variant="callout" color={colors.text.secondary}>
+            {t.pairDoneAdded}
+          </Txt>
+          <Button label={t.pairBackToSettings} onPress={() => router.back()} />
+        </>
+      ) : (
+        <PairedNext relay={relay} notifications={checks.notifications} />
+      )}
+    </View>
+  );
+}
+
+function PairedNext({ relay, notifications }: { relay: string | null; notifications: CheckState }) {
+  return (
+    <>
       <Txt variant="callout" color={colors.text.secondary}>
         {relay ? t.pairDoneRelayed : t.pairDoneDirect}
       </Txt>
-      {checks.notifications === 'skipped' || !pushAvailable ? (
+      {notifications === 'skipped' || !pushAvailable ? (
         <Txt variant="footnote" color={colors.text.secondary}>
           {PUSH_UNAVAILABLE_LABEL} {t.pairDoneEverythingElseWorks}
         </Txt>
-      ) : checks.notifications !== 'ok' ? (
+      ) : notifications !== 'ok' ? (
         <Txt variant="footnote" color={colors.status.awaiting}>
           {t.pairDoneNotificationsDenied}
         </Txt>
       ) : null}
       <Button label={t.pairStart} onPress={() => router.replace('/')} />
-    </View>
+    </>
   );
 }
 

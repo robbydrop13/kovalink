@@ -14,6 +14,9 @@ interface ConnectionState {
   relay: string | null;
   kova: KovaStatus;
   daemonVersion: string | null;
+  /** Nom du Mac actif et nombre de Macs appairés : la pastille nomme le Mac dès qu'il y en a deux. */
+  hostName: string | null;
+  hostCount: number;
   kovaVersion: string | null;
   /** Horodatage du dernier instantané reçu, sert aux bandeaux dégradés. */
   lastSyncAt: number | null;
@@ -22,6 +25,7 @@ interface ConnectionState {
   setLatency: (ms: number) => void;
   setKova: (kova: KovaStatus, version?: string | null) => void;
   setDaemonVersion: (v: string) => void;
+  setHost: (name: string | null, count: number) => void;
   markSynced: () => void;
   setError: (message: string | null) => void;
 }
@@ -32,6 +36,8 @@ export const useConnection = create<ConnectionState>((set) => ({
   relay: null,
   kova: 'unknown',
   daemonVersion: null,
+  hostName: null,
+  hostCount: 0,
   kovaVersion: null,
   lastSyncAt: null,
   lastError: null,
@@ -41,6 +47,7 @@ export const useConnection = create<ConnectionState>((set) => ({
   setKova: (kova, version) =>
     set((s) => ({ kova, kovaVersion: version === undefined ? s.kovaVersion : version })),
   setDaemonVersion: (daemonVersion) => set({ daemonVersion }),
+  setHost: (hostName, hostCount) => set({ hostName, hostCount }),
   markSynced: () => set({ lastSyncAt: Date.now(), lastError: null }),
   setError: (lastError) => set({ lastError }),
 }));

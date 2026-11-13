@@ -11,7 +11,7 @@ import type { PushRegister, S2C } from '@/protocol';
 import { PROTOCOL_VERSION } from '@/protocol';
 import { Socket, nextId } from './ws';
 import { resumeActions } from './resume';
-import { loadCredentials, rotateToken } from '@/store/credentials';
+import { listHosts, loadCredentials, rotateToken, updateHostInfo } from '@/store/credentials';
 import { useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
 import { usePrompts } from '@/store/prompts';
@@ -34,6 +34,8 @@ let appSub: { remove: () => void } | null = null;
 let visiblePaneId: number | null = null;
 let visibleSessionId: string | null = null;
 let pushToken: string | null = null;
+/** Nom MagicDNS du Mac de cette liaison, clé du registre (`store/hosts.ts`). */
+let activeHost: string | null = null;
 /** Vrai quand l'app est à l'écran. En arrière plan, aucun pane n'est « au premier plan ». */
 let appActive = AppState.currentState === 'active';
 /** Passage en arrière plan, pour juger au retour si le socket peut encore être vivant. */
@@ -69,7 +71,8 @@ function handle(msg: S2C): void {
       conn.setKova(msg.kova.status);
       conn.setLink(msg.link.relay ? 'relayed' : 'direct', msg.link.relay);
       conn.markSynced();
-      if (msg.token) void rotateToken(msg.token);
+      if (msg.token && activeHost) void rotateToken(msg.token, activeHost);
+      if (msg.host) void refreshHostInfo(msg.host);
       socket?.send({ t: 'panes.subscribe', id: nextId() });
       if (visiblePaneId !== null) socket?.send({ t: 'pane.peek', id: nextId(), paneId: visiblePaneId });
       if (visibleSessionId) socket?.send({ t: 'session.attach', id: nextId(), sessionId: visibleSessionId });
@@ -157,6 +160,20 @@ async function online(): Promise<boolean> {
   }
 }
 
+/** Le daemon dit son nom et son rôle (`hello.ok`) : le registre et la pastille suivent. */
+async function refreshHostInfo(host: { name: string; role: 'primary' | 'secondary' }): Promise<void> {
+  if (!activeHost) return;
+  try {
+    const hosts = await updateHostInfo(activeHost, host);
+    if (hosts) {
+      const me = hosts.find((h) => h.id === activeHost);
+      useConnection.getState().setHost(me?.name ?? null, hosts.length);
+    }
+  } catch (error) {
+    bootWarn('host info', error);
+  }
+}
+
 export async function startConnection(): Promise<void> {
   if (socket) return;
   const creds = await loadCredentials();
@@ -165,6 +182,14 @@ export async function startConnection(): Promise<void> {
     return;
   }
   deviceId = creds.deviceId;
+  activeHost = creds.tsDns;
+  try {
+    // `listHosts` migre aussi le registre d'une installation appairée avant le multi Mac.
+    const hosts = await listHosts();
+    useConnection.getState().setHost(hosts.find((h) => h.id === creds.tsDns)?.name ?? null, hosts.length);
+  } catch (error) {
+    bootWarn('hosts registry', error);
+  }
 
   const conn = useConnection.getState();
   conn.setLink((await online()) ? 'connecting' : 'offline');

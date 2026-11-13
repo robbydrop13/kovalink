@@ -44,6 +44,24 @@ export const system = {
     'Only validation requests ring. Task completions stay silent. Off by default.',
   settingsQuietHours: 'Quiet hours',
   settingsQuietHoursHint: '11:00 PM to 7:00 AM. In that window, only validations ring.',
+  settingsHostActive: 'In use',
+  settingsHostChecking: 'Checking…',
+  settingsHostReachable: 'Responds',
+  settingsHostUnreachable: 'Not responding',
+  settingsHostRoleSecondary: 'Backup',
+  settingsHostUse: 'Use',
+  settingsHostRemove: 'Remove',
+  settingsHostAdd: 'Add a Mac',
+  settingsHostSwitchTitle: (name: string) => `Switch to ${name}`,
+  settingsHostSwitchBody:
+    'The app reloads on this Mac. Its sessions, queue and settings are its own',
+  settingsHostSwitchAction: 'Switch',
+  settingsHostSwitchFailed: (detail: string) => `Could not switch: ${detail}`,
+  settingsHostRemoveTitle: (name: string) => `Remove ${name}`,
+  settingsHostRemoveBody:
+    'This iPhone is revoked on that Mac and its local cache is erased',
+  settingsHostRemoveAction: 'Remove',
+  settingsHostAccessibility: (name: string, state: string) => `${name}, ${state}`,
   settingsKeepMacAwake: 'Keep the Mac awake',
   settingsKeepMacAwakeHint:
     'While an agent is working, 4 h max. Lid closed on battery, the session is suspended.',
@@ -54,7 +72,8 @@ export const system = {
   settingsRevoking: 'Revoking…',
   settingsRevokeConfirmTitle: 'Revoke pairing',
   settingsRevokeConfirmBody:
-    'The token is erased from the iPhone and invalidated on the Mac, immediately. The cache and the queue are cleared.',
+    'The token is erased from the iPhone and invalidated on the Mac in use, immediately. Its cache and queue are cleared. Other paired Macs stay.',
+  settingsRevokeFailed: (detail: string) => `Could not revoke: ${detail}`,
   settingsRevokeConfirmCancel: 'Cancel',
   settingsRevokeConfirmAction: 'Revoke',
   settingsLink: 'Link',
@@ -104,6 +123,8 @@ export const system = {
   pairDoneNotificationsDenied:
     'Notifications are not allowed. Without them, you will not know when an agent is done.',
   pairStart: 'Start',
+  pairDoneAdded: 'Added. Choose it in Settings to use it',
+  pairBackToSettings: 'Back to Settings',
 
   // --- Activité ------------------------------------------------------------------------
   activityTitle: 'Activity',

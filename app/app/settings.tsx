@@ -17,10 +17,11 @@ import { Txt } from '@/ui/Txt';
 import { LINK_LABEL, useConnection } from '@/store/connection';
 import { usePrefs } from '@/store/prefs';
 import { usePanes } from '@/store/panes';
-import { clearCredentials } from '@/store/credentials';
+import { activeHostId, clearCredentials } from '@/store/credentials';
 import { kvClear } from '@/db';
-import { revokeDevice } from '@/net/http';
-import { currentDeviceId, republishPrefs, stopConnection } from '@/net/connection';
+import { republishPrefs, stopConnection } from '@/net/connection';
+import { removeHostFlow } from '@/net/hostSwitch';
+import { HostList } from '@/features/hosts/HostList';
 import { markUnpaired } from '@/boot';
 import { clockTime } from '@/utils/time';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
@@ -49,21 +50,27 @@ export default function SettingsScreen() {
           onPress: () => {
             void (async () => {
               setRevoking(true);
-              const deviceId = currentDeviceId();
-              if (deviceId) {
-                try {
-                  await revokeDevice(deviceId);
-                } catch {
-                  // Le jeton local part quand même : l'iPhone est peut-être perdu.
-                }
+              // Révoquer, c'est retirer le Mac actif : avec un seul Mac, retour à
+              // l'appairage comme avant ; avec plusieurs, l'app repart sur le suivant.
+              let outcome: 'unpaired' | 'reloading' | 'removed' = 'unpaired';
+              try {
+                const id = await activeHostId();
+                if (id) outcome = await removeHostFlow(id);
+              } catch (error) {
+                // Trousseau en échec : on le dit, on n'efface pas les autres Macs à l'aveugle.
+                setRevoking(false);
+                Alert.alert(t.settingsRevokeFailed(error instanceof Error ? error.message : String(error)));
+                return;
               }
-              stopConnection();
-              await clearCredentials();
-              await kvClear();
-              usePanes.getState().reset();
-              markUnpaired();
+              if (outcome === 'unpaired') {
+                stopConnection();
+                await clearCredentials();
+                await kvClear();
+                usePanes.getState().reset();
+                markUnpaired();
+              }
               setRevoking(false);
-              router.replace('/pair');
+              if (outcome === 'unpaired') router.replace('/pair');
             })();
           },
         },
@@ -107,6 +114,7 @@ export default function SettingsScreen() {
         />
 
         <Section title={t.settingsSectionMac} />
+        <HostList />
         <Row
           title={t.settingsKeepMacAwake}
           subtitle={t.settingsKeepMacAwakeHint}
