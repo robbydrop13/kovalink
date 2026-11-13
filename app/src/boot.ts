@@ -22,6 +22,7 @@ import { useTabSort } from '@/store/tabSort';
 import { usePrompts } from '@/store/prompts';
 import { usePrefs } from '@/store/prefs';
 import { startConnection } from '@/net/connection';
+import { startFailoverWatch } from '@/features/hosts/failoverWatch';
 import { setupNotifications, subscribeToNotifications } from '@/notifications/register';
 import { flushOutbox } from '@/actions/outboxRunner';
 import { pump, watchWifi } from '@/store/transfers';
@@ -121,6 +122,9 @@ export async function runBoot(): Promise<void> {
     // 5. Connexion. Un échec mène à l'écran Sessions en mode dégradé, jamais à un blocage :
     //    la pastille de liaison affiche `Mac injoignable` et le cache reste lisible.
     await attempt('connection', startConnection);
+
+    // 5 bis. Bascule entre Macs et sonde de retour. Sans effet avec un seul Mac.
+    await attempt('failover watch', startFailoverWatch);
 
     // 6. Notifications. Indisponibles dans Expo Go, et jamais bloquantes ailleurs.
     await attempt('notifications', setupNotifications);

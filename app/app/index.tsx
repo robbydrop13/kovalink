@@ -68,6 +68,8 @@ import { dictateTarget } from '@/features/home/dictate';
 import { openAsk, openPanelHistory } from '@/features/panel/open';
 import { isDecisionAsk } from '@/features/asks/answer';
 import { ErrorScreen } from '@/ui/ErrorScreen';
+import { HostBanner } from '@/features/hosts/HostBanner';
+import { useFailover } from '@/store/failover';
 import { t } from '@/i18n/en';
 
 /** Titre de chaque onglet de l'accueil, repris par l'etat vide des onglets a venir. */
@@ -106,6 +108,8 @@ export default function SessionsScreen() {
   const link = useConnection((s) => s.link);
   const kova = useConnection((s) => s.kova);
   const lastError = useConnection((s) => s.lastError);
+  const onBackup = useConnection((s) => s.hostRole === 'secondary');
+  const allSilent = useFailover((s) => s.allSilent);
   const degraded = isDegraded(link);
   const { run: interrupt, labelFor } = useInterrupt();
   const [refreshing, setRefreshing] = useState(false);
@@ -540,6 +544,10 @@ export default function SessionsScreen() {
         </View>
       </View>
 
+      {/* Bascule entre Macs : au dessus de chaque onglet, Robin doit toujours savoir sur
+          quel Mac il écrit. */}
+      <HostBanner />
+
       {tab === 'panes' ? (
         <>
       {degraded ? (
@@ -548,7 +556,9 @@ export default function SessionsScreen() {
           text={
             link === 'offline'
               ? t.sessionsOfflineBanner(clockTime(fetchedAt))
-              : t.sessionsMacAsleepBanner(clockTime(fetchedAt))
+              : allSilent
+                ? t.hostAllSilentBanner(clockTime(fetchedAt))
+                : t.sessionsMacAsleepBanner(clockTime(fetchedAt))
           }
           actionLabel={t.actionRetry}
           onAction={forceReconnect}
@@ -705,6 +715,10 @@ export default function SessionsScreen() {
       </ScrollView>
 
         </>
+      ) : onBackup ? (
+        // Sur un Mac de secours, le daemon ferme ces routes : une ligne le dit, au lieu
+        // d'une erreur par onglet.
+        <EmptyState icon="info" title={t.hostPrimaryOnly} body={t.hostPrimaryOnlyBody} />
       ) : tab === 'asks' ? (
         <AsksView />
       ) : tab === 'agents' ? (

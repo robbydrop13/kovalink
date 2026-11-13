@@ -34,6 +34,14 @@ const KEYS = {
 const HOSTS_KEY = 'kl.hosts';
 
 /**
+ * Bascule entre Macs (`net/failover.ts`). Réglages globaux, pas par Mac : ils survivent au
+ * rechargement qui suit une bascule, alors que la base locale, elle, change de Mac.
+ * `auto` vaut `0` quand Robin a coupé la bascule seule (absent : active). `from` porte le
+ * nom du Mac quitté par une bascule automatique, jusqu'au retour.
+ */
+const FAILOVER_KEYS = { auto: 'kl.failover.auto', from: 'kl.failover.from' } as const;
+
+/**
  * Groupe de trousseau partagé avec la NSE. Il vaut `<AppIdentifierPrefix>io.claap.kovalink`
  * et n'est connu qu'une fois l'identifiant d'équipe Apple renseigné. Laissé à null, les
  * entrées restent privées à l'app et la NSE retombe sur son état 3 (bannière sans action
@@ -161,6 +169,7 @@ export async function clearCredentials(): Promise<void> {
   const keys = [
     ...Object.values(KEYS),
     HOSTS_KEY,
+    ...Object.values(FAILOVER_KEYS),
     ...hosts.flatMap((h) => Object.values(hostKeys(h.id))),
   ];
   await Promise.all(
@@ -310,4 +319,25 @@ export async function updateHostInfo(
   const next = withHostInfo(await listHosts(), id, info);
   if (next) await writeHosts(next);
   return next;
+}
+
+// --- Bascule -----------------------------------------------------------------
+
+/** « Switch on my own if the Mac does not respond », active par défaut (décision D6). */
+export async function loadAutoFailover(): Promise<boolean> {
+  return (await SecureStore.getItemAsync(FAILOVER_KEYS.auto, opts())) !== '0';
+}
+
+export async function setAutoFailover(on: boolean): Promise<void> {
+  await SecureStore.setItemAsync(FAILOVER_KEYS.auto, on ? '1' : '0', opts());
+}
+
+/** Nom du Mac quitté par une bascule automatique, `null` hors bascule. */
+export async function loadFailedOverFrom(): Promise<string | null> {
+  return SecureStore.getItemAsync(FAILOVER_KEYS.from, opts());
+}
+
+export async function setFailedOverFrom(name: string | null): Promise<void> {
+  if (name) await SecureStore.setItemAsync(FAILOVER_KEYS.from, name, opts());
+  else await SecureStore.deleteItemAsync(FAILOVER_KEYS.from, opts()).catch(() => undefined);
 }

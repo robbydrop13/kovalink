@@ -22,6 +22,8 @@ import { kvClear } from '@/db';
 import { republishPrefs, stopConnection } from '@/net/connection';
 import { removeHostFlow } from '@/net/hostSwitch';
 import { HostList } from '@/features/hosts/HostList';
+import { changeAutoSwitch } from '@/features/hosts/failoverWatch';
+import { useFailover } from '@/store/failover';
 import { markUnpaired } from '@/boot';
 import { clockTime } from '@/utils/time';
 import { PUSH_UNAVAILABLE_LABEL, pushAvailable } from '@/env';
@@ -36,6 +38,8 @@ export default function SettingsScreen() {
   const link = useConnection((s) => s.link);
   const latency = useConnection((s) => s.latencyMs);
   const daemonVersion = useConnection((s) => s.daemonVersion);
+  const hostCount = useConnection((s) => s.hostCount);
+  const autoSwitch = useFailover((s) => s.autoSwitch);
   const [revoking, setRevoking] = useState(false);
 
   const revoke = () => {
@@ -115,6 +119,15 @@ export default function SettingsScreen() {
 
         <Section title={t.settingsSectionMac} />
         <HostList />
+        {hostCount > 1 ? (
+          <Row
+            title={t.settingsAutoFailover}
+            subtitle={t.settingsAutoFailoverHint}
+            value={autoSwitch}
+            // Réglage de l'iPhone, global à tous les Macs : il survit au rechargement d'une bascule.
+            onChange={(v) => void changeAutoSwitch(v)}
+          />
+        ) : null}
         <Row
           title={t.settingsKeepMacAwake}
           subtitle={t.settingsKeepMacAwakeHint}

@@ -25,6 +25,7 @@ import {
   type PairPayload,
 } from '@/protocol';
 import { activeHostId, addHost, loadCredentials, saveCredentials } from '@/store/credentials';
+import { startFailoverWatch } from '@/features/hosts/failoverWatch';
 import { startConnection, stopConnection } from '@/net/connection';
 import { useConnection } from '@/store/connection';
 import { setupNotifications } from '@/notifications/register';
@@ -153,7 +154,8 @@ export default function PairScreen() {
         const active = await activeHostId();
         const hosts = await addHost(creds, payload.name);
         // La pastille nomme le Mac dès qu'il y en a deux, sans attendre un rechargement.
-        useConnection.getState().setHost(hosts.find((h) => h.id === active)?.name ?? null, hosts.length);
+        const me = hosts.find((h) => h.id === active);
+        useConnection.getState().setHost(me?.name ?? null, hosts.length, me?.role ?? null);
         if (active === creds.tsDns) {
           // Réappairage du Mac actif : la liaison repart avec le nouveau jeton.
           stopConnection();
@@ -185,6 +187,8 @@ export default function PairScreen() {
       // La liaison et les notifications restent celles du Mac actif. Le jeton push part
       // vers ce Mac quand il devient actif (`hello`).
       bootLog('mac added');
+      // Deux Macs ou plus : la bascule a désormais un sens (sans effet si déjà lancée).
+      void startFailoverWatch().catch((error: unknown) => bootWarn('failover watch', error));
       setAdded(true);
       notify(NotifyType.Success);
       setStep('done');
@@ -195,6 +199,7 @@ export default function PairScreen() {
     // daemon : le jeton est en trousseau, l'app est appairée. Elles sont donc protégées.
     try {
       await startConnection();
+      await startFailoverWatch();
     } catch (error) {
       bootWarn('connection after pairing', error);
     }
