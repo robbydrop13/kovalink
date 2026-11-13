@@ -13,7 +13,7 @@
     "clean": "tsc -b --clean",
     "start": "node dist/src/main.js run",
     "pair": "node dist/src/main.js pair",
-    "test": "node --test dist/test/*.test.js",
+    "test": "KOVALINK_CLICK_KEY_FILE=/nonexistent/kovalink-test-key node --test dist/test/*.test.js",
     "typecheck": "tsc -b --pretty"
   },
   "dependencies": {

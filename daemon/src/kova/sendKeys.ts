@@ -1,4 +1,6 @@
 import { claimRawChannel, type KovaIpc } from './ipc.js';
+import { isUnknownSigField, sigFor } from './sendSig.js';
+import { logger } from '../logger.js';
 
 /**
  * ECRITURE BRUTE VERS UN PANE.
@@ -15,7 +17,26 @@ import { claimRawChannel, type KovaIpc } from './ipc.js';
  */
 const raw = claimRawChannel();
 
+/**
+ * Un Kova trop ancien pour la signature : on ne la retente qu'apres ce delai, le temps
+ * que Robin relance Kova, plutot que de payer un aller-retour refuse a chaque envoi.
+ */
+const SIG_RETRY_MS = 60_000;
+let sigUnsupportedUntil = 0;
+
+/**
+ * Tout ce qui passe ici est un geste de Robin via `KeyGate` (texte, reponse, touches,
+ * interruption, lancement), donc tout est signe quand la cle est lisible.
+ */
 export async function sendKeys(ipc: KovaIpc, paneId: number, text: string): Promise<void> {
-  const res = await raw(ipc, { cmd: 'send-keys', pane_id: paneId, text });
+  const now = Date.now();
+  const sig = now >= sigUnsupportedUntil ? sigFor(paneId, text, now) : null;
+  let res = await raw(ipc, sig ? { cmd: 'send-keys', pane_id: paneId, text, sig } : { cmd: 'send-keys', pane_id: paneId, text });
+  if (!res.ok && sig && isUnknownSigField(res.error)) {
+    // Kova anterieur a 748bded : rien n'a ete tape, on renvoie sans signature.
+    sigUnsupportedUntil = Date.now() + SIG_RETRY_MS;
+    logger.info('kova ne connait pas encore la signature de send-keys, envoi sans signature', { paneId });
+    res = await raw(ipc, { cmd: 'send-keys', pane_id: paneId, text });
+  }
   if (!res.ok) throw new Error(res.error ?? 'send-keys a echoue');
 }

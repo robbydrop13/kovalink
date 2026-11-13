@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,14 @@ import ts from 'typescript';
 
 process.env['KOVALINK_HOME'] = mkdtempSync(join(tmpdir(), 'kovalink-test-'));
 process.env['KOVALINK_QUIET'] = '1';
+// Jamais la vraie cle de Robin dans un test : une cle de papier.
+const TEST_KEY = 'test-key-0123456789abcdef';
+{
+  const keyFile = join(mkdtempSync(join(tmpdir(), 'kovalink-key-')), 'test-sig.key');
+  writeFileSync(keyFile, `${TEST_KEY}\n`, { mode: 0o600 });
+  process.env['KOVALINK_CLICK_KEY_FILE'] = keyFile;
+}
+const { signSendKeys, signedMessage } = await import('../src/kova/sendSig.js');
 
 const {
   KeyGate,
@@ -636,3 +644,65 @@ describe('point d entree unique des ecritures (K1, analyse syntaxique)', () => {
   });
 });
 
+describe('send-keys signe (Kova 748bded, kova-send-keys-v1)', () => {
+  it('vecteur de test de Kova : octets signes et mac', () => {
+    const text = 'ok envoie\r';
+    const msg = signedMessage('kovalink', 42, 1794559267123, text);
+    assert.equal(
+      msg,
+      'kova-send-keys-v1\nkovalink\n42\n1794559267123\n76862c0e9525051b4ae0c88ab25d0ee38e7c5a75e8e78c5d56e445c03618a950',
+    );
+    assert.deepEqual(signSendKeys(TEST_KEY, 42, text, 1794559267123), {
+      by: 'kovalink',
+      ts: 1794559267123,
+      mac: 'f3f75f48803ed7f589cfd31bce3a396766849a5d667213aec47164031fe407e9',
+    });
+  });
+
+  it('chaque envoi d un geste porte une signature valide, horodatage strictement croissant', async () => {
+    const sigs: { text: string; paneId: number; sig: { by: string; ts: number; mac: string } }[] = [];
+    const listener = (p: Record<string, unknown>): void => {
+      if (p['cmd'] === 'send-keys') {
+        sigs.push({ text: p['text'] as string, paneId: p['pane_id'] as number, sig: p['sig'] as never });
+      }
+    };
+    fake.on('command', listener);
+    try {
+      const { gate } = makeFixture();
+      const res = await gate.emitText(66, 'continue stp');
+      assert.equal(res.applied, true);
+    } finally {
+      fake.off('command', listener);
+    }
+    assert.ok(sigs.length >= 2, 'le texte puis le retour chariot');
+    let last = 0;
+    for (const s of sigs) {
+      assert.equal(s.sig.by, 'kovalink');
+      assert.ok(s.sig.ts > last, 'horodatage strictement croissant');
+      last = s.sig.ts;
+      assert.deepEqual(signSendKeys(TEST_KEY, s.paneId, s.text, s.sig.ts), s.sig);
+    }
+    assert.ok(!auditText().includes(TEST_KEY), 'la cle n apparait jamais dans l audit');
+  });
+
+  // En dernier : le repli met la signature en pause pour une minute dans ce processus.
+  it('Kova anterieur : « unknown field sig » renvoie le meme texte sans signature', async () => {
+    const seen: Record<string, unknown>[] = [];
+    fake.respond = (msg) => {
+      if (msg['cmd'] !== 'send-keys') return null;
+      seen.push(msg);
+      return 'sig' in msg ? { ok: false, error: 'unknown field "sig" for command "send-keys"' } : null;
+    };
+    try {
+      const { gate } = makeFixture();
+      const res = await gate.emitText(66, 'vieux kova');
+      assert.equal(res.applied, true);
+    } finally {
+      fake.respond = null;
+    }
+    assert.ok('sig' in (seen[0] ?? {}), 'premier essai signe');
+    assert.ok(!('sig' in (seen[1] ?? {})), 'renvoi sans signature');
+    assert.equal(seen[1]?.['text'], seen[0]?.['text']);
+    assert.ok(seen.slice(2).every((m) => !('sig' in m)), 'la suite part sans aller-retour refuse');
+  });
+});
