@@ -3,7 +3,7 @@
 // agents lui sont fermes. Le Mac principal, lui, ne doit rien voir changer.
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import Fastify from 'fastify';
@@ -94,6 +94,17 @@ describe('role : lecture de config.json', () => {
     writeFileSync(paths.config(), JSON.stringify({ role: 'satellite' }));
     assert.equal(loadConfig().role, 'secondary');
   });
+
+  it('name absent ou vide : le nom d hote de macOS, comme avant', () => {
+    const fromOs = hostname().replace(/\.local$/, '');
+    assert.equal(hostName(DEFAULT_CONFIG), fromOs);
+    assert.equal(hostName({ name: '  ' }), fromOs);
+  });
+
+  it('name renseigne : remplace le nom d hote (QR, hello.ok, bannieres)', () => {
+    writeFileSync(paths.config(), JSON.stringify({ role: 'secondary', name: ' M1 ' }));
+    assert.equal(hostName(loadConfig()), 'M1');
+  });
 });
 
 describe('role : champ host des notifications', () => {
@@ -112,8 +123,14 @@ describe('role : champ host des notifications', () => {
     const base = buildPayload(turnEnd, pane, 'tok', 0);
     assert.ok(base);
     const m = withHost(base, secondary);
-    assert.equal(m.title, `${hostName()} . cc . projet`);
+    assert.equal(m.title, `${hostName(secondary)} . cc . projet`);
     assert.equal(m.data.host, TS_DNS);
+  });
+
+  it('name de config.json : c est lui qui prefixe le titre', () => {
+    const base = buildPayload(turnEnd, pane, 'tok', 0);
+    assert.ok(base);
+    assert.equal(withHost(base, { ...secondary, name: 'M1' }).title, 'M1 . cc . projet');
   });
 
   it('sans tsDns : aucun champ host', () => {
@@ -128,7 +145,7 @@ describe('role : champ host des notifications', () => {
     assert.equal(messages.length, 1);
     assert.equal(messages[0]?.data.kind, 'aggregate');
     assert.equal(messages[0]?.data.host, TS_DNS);
-    assert.equal(messages[0]?.title, `${hostName()} . KovaLink`);
+    assert.equal(messages[0]?.title, `${hostName(secondary)} . KovaLink`);
   });
 
   it('question d agent (sendAsk) : data.host et titre prefixe', async () => {
@@ -158,7 +175,7 @@ describe('role : champ host des notifications', () => {
     } as AskItem;
     assert.equal(await sender.sendAsk(ask, 1), 1);
     sender.stop();
-    assert.equal(sent[0]?.title, `${hostName()} . claap-agent`);
+    assert.equal(sent[0]?.title, `${hostName(secondary)} . claap-agent`);
     assert.equal(sent[0]?.data.host, TS_DNS);
   });
 });

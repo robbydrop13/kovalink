@@ -258,7 +258,7 @@ function buildAggregatePayload(
  */
 export function withHost(msg: ExpoPushMessage, cfg: KovalinkConfig): ExpoPushMessage {
   const out = cfg.tsDns ? { ...msg, data: { ...msg.data, host: cfg.tsDns } } : msg;
-  return cfg.role === 'secondary' ? { ...out, title: `${hostName()} . ${out.title}` } : out;
+  return cfg.role === 'secondary' ? { ...out, title: `${hostName(cfg)} . ${out.title}` } : out;
 }
 
 type ExpoTicket = { status: string; id?: string; details?: { error?: string } };

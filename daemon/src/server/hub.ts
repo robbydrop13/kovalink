@@ -323,7 +323,7 @@ export class Hub {
           serverTime: new Date().toISOString(),
           ...(renewed ? { token: renewed } : {}),
           // Le Mac qui repond : l'app reliee a deux Mac sait lequel elle regarde.
-          host: { name: hostName(), role: this.services.cfg().role },
+          host: { name: hostName(this.services.cfg()), role: this.services.cfg().role },
         });
       }
 
@@ -622,8 +622,13 @@ export class Hub {
     );
   }
 
-  /** La derniere lecture de la file d'attention, vide quand le harnais n'en a pas. */
+  /**
+   * La derniere lecture de la file d'attention, vide quand le harnais n'en a pas. Vide
+   * aussi sur un Mac secondaire : la file est celle du Mac principal, le telephone ne
+   * doit jamais compter celle du Mac de secours.
+   */
   private attention(): AttentionEntry[] {
+    if (this.services.cfg().role === 'secondary') return [];
     return this.services.attention?.snapshot() ?? [];
   }
 

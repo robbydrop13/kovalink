@@ -245,9 +245,13 @@ async function run(): Promise<void> {
     }
     hub.syncWaitsOnYou();
   };
-  void refreshAttention('demarrage');
-  const attentionTimer = setInterval(() => void refreshAttention('sondage'), ATTENTION_CACHE_MS);
-  attentionTimer.unref?.();
+  // Mac secondaire : aucun sondage, `attn` n'y est pas celui de Robin (`roleGuard.ts`).
+  let attentionTimer: NodeJS.Timeout | undefined;
+  if (cfg().role !== 'secondary') {
+    void refreshAttention('demarrage');
+    attentionTimer = setInterval(() => void refreshAttention('sondage'), ATTENTION_CACHE_MS);
+    attentionTimer.unref?.();
+  }
   services.refreshAttention = refreshAttention;
 
   /** Relecture complete de `list-panes`, puis diffusion. Jamais sur le chemin d'une requete. */

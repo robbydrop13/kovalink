@@ -13,6 +13,11 @@ export type HostRole = 'primary' | 'secondary';
 export interface KovalinkConfig {
   port: number;
   role: HostRole;
+  /**
+   * Nom court du Mac, celui du QR d'appairage, de `hello.ok` et du prefixe des
+   * bannieres d'un Mac secondaire. Absent : le nom d'hote de macOS (`hostName`).
+   */
+  name?: string;
   /** Nom MagicDNS servi par `tailscale cert`. Null tant que l'appairage n'a pas eu lieu. */
   tsDns: string | null;
   preventSleep: boolean;
@@ -97,9 +102,10 @@ function roleOf(raw: unknown): HostRole {
   return 'secondary';
 }
 
-/** Nom court du Mac, le meme que celui du QR d'appairage (`pair.ts`). */
-export function hostName(): string {
-  return hostname().replace(/\.local$/, '');
+/** Nom court du Mac : `name` de config.json s'il est renseigne, sinon le nom d'hote. */
+export function hostName(cfg: Pick<KovalinkConfig, 'name'>): string {
+  const name = typeof cfg.name === 'string' ? cfg.name.trim() : '';
+  return name || hostname().replace(/\.local$/, '');
 }
 
 /** `~` est resolu ici, une fois, jamais dans les comparateurs de chemin. */
