@@ -12,7 +12,7 @@ import {
   type CountsPush,
   type PushPayload,
 } from '@kovalink/protocol';
-import type { KovalinkConfig } from '../config.js';
+import { hostName, type KovalinkConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { devicesRevision, loadDevices, saveDevices, type DeviceRecord } from '../security/token.js';
 import { deliveryFor, HourlyCap, inQuietHours, type DevicePushPrefs } from './policy.js';
@@ -251,6 +251,16 @@ function buildAggregatePayload(
   };
 }
 
+/**
+ * Marque une banniere du Mac qui l'emet. `data.host` (le `tsDns`) part toujours, pour
+ * l'app reliee a plusieurs Mac. Le titre ne change que sur un Mac secondaire : le Mac
+ * principal garde exactement ses bannieres d'avant.
+ */
+export function withHost(msg: ExpoPushMessage, cfg: KovalinkConfig): ExpoPushMessage {
+  const out = cfg.tsDns ? { ...msg, data: { ...msg.data, host: cfg.tsDns } } : msg;
+  return cfg.role === 'secondary' ? { ...out, title: `${hostName()} . ${out.title}` } : out;
+}
+
 type ExpoTicket = { status: string; id?: string; details?: { error?: string } };
 
 /**
@@ -315,7 +325,7 @@ export class PushSender {
         ? buildAggregatePayload(device.expoPushToken, admission.waiting, awaitingCount, delivery.passive)
         : buildPayload(prompt, pane, device.expoPushToken, awaitingCount, delivery.passive);
       if (payload) {
-        messages.push(payload);
+        messages.push(withHost(payload, ctx.cfg));
         routed.set(device.expoPushToken, device.deviceId);
       }
     }
@@ -406,7 +416,7 @@ export class PushSender {
     const messages: ExpoPushMessage[] = [];
     const routed = new Map<string, string>();
     for (const device of targets) {
-      messages.push(buildAskPayload(ask, device.expoPushToken, awaitingCount));
+      messages.push(withHost(buildAskPayload(ask, device.expoPushToken, awaitingCount), this.cfg()));
       routed.set(device.expoPushToken, device.deviceId);
     }
     let expo: ExpoLike;

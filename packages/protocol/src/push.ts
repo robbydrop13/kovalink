@@ -79,6 +79,11 @@ export interface PushPayload {
   deepLinkPath?: string;
   /** Categorie visee une fois le contenu recupere. La charge porte toujours le pire cas. */
   targetCategory?: NotificationCategory;
+  /**
+   * `tsDns` du daemon emetteur, pour qu'une app reliee a plusieurs Mac sache lequel a
+   * sonne. Absent chez un daemon d'avant ce champ ou sans `tsDns`.
+   */
+  host?: string;
 
   // --- Ecrits par la NSE uniquement -----------------------------------------
   paneId?: number;

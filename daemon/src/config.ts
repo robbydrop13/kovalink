@@ -1,10 +1,18 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { paths } from './paths.js';
 
+/**
+ * Role de ce Mac. `primary` : le Mac de Robin, tout est ouvert. `secondary` : un Mac de
+ * secours en lecture, qui ne pilote ni la file d'attention, ni les routines, ni les
+ * agents, et ne demarre pas le pont Slack (`server/roleGuard.ts`, `main.ts`).
+ */
+export type HostRole = 'primary' | 'secondary';
+
 export interface KovalinkConfig {
   port: number;
+  role: HostRole;
   /** Nom MagicDNS servi par `tailscale cert`. Null tant que l'appairage n'a pas eu lieu. */
   tsDns: string | null;
   preventSleep: boolean;
@@ -35,6 +43,7 @@ export interface KovalinkConfig {
 
 export const DEFAULT_CONFIG: KovalinkConfig = {
   port: 8765,
+  role: 'primary',
   tsDns: null,
   preventSleep: true,
   push: {
@@ -78,6 +87,21 @@ export const DEFAULT_CONFIG: KovalinkConfig = {
   },
 };
 
+/**
+ * Champ absent : `primary`, un fichier d'avant ce champ se comporte exactement comme
+ * avant. Valeur inconnue (une faute, ou `satellite`, le mot de `claude-config`) :
+ * `secondary`, on ferme plutot que d'ouvrir les gestes du Mac principal par erreur.
+ */
+function roleOf(raw: unknown): HostRole {
+  if (raw === undefined || raw === 'primary') return 'primary';
+  return 'secondary';
+}
+
+/** Nom court du Mac, le meme que celui du QR d'appairage (`pair.ts`). */
+export function hostName(): string {
+  return hostname().replace(/\.local$/, '');
+}
+
 /** `~` est resolu ici, une fois, jamais dans les comparateurs de chemin. */
 export function expandTilde(p: string): string {
   if (p === '~') return homedir();
@@ -92,6 +116,7 @@ export function loadConfig(): KovalinkConfig {
     return {
       ...DEFAULT_CONFIG,
       ...raw,
+      role: roleOf(raw.role),
       push: { ...DEFAULT_CONFIG.push, ...(raw.push ?? {}) },
       slack: { ...DEFAULT_CONFIG.slack, ...(raw.slack ?? {}) },
     };

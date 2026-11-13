@@ -42,7 +42,7 @@ import {
 } from './security/tls.js';
 import { loadMasterSecret } from './security/token.js';
 import { SleepAssertion } from './sleep.js';
-import { startSlack } from './slack/socket.js';
+import { slackOff, startSlack, type SlackHandle } from './slack/socket.js';
 import type { RawLine } from './transcript/jsonl.js';
 import { clearRuntimeState, initRuntimeState, updateRuntimeState } from './state.js';
 import { runStatus } from './status.js';
@@ -461,23 +461,26 @@ async function run(): Promise<void> {
   // --- Pont Slack (`@kova <session> <message>`) ----------------------------
   // Eteint sans jetons dans le Trousseau. Meme chemin d'ecriture que l'iPhone (KeyGate),
   // meme detection de fin de tour et de question que les notifications.
-  const slack = startSlack({
-    allowedUserId: () => cfg().slack.allowedUserId,
-    jobTimeoutMs: () => cfg().slack.jobTimeoutMs,
-    panes: () => panes.all(),
-    pane: (paneId) => panes.get(paneId),
-    refresh: () => refreshLayout('slack'),
-    send: (paneId, text) => keygate.emitText(paneId, text, 'slack'),
-    currentQuestion: async (paneId) => {
-      const p = await prompts.current(paneId, panes.get(paneId)?.awaiting_since ?? null);
-      return p.state === 'parsed' ? p.question : null;
-    },
-    transcript: (paneId) => {
-      const p = panes.get(paneId);
-      const sessionId = p?.agent_session_id ?? p?.claude_session_id;
-      return p?.agent === 'claude' && sessionId ? readTailLines(transcriptPath(p.cwd, sessionId)) : [];
-    },
-  });
+  // Eteint aussi sur un Mac secondaire, jetons presents ou non : un seul Mac repond a Slack.
+  const slack: SlackHandle = cfg().role === 'secondary'
+    ? slackOff()
+    : startSlack({
+      allowedUserId: () => cfg().slack.allowedUserId,
+      jobTimeoutMs: () => cfg().slack.jobTimeoutMs,
+      panes: () => panes.all(),
+      pane: (paneId) => panes.get(paneId),
+      refresh: () => refreshLayout('slack'),
+      send: (paneId, text) => keygate.emitText(paneId, text, 'slack'),
+      currentQuestion: async (paneId) => {
+        const p = await prompts.current(paneId, panes.get(paneId)?.awaiting_since ?? null);
+        return p.state === 'parsed' ? p.question : null;
+      },
+      transcript: (paneId) => {
+        const p = panes.get(paneId);
+        const sessionId = p?.agent_session_id ?? p?.claude_session_id;
+        return p?.agent === 'claude' && sessionId ? readTailLines(transcriptPath(p.cwd, sessionId)) : [];
+      },
+    });
   detector.on('turn-closed', (pane: Pane, _sessionId: string, lines: RawLine[]) => {
     void slack.bridge?.onTurnClosed(pane, lines);
   });

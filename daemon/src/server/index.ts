@@ -84,6 +84,7 @@ import { registerAttentionRoutes } from './attentionRoutes.js';
 import { registerFsRoutes } from './fsRoutes.js';
 import { registerMiraRoutes } from './miraRoutes.js';
 import { registerPanelRoutes } from './panelRoutes.js';
+import { registerRoleGuard } from './roleGuard.js';
 import { Hub, type Socket } from './hub.js';
 import type { Services } from './services.js';
 
@@ -275,6 +276,8 @@ export async function createHttpServer(
     services.authFailures.clear(verdict.deviceId);
     req.deviceId = verdict.deviceId;
   });
+  // Mac secondaire : file d'attention, routines et agents refuses (`roleGuard.ts`).
+  registerRoleGuard(app, services.cfg);
 
   // --- Routes ------------------------------------------------------------
 

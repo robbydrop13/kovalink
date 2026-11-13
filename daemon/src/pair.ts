@@ -1,8 +1,6 @@
-import { hostname } from 'node:os';
-
 import { encodePairPayload, PAIRING_PAYLOAD_VERSION, PAIRING_TTL_MS } from '@kovalink/protocol';
 
-import { loadConfig } from './config.js';
+import { hostName, loadConfig } from './config.js';
 import { consumePairing, readPairing, writePairing } from './pairing.js';
 
 const ESC = String.fromCharCode(27);
@@ -34,7 +32,7 @@ export async function runPair(): Promise<void> {
     code,
     tsDns: cfg.tsDns,
     port: cfg.port,
-    name: hostname().replace(/\.local$/, ''),
+    name: hostName(),
     exp: expiresAt,
   });
 

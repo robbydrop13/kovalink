@@ -160,6 +160,11 @@ export interface HelloOk {
   serverTime: string;
   /** Renouvellement silencieux du jeton a moins de 15 jours de l'expiration. */
   token?: string;
+  /**
+   * Le Mac qui repond. `secondary` : Mac de secours en lecture, sans file d'attention,
+   * routines ni agents. Absent chez un daemon d'avant ce champ : `primary`.
+   */
+  host?: { name: string; role: 'primary' | 'secondary' };
 }
 export interface Pong {
   t: 'pong';

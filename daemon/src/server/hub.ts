@@ -16,7 +16,7 @@ import {
   type Turn,
 } from '@kovalink/protocol';
 import { audit } from '../audit.js';
-import { saveConfig } from '../config.js';
+import { hostName, saveConfig } from '../config.js';
 import { logger } from '../logger.js';
 import { waitsOnYouOf } from '../needs.js';
 import { countsOf, type CountsSnapshot } from '../push/counts.js';
@@ -322,6 +322,8 @@ export class Hub {
           link: this.rememberLink(client),
           serverTime: new Date().toISOString(),
           ...(renewed ? { token: renewed } : {}),
+          // Le Mac qui repond : l'app reliee a deux Mac sait lequel elle regarde.
+          host: { name: hostName(), role: this.services.cfg().role },
         });
       }
 
