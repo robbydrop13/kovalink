@@ -118,6 +118,12 @@ export interface SlackHandle {
   stop(): void;
 }
 
+/** Pont jamais demarre : Mac secondaire, un seul Mac repond a Slack (`main.ts`). */
+export function slackOff(): SlackHandle {
+  logger.info('slack: secondary host, Slack bridge off');
+  return { bridge: null, stop() {} };
+}
+
 /**
  * Demarre le pont s'il a ses deux jetons. Ne leve jamais : toute erreur est journalisee
  * et le daemon continue sans Slack.

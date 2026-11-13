@@ -223,6 +223,20 @@ describe('Hub : poignee de main', () => {
     assert.deepEqual((reply as { kova: unknown }).kova, { status: 'up', pid: 4242, commands: {} });
   });
 
+  it('hello.ok porte le Mac qui repond : primary par defaut, secondary si config.json le dit', async () => {
+    const { hostName } = await import('../src/config.js');
+    saveConfig({ ...DEFAULT_CONFIG });
+    const [first] = await harness().connect().say(hello());
+    assert.deepEqual((first as { host?: unknown }).host, { name: hostName(), role: 'primary' });
+    saveConfig({ ...DEFAULT_CONFIG, role: 'secondary' });
+    try {
+      const [second] = await harness().connect().say(hello());
+      assert.deepEqual((second as { host?: unknown }).host, { name: hostName(), role: 'secondary' });
+    } finally {
+      saveConfig({ ...DEFAULT_CONFIG });
+    }
+  });
+
   it('version de protocole inconnue : erreur PUIS fermeture 4426, reellement emise', async () => {
     const h = harness();
     const s = h.connect();
