@@ -33,7 +33,8 @@ export function HostList() {
       if (!alive()) return;
       setHosts(list);
       setActive(current);
-      useConnection.getState().setHost(list.find((h) => h.id === current)?.name ?? null, list.length);
+      const me = list.find((h) => h.id === current);
+      useConnection.getState().setHost(me?.name ?? null, list.length, me?.role ?? null);
       setReach({});
       for (const h of list) {
         void health({ tsDns: h.id, port: h.port || DEFAULT_PORT })

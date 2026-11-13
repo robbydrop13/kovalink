@@ -62,6 +62,17 @@ export const system = {
     'This iPhone is revoked on that Mac and its local cache is erased',
   settingsHostRemoveAction: 'Remove',
   settingsHostAccessibility: (name: string, state: string) => `${name}, ${state}`,
+  settingsAutoFailover: 'Switch on my own if the Mac does not respond',
+  settingsAutoFailoverHint:
+    'Only from the primary Mac, and only if another Mac responds. Coming back is always your call',
+  hostFailedOverBanner: (from: string, here: string) => `${from} unreachable · You are on ${here}`,
+  hostReturnBanner: (name: string) => `Primary Mac available: ${name}`,
+  hostReturnAction: 'Return',
+  hostOfferBanner: (name: string) => `Mac not responding · ${name} responds`,
+  hostSwitching: 'Switching',
+  hostAllSilentBanner: (time: string) => `Offline or Mac unreachable, last state at ${time}`,
+  hostPrimaryOnly: 'Available on the primary Mac',
+  hostPrimaryOnlyBody: 'This Mac is a backup: no attention queue, routines or agents here',
   settingsKeepMacAwake: 'Keep the Mac awake',
   settingsKeepMacAwakeHint:
     'While an agent is working, 4 h max. Lid closed on battery, the session is suspended.',

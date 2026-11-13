@@ -3,6 +3,7 @@
 // une solution qui n'existe pas.
 import { create } from 'zustand';
 import { t } from '@/i18n/en';
+import type { HostRole } from './hosts';
 
 export type LinkState = 'connecting' | 'direct' | 'relayed' | 'macUnreachable' | 'offline';
 export type KovaStatus = 'up' | 'down' | 'reconnecting' | 'unknown';
@@ -17,6 +18,8 @@ interface ConnectionState {
   /** Nom du Mac actif et nombre de Macs appairés : la pastille nomme le Mac dès qu'il y en a deux. */
   hostName: string | null;
   hostCount: number;
+  /** Rôle du Mac actif : sur un secours, file d'attention, routines et agents n'existent pas. */
+  hostRole: HostRole | null;
   kovaVersion: string | null;
   /** Horodatage du dernier instantané reçu, sert aux bandeaux dégradés. */
   lastSyncAt: number | null;
@@ -25,7 +28,7 @@ interface ConnectionState {
   setLatency: (ms: number) => void;
   setKova: (kova: KovaStatus, version?: string | null) => void;
   setDaemonVersion: (v: string) => void;
-  setHost: (name: string | null, count: number) => void;
+  setHost: (name: string | null, count: number, role?: HostRole | null) => void;
   markSynced: () => void;
   setError: (message: string | null) => void;
 }
@@ -38,6 +41,7 @@ export const useConnection = create<ConnectionState>((set) => ({
   daemonVersion: null,
   hostName: null,
   hostCount: 0,
+  hostRole: null,
   kovaVersion: null,
   lastSyncAt: null,
   lastError: null,
@@ -47,7 +51,8 @@ export const useConnection = create<ConnectionState>((set) => ({
   setKova: (kova, version) =>
     set((s) => ({ kova, kovaVersion: version === undefined ? s.kovaVersion : version })),
   setDaemonVersion: (daemonVersion) => set({ daemonVersion }),
-  setHost: (hostName, hostCount) => set({ hostName, hostCount }),
+  setHost: (hostName, hostCount, role) =>
+    set((s) => ({ hostName, hostCount, hostRole: role === undefined ? s.hostRole : role })),
   markSynced: () => set({ lastSyncAt: Date.now(), lastError: null }),
   setError: (lastError) => set({ lastError }),
 }));

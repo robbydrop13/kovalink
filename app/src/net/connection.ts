@@ -167,7 +167,7 @@ async function refreshHostInfo(host: { name: string; role: 'primary' | 'secondar
     const hosts = await updateHostInfo(activeHost, host);
     if (hosts) {
       const me = hosts.find((h) => h.id === activeHost);
-      useConnection.getState().setHost(me?.name ?? null, hosts.length);
+      useConnection.getState().setHost(me?.name ?? null, hosts.length, me?.role ?? null);
     }
   } catch (error) {
     bootWarn('host info', error);
@@ -186,7 +186,8 @@ export async function startConnection(): Promise<void> {
   try {
     // `listHosts` migre aussi le registre d'une installation appairée avant le multi Mac.
     const hosts = await listHosts();
-    useConnection.getState().setHost(hosts.find((h) => h.id === creds.tsDns)?.name ?? null, hosts.length);
+    const me = hosts.find((h) => h.id === creds.tsDns);
+    useConnection.getState().setHost(me?.name ?? null, hosts.length, me?.role ?? null);
   } catch (error) {
     bootWarn('hosts registry', error);
   }
