@@ -200,6 +200,7 @@ function harness(askRows: Record<string, unknown>[] = []) {
     spawned,
     killed: () => killed,
     connect,
+    services,
     advance: (ms: number) => (clock += ms),
     now: () => clock,
   };
@@ -227,11 +228,31 @@ describe('Hub : poignee de main', () => {
     const { hostName } = await import('../src/config.js');
     saveConfig({ ...DEFAULT_CONFIG });
     const [first] = await harness().connect().say(hello());
-    assert.deepEqual((first as { host?: unknown }).host, { name: hostName(), role: 'primary' });
+    assert.deepEqual((first as { host?: unknown }).host, { name: hostName(DEFAULT_CONFIG), role: 'primary' });
     saveConfig({ ...DEFAULT_CONFIG, role: 'secondary' });
     try {
       const [second] = await harness().connect().say(hello());
-      assert.deepEqual((second as { host?: unknown }).host, { name: hostName(), role: 'secondary' });
+      assert.deepEqual((second as { host?: unknown }).host, { name: hostName(DEFAULT_CONFIG), role: 'secondary' });
+      saveConfig({ ...DEFAULT_CONFIG, role: 'secondary', name: 'M1' });
+      const [third] = await harness().connect().say(hello());
+      assert.deepEqual((third as { host?: unknown }).host, { name: 'M1', role: 'secondary' });
+    } finally {
+      saveConfig({ ...DEFAULT_CONFIG });
+    }
+  });
+
+  it('Mac secondaire : la file d attention ne compte jamais (pastille, message asks)', () => {
+    const h = harness();
+    // Une entree `now` : un need sur le Mac principal. Le cadran lit la meme source.
+    const entry = { id: 'a-000001', ts: new Date(h.now() - 60_000).toISOString(), from: 'routine', level: 'now', kind: 'review', title: 'Relire' };
+    h.services.attention = { snapshot: () => [entry] } as never;
+    saveConfig({ ...DEFAULT_CONFIG });
+    const onPrimary = h.hub.waitsOnYou();
+    assert.ok(onPrimary >= 1);
+    saveConfig({ ...DEFAULT_CONFIG, role: 'secondary' });
+    try {
+      assert.equal(h.hub.waitsOnYou(), onPrimary - 1);
+      assert.equal(h.hub.asksSnapshot().waitsOnYou, onPrimary - 1);
     } finally {
       saveConfig({ ...DEFAULT_CONFIG });
     }

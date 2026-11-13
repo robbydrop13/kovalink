@@ -32,7 +32,7 @@ export async function runPair(): Promise<void> {
     code,
     tsDns: cfg.tsDns,
     port: cfg.port,
-    name: hostName(),
+    name: hostName(cfg),
     exp: expiresAt,
   });
 
