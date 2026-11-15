@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { logger } from './logger.js';
 
 /** Filet de securite contre une assertion oubliee (A13, CA-125). */
@@ -46,18 +46,23 @@ export function parseAcPower(out: string): boolean {
   return /Now drawing from 'AC Power'/.test(out);
 }
 
+let powerReading = false;
+
+/**
+ * Jamais d'appel bloquant : `touch` est sur le chemin de chaque message WebSocket. La
+ * valeur rendue est la derniere lue ; perimee, elle est relue en tache de fond. Avant la
+ * premiere lecture (amorcee a la construction) : batterie.
+ */
 function readAcPower(): boolean {
   const now = Date.now();
-  if (powerRead && now - powerRead.at < POWER_TTL_MS) return powerRead.ac;
-  let ac = false;
-  try {
-    const r = spawnSync('/usr/bin/pmset', ['-g', 'batt'], { encoding: 'utf8', timeout: 2_000 });
-    ac = parseAcPower(r.stdout ?? '');
-  } catch {
-    ac = false;
+  if ((!powerRead || now - powerRead.at >= POWER_TTL_MS) && !powerReading) {
+    powerReading = true;
+    execFile('/usr/bin/pmset', ['-g', 'batt'], { encoding: 'utf8', timeout: 2_000 }, (err, stdout) => {
+      powerReading = false;
+      powerRead = { at: Date.now(), ac: err ? false : parseAcPower(stdout) };
+    });
   }
-  powerRead = { at: now, ac };
-  return ac;
+  return powerRead?.ac ?? false;
 }
 
 const realSleepDeps: SleepDeps = {
@@ -120,7 +125,10 @@ export class SleepAssertion {
   constructor(
     private readonly enabled: () => boolean,
     private readonly deps: SleepDeps = realSleepDeps,
-  ) {}
+  ) {
+    // Amorce la lecture de l'alimentation : le premier message du telephone la trouve prete.
+    if (!deps.onAcPower) readAcPower();
+  }
 
   /** Vrai quand une assertion est actuellement posee. */
   get active(): boolean {
@@ -175,14 +183,19 @@ export class SleepAssertion {
       return;
     }
     if (!wanted && this.proc) {
+      const hadHold = this.holdUntil > 0;
       this.release(
-        this.working || holding
-          ? 'reglage desactive'
-          : this.holdUntil > 0
-            ? 'plus aucun agent au travail, telephone inactif'
-            : 'plus aucun agent au travail',
+        this.capped
+          ? 'plafond de 4 h atteint'
+          : this.working || holding
+            ? 'reglage desactive'
+            : hadHold
+              ? 'plus aucun agent au travail, telephone inactif'
+              : 'plus aucun agent au travail',
       );
     }
+    // Une tenue echue est oubliee : la relache suivante ne parlera plus du telephone.
+    if (!holding) this.holdUntil = 0;
   }
 
   private onCap(): void {
