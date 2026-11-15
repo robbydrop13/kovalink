@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 process.env['KOVALINK_HOME'] = mkdtempSync(join(tmpdir(), 'kovalink-sleep-'));
 process.env['KOVALINK_QUIET'] = '1';
 
-const { SleepAssertion, SLEEP_CAP_MS, RESPAWN_DELAY_MS, parseAcPower } = await import('../src/sleep.js');
+const { SleepAssertion, SLEEP_CAP_MS, RESPAWN_DELAY_MS, LID_RETRY_MS, parseAcPower, parseSleepDisabled } = await import('../src/sleep.js');
 const { sleepPart } = await import('../src/status.js');
 
 /**
@@ -297,5 +297,148 @@ describe('anti-veille : sur secteur, le Mac ne dort jamais (Robin, 15 novembre)'
       'Mac tenu eveille (secteur) depuis 2026-11-15T13:30:00.000Z',
     );
     assert.equal(sleepPart({ held: false, reason: null, since: null, power: 'battery' }), 'Mac libre de dormir (batterie)');
+  });
+});
+
+/** Banc du capot : faux `sudo pmset -a disablesleep`, qui reussit ou refuse a la demande. */
+function lidBench(opts: { sudo?: boolean } = {}) {
+  let now = 0;
+  let sudo = opts.sudo ?? true;
+  let flag = true;
+  const writes: boolean[] = [];
+  const sleep = new SleepAssertion(() => flag, {
+    spawn: () => ({ kill: () => undefined }),
+    setTimeout: () => 1,
+    clearTimeout: () => undefined,
+    pid: 4242,
+    now: () => now,
+    setDisableSleep: (on) => {
+      writes.push(on);
+      return Promise.resolve(sudo);
+    },
+  });
+  /** Laisse se terminer les ecritures en cours. */
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+  };
+  return {
+    sleep,
+    writes,
+    settle,
+    setSudo: (v: boolean) => void (sudo = v),
+    setEnabled: (v: boolean) => void (flag = v),
+    advance: (ms: number) => void (now += ms),
+  };
+}
+
+describe('anti-veille : capot ferme sur secteur (choix B de Robin, 15 novembre)', () => {
+  it('sur secteur disablesleep passe a 1, debranche il repasse a 0', async () => {
+    const h = lidBench();
+    h.sleep.setLidKnown(false);
+    h.sleep.setPower(true);
+    await h.settle();
+    assert.deepEqual(h.writes, [true]);
+    assert.equal(h.sleep.state.lid, 'held');
+    h.sleep.setPower(true);
+    await h.settle();
+    assert.deepEqual(h.writes, [true], 'ecrit seulement au changement');
+    h.sleep.setPower(false);
+    await h.settle();
+    assert.deepEqual(h.writes, [true, false], 'sur batterie, capot ferme, le Mac doit dormir');
+    assert.equal(h.sleep.state.lid, 'free');
+  });
+
+  it('un agent au travail sur batterie ne tient pas le capot', async () => {
+    const h = lidBench();
+    h.sleep.setLidKnown(false);
+    h.sleep.setPower(false);
+    h.sleep.reconcile(true);
+    await h.settle();
+    assert.equal(h.sleep.active, true);
+    assert.deepEqual(h.writes, []);
+  });
+
+  it('un 1 laisse par un daemon tue net est remis a 0 au demarrage si l on est sur batterie', async () => {
+    const h = lidBench();
+    h.sleep.setLidKnown(true);
+    await h.settle();
+    assert.deepEqual(h.writes, [false], 'alimentation encore inconnue : on rend le capot a macOS');
+    h.sleep.setPower(false);
+    await h.settle();
+    assert.deepEqual(h.writes, [false]);
+    assert.equal(h.sleep.state.lid, 'free');
+  });
+
+  it('deja a 1 au demarrage et sur secteur : garde, sans aller-retour par 0', async () => {
+    const h = lidBench();
+    // Ordre de `main.ts` : l'alimentation d'abord, puis la valeur lue.
+    h.sleep.setPower(true);
+    h.sleep.setLidKnown(true);
+    await h.settle();
+    assert.equal(h.writes.includes(false), false);
+    assert.equal(h.sleep.state.lid, 'held');
+  });
+
+  it('regle sudoers absente : unavailable, l assertion du secteur tient quand meme, nouvel essai apres 10 min', async () => {
+    const h = lidBench({ sudo: false });
+    h.sleep.setLidKnown(false);
+    h.sleep.setPower(true);
+    await h.settle();
+    assert.equal(h.sleep.active, true, 'jamais d echec : la veille par inactivite reste empechee');
+    assert.equal(h.sleep.state.lid, 'unavailable');
+    h.sleep.setPower(true);
+    await h.settle();
+    assert.equal(h.writes.length, 1, 'pas d essai a chaque releve de 30 s');
+    // Robin installe la regle : au releve qui suit le delai, le capot est tenu.
+    h.setSudo(true);
+    h.advance(LID_RETRY_MS);
+    h.sleep.setPower(true);
+    await h.settle();
+    assert.equal(h.sleep.state.lid, 'held');
+  });
+
+  it('un 1 que sudo refuse de retirer se dit stuck et se retente a chaque releve', async () => {
+    const h = lidBench();
+    h.sleep.setLidKnown(false);
+    h.sleep.setPower(true);
+    await h.settle();
+    h.setSudo(false);
+    h.sleep.setPower(false);
+    await h.settle();
+    assert.equal(h.sleep.state.lid, 'stuck');
+    h.setSudo(true);
+    h.sleep.setPower(false);
+    await h.settle();
+    assert.equal(h.sleep.state.lid, 'free');
+  });
+
+  it('interrupteur de l app coupe, ou arret du daemon : le capot est rendu a macOS', async () => {
+    const h = lidBench();
+    h.sleep.setLidKnown(false);
+    h.sleep.setPower(true);
+    await h.settle();
+    h.setEnabled(false);
+    h.sleep.reconcile(false);
+    await h.settle();
+    assert.deepEqual(h.writes, [true, false]);
+    h.setEnabled(true);
+    h.sleep.reconcile(false);
+    await h.settle();
+    h.sleep.stop();
+    await h.settle();
+    assert.deepEqual(h.writes, [true, false, true, false]);
+  });
+
+  it('lit SleepDisabled dans pmset -g : la ligne n existe que lorsqu elle vaut 1', () => {
+    assert.equal(parseSleepDisabled(' sleep                1\n SleepDisabled        1\n'), true);
+    assert.equal(parseSleepDisabled(' sleep                1\n displaysleep         10\n'), false);
+    assert.equal(parseSleepDisabled(''), null);
+  });
+
+  it('kovalinkd status parle du capot', () => {
+    const base = { held: true, reason: 'ac' as const, since: 'T', power: 'ac' as const };
+    assert.match(sleepPart({ ...base, lid: 'held' }), /capot ferme compris/);
+    assert.match(sleepPart({ ...base, lid: 'unavailable' }), /regle sudoers absente/);
+    assert.match(sleepPart({ held: false, reason: null, since: null, power: 'battery', lid: 'stuck' }), /disablesleep reste a 1/);
   });
 });

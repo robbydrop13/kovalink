@@ -42,7 +42,7 @@ import {
   type TlsMaterial,
 } from './security/tls.js';
 import { loadMasterSecret } from './security/token.js';
-import { POWER_POLL_MS, readAcPower, SleepAssertion } from './sleep.js';
+import { POWER_POLL_MS, readAcPower, readSleepDisabled, SleepAssertion } from './sleep.js';
 import { startSlack } from './slack/socket.js';
 import type { RawLine } from './transcript/jsonl.js';
 import { clearRuntimeState, initRuntimeState, updateRuntimeState } from './state.js';
@@ -601,7 +601,12 @@ async function run(): Promise<void> {
     void readAcPower().then((onAc) => sleep.setPower(onAc));
   };
   updateRuntimeState({ sleep: sleep.state });
-  watchPower();
+  // L'alimentation puis le reglage du capot, lus ensemble : un 1 laisse par un daemon
+  // tue net est remis a 0 si l'on n'est plus sur secteur, et garde sinon.
+  void Promise.all([readAcPower(), readSleepDisabled()]).then(([onAc, lid]) => {
+    sleep.setPower(onAc);
+    sleep.setLidKnown(lid);
+  });
   const powerTimer = setInterval(watchPower, POWER_POLL_MS);
   powerTimer.unref?.();
   hub.startHeartbeat();

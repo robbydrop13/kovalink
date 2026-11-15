@@ -46,9 +46,18 @@ export function statusLine(now = new Date(), deps: LockDeps = realLockDeps): str
 /** L'anti-veille en clair : tenue ou non, et pourquoi. */
 export function sleepPart(sleep: NonNullable<RuntimeState['sleep']>): string {
   const power = sleep.power === 'ac' ? 'secteur' : sleep.power === 'battery' ? 'batterie' : 'alimentation inconnue';
-  if (!sleep.held) return `Mac libre de dormir (${power})`;
+  const stuck = ', ATTENTION : disablesleep reste a 1, le Mac ne dormira pas capot ferme';
+  const lid =
+    sleep.lid === 'held'
+      ? ', capot ferme compris'
+      : sleep.lid === 'unavailable'
+        ? ', ATTENTION : capot ferme non tenu, regle sudoers absente'
+        : sleep.lid === 'stuck'
+          ? stuck
+          : '';
+  if (!sleep.held) return `Mac libre de dormir (${power})${sleep.lid === 'stuck' || sleep.lid === 'held' ? stuck : ''}`;
   const why = sleep.reason === 'ac' ? 'secteur' : `agent au travail, ${power}`;
-  return `Mac tenu eveille (${why}) depuis ${sleep.since ?? '?'}`;
+  return `Mac tenu eveille (${why}${lid}) depuis ${sleep.since ?? '?'}`;
 }
 
 export function runStatus(): void {

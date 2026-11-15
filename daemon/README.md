@@ -97,10 +97,19 @@ Ce qui tourne en fond, sans commande a lancer :
   pings sans reponse (journal `client WS mort, fermeture et nettoyage`, code 4408) ;
 - **anti-veille** : sur secteur, `caffeinate -i -w <pid du daemon>` en permanence, sans
   fenetre ni plafond : le Mac ne dort jamais par inactivite (agents, routines, iPhone),
-  l'ecran s'eteint normalement, le capot ferme l'endort toujours. Un caffeinate qui
-  meurt est repris. Sur batterie : seulement tant qu'un agent travaille, 4 h au plus.
+  l'ecran s'eteint normalement. Un caffeinate qui meurt est repris. Sur batterie :
+  seulement tant qu'un agent travaille, 4 h au plus.
+  **Capot ferme** : sur secteur le daemon ecrit aussi `pmset -a disablesleep 1`, et le
+  remet a 0 sur batterie, interrupteur coupe ou a l'arret (un Mac debranche dans un sac
+  doit dormir). Il passe par `sudo -n` : il faut la regle
+  `~/.kovalink/kovalink-disablesleep.sudoers`, que Robin installe lui meme dans
+  `/etc/sudoers.d/`. Sans elle : un avertissement, `lid: unavailable`, et le reste
+  marche. Trou connu : un daemon tue net sur secteur laisse `disablesleep` a 1 jusqu'a
+  son redemarrage (launchd le relance, et la valeur est relue au demarrage) ; d'ici la,
+  debranche et capot ferme, le Mac ne dort pas. Retour manuel :
+  `sudo pmset -a disablesleep 0`.
   L'etat est dans `state.json` (`sleep`: tenu ou non, raison, depuis quand,
-  alimentation) et dans `kovalinkd status` ;
+  alimentation, capot) et dans `kovalinkd status` ;
 - **Tailscale absent** : le telephone joint ce Mac par son adresse Tailscale, et par elle
   seule. Sans elle le daemon n'ecoute que la loopback et l'app ne voit plus rien (du 12/11
   au 13/11/2026 : 28 heures apres un redemarrage du Mac, Tailscale lance mais pas

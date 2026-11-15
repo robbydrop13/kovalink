@@ -7,6 +7,8 @@ export const SLEEP_CAP_MS = 4 * 3_600_000;
 export const POWER_POLL_MS = 30_000;
 /** Un caffeinate qui meurt est repris apres ce delai, pas en boucle serree. */
 export const RESPAWN_DELAY_MS = 5_000;
+/** Apres un refus de sudo, le reglage du capot n'est retente qu'apres ce delai. */
+export const LID_RETRY_MS = 10 * 60_000;
 
 /** Ce que `SleepAssertion` attend d'un processus `caffeinate`. */
 export interface SleepProcess {
@@ -26,6 +28,11 @@ export interface SleepDeps {
   pid: number;
   /** Horloge, en millisecondes. Absente : `Date.now`. */
   now?: () => number;
+  /**
+   * Ecrit `pmset -a disablesleep` (capot ferme). Rend vrai si la commande a reussi.
+   * Absente : le capot n'est jamais touche.
+   */
+  setDisableSleep?: (on: boolean) => Promise<boolean>;
 }
 
 /** Pourquoi le Mac est tenu eveille : `ac` sur secteur, `agent` sur batterie. */
@@ -38,6 +45,49 @@ export interface SleepState {
   /** Pose de l'assertion en cours, ISO. */
   since: string | null;
   power: 'ac' | 'battery' | 'unknown';
+  /**
+   * Capot ferme : `held`, le Mac reste eveille capot ferme ; `free`, il s'endort ;
+   * `unavailable`, la regle sudo manque et le reglage n'a pas pu etre ecrit ;
+   * `stuck`, il vaut 1 et n'a pas pu etre remis a 0 (a corriger a la main) ;
+   * `unknown`, pas encore lu.
+   */
+  lid: LidState;
+}
+
+export type LidState = 'held' | 'free' | 'unavailable' | 'stuck' | 'unknown';
+
+/**
+ * `pmset -g` n'affiche la ligne `SleepDisabled` que lorsqu'elle vaut 1 (constate sur ce
+ * Mac le 15 novembre). Sortie vide : `null`.
+ */
+export function parseSleepDisabled(out: string): boolean | null {
+  if (out.trim() === '') return null;
+  const m = /SleepDisabled\s+(\d)/.exec(out);
+  return m ? m[1] === '1' : false;
+}
+
+/** Valeur courante de `disablesleep`, `null` si `pmset` echoue. */
+export function readSleepDisabled(): Promise<boolean | null> {
+  return new Promise((resolve) => {
+    execFile('/usr/bin/pmset', ['-g'], { encoding: 'utf8', timeout: 2_000 }, (err, stdout) => {
+      resolve(err ? null : parseSleepDisabled(stdout));
+    });
+  });
+}
+
+/**
+ * Les deux SEULES commandes que la regle sudoers autorise, sans mot de passe (`-n` :
+ * jamais d'invite). Sans la regle, sudo refuse et l'on rend faux.
+ */
+function writeSleepDisabled(on: boolean): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(
+      '/usr/bin/sudo',
+      ['-n', '/usr/bin/pmset', '-a', 'disablesleep', on ? '1' : '0'],
+      { timeout: 5_000 },
+      (err) => resolve(!err),
+    );
+  });
 }
 
 /**
@@ -79,6 +129,7 @@ const realSleepDeps: SleepDeps = {
   },
   clearTimeout: (h) => clearTimeout(h as NodeJS.Timeout),
   pid: process.pid,
+  setDisableSleep: writeSleepDisabled,
 };
 
 /**
@@ -104,6 +155,17 @@ const realSleepDeps: SleepDeps = {
  * celui ci meurt. Sans lui, un `kill -9` laissait une assertion orpheline (constate :
  * 19 h). A l'inverse, un caffeinate qui meurt seul est repris apres `RESPAWN_DELAY_MS`.
  *
+ * CAPOT FERME (choix B de Robin, carte a-0af0cf, 15 novembre) : sur secteur, le Mac
+ * doit rester joignable capot ferme aussi. Aucune assertion n'empeche la veille du
+ * capot ; seul `pmset -a disablesleep 1` le fait, reglage global, de root, et qui
+ * vaudrait aussi sur batterie. Le daemon l'ecrit donc lui meme, par `sudo -n` et une
+ * regle sudoers que Robin installe, et le suit a la trace : 1 dans le seul cas ou
+ * l'assertion du secteur est voulue, 0 dans tous les autres (batterie, alimentation
+ * inconnue, interrupteur coupe, arret). Un Mac debranche capot ferme, dans un sac, doit
+ * dormir. Sans la regle, sudo refuse : un avertissement, `lid: unavailable`, et le reste
+ * continue. Trou connu : un daemon tue net sur secteur laisse 1 jusqu'a son redemarrage,
+ * ou `main.ts` relit la valeur et la remet d'equerre (launchd le relance).
+ *
  * L'interrupteur « Garder le Mac eveille » de l'app (`enabled`) coupe tout.
  * L'alimentation n'est pas lue ici : `main.ts` la relit toutes les `POWER_POLL_MS` et
  * appelle `setPower`. Tant qu'elle est inconnue, c'est la regle de la batterie.
@@ -118,6 +180,11 @@ export class SleepAssertion {
   private working = false;
   private power: boolean | null = null;
   private stopped = false;
+  /** Derniere valeur connue de `disablesleep` : lue au demarrage, puis ecrite par nous. */
+  private lidValue: boolean | null = null;
+  private lidUnavailable = false;
+  private lidBusy = false;
+  private lidRetryAt = 0;
   /** Appele a chaque changement d'etat, pour `state.json`. */
   onChange: ((state: SleepState) => void) | null = null;
 
@@ -137,6 +204,15 @@ export class SleepAssertion {
       reason: this.proc ? this.mode : null,
       since: this.proc && this.since !== null ? new Date(this.since).toISOString() : null,
       power: this.power === null ? 'unknown' : this.power ? 'ac' : 'battery',
+      lid: this.lidUnavailable
+        ? this.lidValue === true
+          ? 'stuck'
+          : 'unavailable'
+        : this.lidValue === null
+          ? 'unknown'
+          : this.lidValue
+            ? 'held'
+            : 'free',
     };
   }
 
@@ -149,9 +225,51 @@ export class SleepAssertion {
     this.apply();
   }
 
+  /** Valeur de `disablesleep` lue au demarrage : un 1 orphelin sera remis a 0. */
+  setLidKnown(value: boolean | null): void {
+    if (value === null) return;
+    this.lidValue = value;
+    this.syncLid();
+    this.onChange?.(this.state);
+  }
+
+  /**
+   * Met `disablesleep` d'equerre avec ce qui est voulu. Une seule ecriture a la fois ;
+   * a son retour on revérifie, l'alimentation ayant pu changer entre temps.
+   */
+  private syncLid(): void {
+    const write = this.deps.setDisableSleep;
+    if (!write || this.lidBusy) return;
+    const wanted = this.wantedMode() === 'ac';
+    // Inconnue et rien a tenir : on n'ecrit pas a l'aveugle, la lecture du demarrage suit.
+    if (this.lidValue === wanted || (this.lidValue === null && !wanted)) return;
+    if (this.lidUnavailable && this.now() < this.lidRetryAt) return;
+    this.lidBusy = true;
+    void write(wanted).then((ok) => {
+      this.lidBusy = false;
+      if (ok) {
+        this.lidValue = wanted;
+        this.lidUnavailable = false;
+        logger.info('veille capot ferme', { disablesleep: wanted ? 1 : 0 });
+      } else {
+        // Un 1 qu'on n'arrive pas a retirer est retente a chaque releve : c'est le cas grave.
+        this.lidRetryAt = wanted ? this.now() + LID_RETRY_MS : 0;
+        if (!this.lidUnavailable) {
+          const fields = { wanted: wanted ? 1 : 0 };
+          if (wanted) logger.warn('reglage du capot refuse par sudo, regle sudoers absente ?', fields);
+          else logger.error('disablesleep reste a 1 : sudo refuse de le remettre a 0', fields);
+        }
+        this.lidUnavailable = true;
+      }
+      this.onChange?.(this.state);
+      if (ok) this.syncLid();
+    });
+  }
+
   /** Alimentation relue. `null` (lecture en echec) ne change rien. */
   setPower(onAc: boolean | null): void {
-    if (onAc === null || onAc === this.power) return;
+    // A chaque releve, meme sans changement : c'est ce qui retente apres un refus.
+    if (onAc === null || onAc === this.power) return this.syncLid();
     this.power = onAc;
     logger.info('alimentation', { power: onAc ? 'secteur' : 'batterie' });
     this.apply();
@@ -166,6 +284,7 @@ export class SleepAssertion {
   }
 
   private apply(): void {
+    this.syncLid();
     const wanted = this.wantedMode();
     if (wanted === this.mode && (wanted === null || this.proc || this.respawnTimer)) return;
     if (this.proc || this.mode) {
@@ -238,6 +357,8 @@ export class SleepAssertion {
 
   stop(): void {
     this.stopped = true;
+    // `wantedMode` vaut desormais null : le capot est rendu a macOS.
+    this.syncLid();
     if (this.proc || this.respawnTimer) this.release('arret du daemon', true);
   }
 }

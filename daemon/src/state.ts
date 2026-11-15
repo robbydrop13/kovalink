@@ -20,7 +20,13 @@ export interface RuntimeState {
   /** L'ecoute sur l'adresse Tailscale, sans laquelle le telephone ne joint pas ce Mac. */
   tailnet?: { listening: boolean; since: string | null; backend: string | null };
   /** L'anti-veille : tenue ou non, pourquoi, depuis quand, et l'alimentation lue. */
-  sleep?: { held: boolean; reason: 'ac' | 'agent' | null; since: string | null; power: 'ac' | 'battery' | 'unknown' };
+  sleep?: {
+    held: boolean;
+    reason: 'ac' | 'agent' | null;
+    since: string | null;
+    power: 'ac' | 'battery' | 'unknown';
+    lid?: 'held' | 'free' | 'unavailable' | 'stuck' | 'unknown';
+  };
 }
 
 function statePath(): string {
