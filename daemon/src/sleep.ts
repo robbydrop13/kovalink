@@ -1,23 +1,18 @@
 import { execFile, spawn } from 'node:child_process';
 import { logger } from './logger.js';
 
-/** Filet de securite contre une assertion oubliee (A13, CA-125). */
+/** Filet de securite contre une assertion oubliee SUR BATTERIE (A13, CA-125). */
 export const SLEEP_CAP_MS = 4 * 3_600_000;
-
-/** Le Mac reste eveille ce temps la apres le dernier message recu du telephone. */
-export const PHONE_HOLD_MS = 15 * 60_000;
-/** Et ce temps la apres une notification : Robin la touche rarement dans la minute. */
-export const PUSH_HOLD_MS = 30 * 60_000;
-/** Une echeance qui bouge de moins que ca ne rearme pas la minuterie (un ping toutes les 6 s). */
-const REARM_STEP_MS = 60_000;
-/** Duree de validite d'une lecture de l'alimentation. */
-const POWER_TTL_MS = 60_000;
-
-export type HoldReason = 'phone' | 'push';
+/** Cadence de relecture de l'alimentation (`main.ts`). */
+export const POWER_POLL_MS = 30_000;
+/** Un caffeinate qui meurt est repris apres ce delai, pas en boucle serree. */
+export const RESPAWN_DELAY_MS = 5_000;
 
 /** Ce que `SleepAssertion` attend d'un processus `caffeinate`. */
 export interface SleepProcess {
   kill(): void;
+  /** Previent quand le processus meurt sans qu'on l'ait tue. Absent : jamais repris. */
+  onExit?(cb: () => void): void;
 }
 
 /**
@@ -31,45 +26,51 @@ export interface SleepDeps {
   pid: number;
   /** Horloge, en millisecondes. Absente : `Date.now`. */
   now?: () => number;
-  /** Vrai sur secteur. Absente : lecture de `pmset -g batt`. */
-  onAcPower?: () => boolean;
 }
 
-let powerRead: { at: number; ac: boolean } | null = null;
+/** Pourquoi le Mac est tenu eveille : `ac` sur secteur, `agent` sur batterie. */
+export type SleepMode = 'ac' | 'agent';
+
+/** Ce que `state.json` et `kovalinkd status` disent de l'anti-veille. */
+export interface SleepState {
+  held: boolean;
+  reason: SleepMode | null;
+  /** Pose de l'assertion en cours, ISO. */
+  since: string | null;
+  power: 'ac' | 'battery' | 'unknown';
+}
 
 /**
  * `pmset -g batt` commence par « Now drawing from 'AC Power' » ou « 'Battery Power' ».
- * Un Mac sans batterie repond toujours « AC Power ». Lecture illisible : on suppose la
- * batterie, donc aucune tenue en eveil de plus.
+ * Un Mac sans batterie repond toujours « AC Power ». Sortie illisible : `null`, et
+ * l'appelant garde ce qu'il savait.
  */
-export function parseAcPower(out: string): boolean {
-  return /Now drawing from 'AC Power'/.test(out);
+export function parseAcPower(out: string): boolean | null {
+  const m = /Now drawing from '([^']+)'/.exec(out);
+  if (!m) return null;
+  return m[1] === 'AC Power';
 }
 
-let powerReading = false;
-
-/**
- * Jamais d'appel bloquant : `touch` est sur le chemin de chaque message WebSocket. La
- * valeur rendue est la derniere lue ; perimee, elle est relue en tache de fond. Avant la
- * premiere lecture (amorcee a la construction) : batterie.
- */
-function readAcPower(): boolean {
-  const now = Date.now();
-  if ((!powerRead || now - powerRead.at >= POWER_TTL_MS) && !powerReading) {
-    powerReading = true;
+/** Lecture de l'alimentation, jamais bloquante. `null` si `pmset` echoue ou se tait. */
+export function readAcPower(): Promise<boolean | null> {
+  return new Promise((resolve) => {
     execFile('/usr/bin/pmset', ['-g', 'batt'], { encoding: 'utf8', timeout: 2_000 }, (err, stdout) => {
-      powerReading = false;
-      powerRead = { at: Date.now(), ac: err ? false : parseAcPower(stdout) };
+      resolve(err ? null : parseAcPower(stdout));
     });
-  }
-  return powerRead?.ac ?? false;
+  });
 }
 
 const realSleepDeps: SleepDeps = {
   spawn: (args) => {
     const proc = spawn('/usr/bin/caffeinate', args, { stdio: 'ignore' });
     proc.unref();
-    return proc;
+    return {
+      kill: () => void proc.kill(),
+      onExit: (cb) => {
+        proc.once('exit', cb);
+        proc.once('error', cb);
+      },
+    };
   },
   setTimeout: (fn, ms) => {
     const t = setTimeout(fn, ms);
@@ -83,56 +84,60 @@ const realSleepDeps: SleepDeps = {
 /**
  * Anti-veille (A1, A13).
  *
- * Premier declencheur : L'AGENT QUI TRAVAILLE, pas la presence d'un client : tout
- * l'interet du produit est que l'agent continue telephone range et app fermee.
+ * SUR SECTEUR, le Mac ne dort jamais (Robin, 15 novembre : « le Mac ne doit jamais
+ * s'endormir, sinon il arrete de travailler »). Les agents, les routines et l'iPhone
+ * comptent tous sur un Mac eveille, et l'ancienne regle, eveille seulement pendant qu'un
+ * agent travaille, le laissait dormir a l'instant ou tous attendaient Robin : garde
+ * relachee a 14:30:36, telephone connecte a 14:31:51, veille a 14:32:08, reveil au
+ * clavier a 15:02:52. Onze veilles en trois jours suivaient ainsi une relache de 20 s a
+ * 2 min. Sur secteur l'assertion est donc permanente, sans fenetre ni plafond.
  *
- * Second declencheur, depuis le 15 novembre : ROBIN AU TELEPHONE. Avec le seul premier,
- * l'assertion tombait a l'instant ou tous les agents l'attendaient, et un Mac regle sur
- * une minute de veille s'endormait sous l'iPhone : relachee a 14:30:36, telephone
- * connecte a 14:31:51, veille a 14:32:08, reveil au clavier a 15:02:52. Onze veilles en
- * trois jours suivent ainsi une relache de 20 s a 2 min. `touch` tient donc le Mac
- * eveille `PHONE_HOLD_MS` apres un message du telephone, et `PUSH_HOLD_MS` apres une
- * notification. Trois garde-fous : c'est un MESSAGE qui compte et non un socket ouvert
- * (iOS garde un socket vivant longtemps en arriere plan, alors que le JavaScript qui
- * pinge y est suspendu) ; seulement sur secteur ; un seul caffeinate, dont l'echeance
- * recule, toujours sous le plafond de 4 h.
+ * SUR BATTERIE, la regle d'origine reste : tant qu'un agent travaille, sous un plafond de
+ * 4 h. Le plafond est une MINUTERIE armee a la pose ; une fois atteint, aucune nouvelle
+ * assertion tant que tout ne s'est pas arrete au moins une fois.
  *
- * `caffeinate -i` pose exactement une assertion IOKit `PreventUserIdleSystemSleep`,
- * donc aucun module natif n'est necessaire. `-i` et non `-s` : on empeche la veille
- * par inactivite, on ne contre PAS la fermeture du capot, qui est un comportement
- * attendu (batterie, chaleur dans un sac).
+ * Dans les deux cas `caffeinate -i` : une assertion IOKit `PreventUserIdleSystemSleep`,
+ * donc la veille par INACTIVITE seule. L'ecran s'eteint normalement (pas de `-d`), et la
+ * fermeture du capot endort toujours le Mac (pas de `-s` : chaleur dans un sac).
  *
  * `-w <pid du daemon>` : caffeinate meurt avec le daemon, quelle que soit la facon dont
- * celui ci meurt. Sans lui, un `kill -9` ou un crash laissait une assertion orpheline
- * « asserting forever » (constate : 19 h).
+ * celui ci meurt. Sans lui, un `kill -9` laissait une assertion orpheline (constate :
+ * 19 h). A l'inverse, un caffeinate qui meurt seul est repris apres `RESPAWN_DELAY_MS`.
  *
- * Le plafond de 4 h est une MINUTERIE, armee a la pose. Avant, il n'etait evalue qu'au
- * prochain evenement `pane-working`, et se rearmait aussitot : il n'existait pas.
- * Une fois le plafond atteint, aucune nouvelle assertion tant que tout ne s'est pas
- * arrete au moins une fois : un agent qui tourne depuis 4 h ne la merite plus.
+ * L'interrupteur « Garder le Mac eveille » de l'app (`enabled`) coupe tout.
+ * L'alimentation n'est pas lue ici : `main.ts` la relit toutes les `POWER_POLL_MS` et
+ * appelle `setPower`. Tant qu'elle est inconnue, c'est la regle de la batterie.
  */
 export class SleepAssertion {
   private proc: SleepProcess | null = null;
+  private mode: SleepMode | null = null;
+  private since: number | null = null;
   private capTimer: unknown = null;
+  private respawnTimer: unknown = null;
   private capped = false;
   private working = false;
-  /** Fin de la tenue demandee par le telephone ou une notification, 0 sans tenue. */
-  private holdUntil = 0;
-  /** Echeance pour laquelle `holdTimer` est arme. */
-  private holdTimerFor = 0;
-  private holdTimer: unknown = null;
+  private power: boolean | null = null;
+  private stopped = false;
+  /** Appele a chaque changement d'etat, pour `state.json`. */
+  onChange: ((state: SleepState) => void) | null = null;
 
   constructor(
     private readonly enabled: () => boolean,
     private readonly deps: SleepDeps = realSleepDeps,
-  ) {
-    // Amorce la lecture de l'alimentation : le premier message du telephone la trouve prete.
-    if (!deps.onAcPower) readAcPower();
-  }
+  ) {}
 
   /** Vrai quand une assertion est actuellement posee. */
   get active(): boolean {
     return this.proc !== null;
+  }
+
+  get state(): SleepState {
+    return {
+      held: this.proc !== null,
+      reason: this.proc ? this.mode : null,
+      since: this.proc && this.since !== null ? new Date(this.since).toISOString() : null,
+      power: this.power === null ? 'unknown' : this.power ? 'ac' : 'battery',
+    };
   }
 
   private now(): number {
@@ -144,82 +149,95 @@ export class SleepAssertion {
     this.apply();
   }
 
-  /**
-   * Signe de Robin au telephone : un message de l'app (`phone`) ou une notification qui
-   * vient de partir (`push`). Sur batterie, rien : seul l'agent au travail y tient le Mac.
-   */
-  touch(reason: HoldReason): void {
-    if (!this.enabled()) return;
-    const onAc = this.deps.onAcPower ? this.deps.onAcPower() : readAcPower();
-    if (!onAc) return;
-    const until = this.now() + (reason === 'push' ? PUSH_HOLD_MS : PHONE_HOLD_MS);
-    if (until <= this.holdUntil) return;
-    this.holdUntil = until;
-    if (!this.holdTimer || until - this.holdTimerFor >= REARM_STEP_MS) this.armHold();
-    this.apply(reason === 'push' ? 'notification envoyee' : 'telephone actif');
+  /** Alimentation relue. `null` (lecture en echec) ne change rien. */
+  setPower(onAc: boolean | null): void {
+    if (onAc === null || onAc === this.power) return;
+    this.power = onAc;
+    logger.info('alimentation', { power: onAc ? 'secteur' : 'batterie' });
+    this.apply();
+    this.onChange?.(this.state);
   }
 
-  private armHold(): void {
-    if (this.holdTimer) this.deps.clearTimeout(this.holdTimer);
-    this.holdTimerFor = this.holdUntil;
-    this.holdTimer = this.deps.setTimeout(() => this.onHoldTimer(), Math.max(0, this.holdUntil - this.now()));
+  private wantedMode(): SleepMode | null {
+    if (this.stopped || !this.enabled()) return null;
+    if (this.power === true) return 'ac';
+    if (!this.working) this.capped = false;
+    return this.working && !this.capped ? 'agent' : null;
   }
 
-  /** La minuterie peut sonner avant l'echeance (elle n'est pas rearmee a chaque ping). */
-  private onHoldTimer(): void {
-    this.holdTimer = null;
-    if (this.now() < this.holdUntil) this.armHold();
-    else this.apply();
-  }
-
-  private apply(why = 'agent au travail'): void {
-    const holding = this.now() < this.holdUntil;
-    if (!this.working && !holding) this.capped = false;
-    const wanted = (this.working || holding) && this.enabled() && !this.capped;
-    if (wanted && !this.proc) {
-      this.proc = this.deps.spawn(['-i', '-w', String(this.deps.pid)]);
-      this.capTimer = this.deps.setTimeout(() => this.onCap(), SLEEP_CAP_MS);
-      logger.info('assertion anti-veille posee', { reason: this.working ? 'agent au travail' : why });
-      return;
-    }
-    if (!wanted && this.proc) {
-      const hadHold = this.holdUntil > 0;
+  private apply(): void {
+    const wanted = this.wantedMode();
+    if (wanted === this.mode && (wanted === null || this.proc || this.respawnTimer)) return;
+    if (this.proc || this.mode) {
       this.release(
-        this.capped
-          ? 'plafond de 4 h atteint'
-          : this.working || holding
+        wanted !== null
+          ? wanted === 'ac' ? 'passage sur secteur' : 'passage sur batterie'
+          : !this.enabled()
             ? 'reglage desactive'
-            : hadHold
-              ? 'plus aucun agent au travail, telephone inactif'
+            : this.power === true
+              ? 'arret'
               : 'plus aucun agent au travail',
+        wanted === null,
       );
     }
-    // Une tenue echue est oubliee : la relache suivante ne parlera plus du telephone.
-    if (!holding) this.holdUntil = 0;
+    if (wanted) this.pose(wanted);
+  }
+
+  private pose(mode: SleepMode): void {
+    this.mode = mode;
+    const proc = this.deps.spawn(['-i', '-w', String(this.deps.pid)]);
+    this.proc = proc;
+    this.since = this.now();
+    if (mode === 'agent') this.capTimer = this.deps.setTimeout(() => this.onCap(), SLEEP_CAP_MS);
+    proc.onExit?.(() => this.onExit(proc));
+    logger.info('assertion anti-veille posee', { reason: mode === 'ac' ? 'secteur' : 'agent au travail' });
+    this.onChange?.(this.state);
+  }
+
+  /** caffeinate est mort sans nous : l'assertion est tombee, on la reprend. */
+  private onExit(proc: SleepProcess): void {
+    if (this.proc !== proc) return;
+    this.proc = null;
+    this.since = null;
+    if (this.capTimer) this.deps.clearTimeout(this.capTimer);
+    this.capTimer = null;
+    logger.warn('caffeinate est mort, assertion anti-veille a reprendre');
+    this.onChange?.(this.state);
+    if (this.respawnTimer) return;
+    this.respawnTimer = this.deps.setTimeout(() => {
+      this.respawnTimer = null;
+      const wanted = this.wantedMode();
+      this.mode = null;
+      if (wanted && !this.proc) this.pose(wanted);
+    }, RESPAWN_DELAY_MS);
   }
 
   private onCap(): void {
     this.capTimer = null;
     this.capped = true;
-    this.release('plafond de 4 h atteint');
+    this.release('plafond de 4 h atteint', true);
   }
 
-  private release(reason: string): void {
+  private release(reason: string, notify: boolean): void {
     if (this.capTimer) this.deps.clearTimeout(this.capTimer);
     this.capTimer = null;
+    if (this.respawnTimer) this.deps.clearTimeout(this.respawnTimer);
+    this.respawnTimer = null;
+    const proc = this.proc;
+    this.proc = null;
+    this.mode = null;
+    this.since = null;
     try {
-      this.proc?.kill();
+      proc?.kill();
     } catch {
       /* deja mort */
     }
-    this.proc = null;
-    logger.info('assertion anti-veille relachee', { reason });
+    if (proc) logger.info('assertion anti-veille relachee', { reason });
+    if (notify) this.onChange?.(this.state);
   }
 
   stop(): void {
-    if (this.holdTimer) this.deps.clearTimeout(this.holdTimer);
-    this.holdTimer = null;
-    this.holdUntil = 0;
-    if (this.proc) this.release('arret du daemon');
+    this.stopped = true;
+    if (this.proc || this.respawnTimer) this.release('arret du daemon', true);
   }
 }

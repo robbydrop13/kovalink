@@ -2,7 +2,7 @@ import { X509Certificate } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { isLockAlive, readLock, realLockDeps, type LockDeps } from './lock.js';
 import { paths } from './paths.js';
-import { readRuntimeState } from './state.js';
+import { readRuntimeState, type RuntimeState } from './state.js';
 import { tailnetWarning } from './net/tailnet.js';
 
 function certExpiry(): string | null {
@@ -37,9 +37,18 @@ export function statusLine(now = new Date(), deps: LockDeps = realLockDeps): str
     `ecoute sur ${binds} port ${state.port}`,
     kova,
     certPart,
+    ...(state.sleep ? [sleepPart(state.sleep)] : []),
     ...(stale ? ['ATTENTION : etat publie perime, le daemon ne repond peut-etre plus'] : []),
     ...[tailnetWarning(state.tailnet, now.getTime())].filter((w): w is string => w !== null),
   ].join(', ');
+}
+
+/** L'anti-veille en clair : tenue ou non, et pourquoi. */
+export function sleepPart(sleep: NonNullable<RuntimeState['sleep']>): string {
+  const power = sleep.power === 'ac' ? 'secteur' : sleep.power === 'battery' ? 'batterie' : 'alimentation inconnue';
+  if (!sleep.held) return `Mac libre de dormir (${power})`;
+  const why = sleep.reason === 'ac' ? 'secteur' : `agent au travail, ${power}`;
+  return `Mac tenu eveille (${why}) depuis ${sleep.since ?? '?'}`;
 }
 
 export function runStatus(): void {

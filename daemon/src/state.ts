@@ -19,6 +19,8 @@ export interface RuntimeState {
   certExpiresAt: string | null;
   /** L'ecoute sur l'adresse Tailscale, sans laquelle le telephone ne joint pas ce Mac. */
   tailnet?: { listening: boolean; since: string | null; backend: string | null };
+  /** L'anti-veille : tenue ou non, pourquoi, depuis quand, et l'alimentation lue. */
+  sleep?: { held: boolean; reason: 'ac' | 'agent' | null; since: string | null; power: 'ac' | 'battery' | 'unknown' };
 }
 
 function statePath(): string {

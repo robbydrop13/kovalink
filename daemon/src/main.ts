@@ -42,7 +42,7 @@ import {
   type TlsMaterial,
 } from './security/tls.js';
 import { loadMasterSecret } from './security/token.js';
-import { SleepAssertion } from './sleep.js';
+import { POWER_POLL_MS, readAcPower, SleepAssertion } from './sleep.js';
 import { startSlack } from './slack/socket.js';
 import type { RawLine } from './transcript/jsonl.js';
 import { clearRuntimeState, initRuntimeState, updateRuntimeState } from './state.js';
@@ -133,7 +133,6 @@ async function run(): Promise<void> {
     send: (payload, targets) => push.sendCounts(payload, targets),
   });
   const sleep = new SleepAssertion(() => cfg().preventSleep);
-  push.onNotified = () => sleep.touch('push');
 
   const nonces = new NonceStore();
   const services: Services = {
@@ -594,6 +593,17 @@ async function run(): Promise<void> {
   // L'adresse Tailscale n'existe qu'une fois Tailscale demarre : on re-scanne.
   const bindTimer = setInterval(() => void reconcileBinds().then(watchTailnet), BIND_RESCAN_MS);
   bindTimer.unref?.();
+
+  // --- Anti-veille : sur secteur, le Mac ne dort jamais (`sleep.ts`) -------
+  // Posee ici et pas plus haut : `state.json` doit exister pour en garder la preuve.
+  sleep.onChange = (state) => updateRuntimeState({ sleep: state });
+  const watchPower = (): void => {
+    void readAcPower().then((onAc) => sleep.setPower(onAc));
+  };
+  updateRuntimeState({ sleep: sleep.state });
+  watchPower();
+  const powerTimer = setInterval(watchPower, POWER_POLL_MS);
+  powerTimer.unref?.();
   hub.startHeartbeat();
 
   // --- Renouvellement du certificat a chaud (A12, S3) ----------------------
@@ -688,6 +698,7 @@ async function run(): Promise<void> {
   const shutdown = (signal: string): void => {
     logger.info('arret demande', { signal });
     clearInterval(bindTimer);
+    clearInterval(powerTimer);
     clearInterval(clockTimer);
     clearInterval(certTimer);
     clearInterval(rawPurgeTimer);

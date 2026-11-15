@@ -269,13 +269,6 @@ export class PushSender {
   private expo: ExpoLike | null = null;
   private readonly timers = new Set<NodeJS.Timeout>();
   private readonly cap: HourlyCap;
-  /**
-   * Appele pour chaque notification acceptee par Expo, jamais pour un push `counts`
-   * (silencieux, envoye a chaque changement) : l'anti-veille s'en sert pour garder le
-   * Mac eveille le temps que Robin la touche.
-   */
-  onNotified: ((kind: string) => void) | null = null;
-
   constructor(
     private readonly cfg: () => KovalinkConfig,
     cap = new HourlyCap(),
@@ -484,10 +477,8 @@ export class PushSender {
             ticketId: t.id ?? null,
             passive: m.interruptionLevel === 'passive',
           };
-          if (t.status === 'ok') {
-            logger.info('push envoye', entry);
-            if (entry.kind !== 'counts') this.onNotified?.(entry.kind);
-          } else logger.warn('push refuse par Expo', { ...entry, error: t.details?.error ?? t.status });
+          if (t.status === 'ok') logger.info('push envoye', entry);
+          else logger.warn('push refuse par Expo', { ...entry, error: t.details?.error ?? t.status });
         });
         this.scheduleReceipts(tickets, owners);
       } catch (e) {

@@ -154,8 +154,6 @@ export class Hub {
     socket.on('message', (raw) => {
       // Un message, quel qu'il soit, est un signe de vie.
       client.missedPongs = 0;
-      // Et un signe de Robin : le JavaScript de l'app ne tourne qu'au premier plan.
-      this.services.sleep.touch('phone');
       void this.onMessage(client, raw);
     });
     return client;
