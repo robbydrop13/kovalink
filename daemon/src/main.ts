@@ -30,7 +30,8 @@ import { PromptState } from './prompt/state.js';
 import { CountsPusher } from './push/counts.js';
 import { PushNotifier, sessionNameAllowed } from './push/policy.js';
 import { PushSender } from './push/sender.js';
-import { startPeerRefresh } from './net/tailscale.js';
+import { knownBackend, startPeerRefresh } from './net/tailscale.js';
+import { hasTailnetBind, TAILNET_OK, tailnetState, tailnetStep, tailscaleUp } from './net/tailnet.js';
 import { BIND_RESCAN_MS, currentBinds } from './security/bind.js';
 import {
   CERT_CHECK_INTERVAL_MS,
@@ -569,12 +570,28 @@ async function run(): Promise<void> {
     process.exit(EXIT_ALREADY_RUNNING);
   }
   const lock = acquired;
-  updateRuntimeState({ binds: [...servers.keys()] });
+  // Sans adresse Tailscale le telephone ne joint pas ce Mac : le dire, et tenter une
+  // fois de reconnecter un Tailscale simplement arrete (`net/tailnet.ts`).
+  let tailnet = TAILNET_OK;
+  const watchTailnet = (): void => {
+    const binds = [...servers.keys()];
+    const listening = hasTailnetBind(binds);
+    const backend = knownBackend();
+    const step = tailnetStep(tailnet, listening, backend, Date.now(), { autoUp: cfg().tailscaleAutoUp !== false });
+    tailnet = step.state;
+    if (step.recoveredAfterMs !== null) logger.info('ecoute tailscale retablie', { afterMs: step.recoveredAfterMs });
+    if (step.warn) logger.warn('aucune ecoute tailscale, le telephone ne peut pas joindre ce Mac', { backend });
+    if (step.tryUp) {
+      logger.info('tailscale arrete, tentative de reconnexion');
+      void tailscaleUp().then((err) =>
+        err ? logger.warn('tailscale up en echec', { err }) : logger.info('tailscale up accepte'),
+      );
+    }
+    updateRuntimeState({ binds, tailnet: tailnetState(tailnet, listening, backend) });
+  };
+  watchTailnet();
   // L'adresse Tailscale n'existe qu'une fois Tailscale demarre : on re-scanne.
-  const bindTimer = setInterval(
-    () => void reconcileBinds().then(() => updateRuntimeState({ binds: [...servers.keys()] })),
-    BIND_RESCAN_MS,
-  );
+  const bindTimer = setInterval(() => void reconcileBinds().then(watchTailnet), BIND_RESCAN_MS);
   bindTimer.unref?.();
   hub.startHeartbeat();
 

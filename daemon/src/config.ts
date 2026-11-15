@@ -8,6 +8,11 @@ export interface KovalinkConfig {
   /** Nom MagicDNS servi par `tailscale cert`. Null tant que l'appairage n'a pas eu lieu. */
   tsDns: string | null;
   preventSleep: boolean;
+  /**
+   * Tailscale arrete sur ce Mac (lance, pas connecte) : le daemon tente une fois
+   * `tailscale up` au bout de deux minutes sans adresse. `false` pour ne jamais y toucher.
+   */
+  tailscaleAutoUp?: boolean;
   push: {
     /** Seuil N2 : le pane doit avoir travaille plus de 60 s (C29). */
     minWorkingMsForTurnEnd: number;

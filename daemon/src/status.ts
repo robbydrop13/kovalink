@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { isLockAlive, readLock, realLockDeps, type LockDeps } from './lock.js';
 import { paths } from './paths.js';
 import { readRuntimeState } from './state.js';
+import { tailnetWarning } from './net/tailnet.js';
 
 function certExpiry(): string | null {
   try {
@@ -37,6 +38,7 @@ export function statusLine(now = new Date(), deps: LockDeps = realLockDeps): str
     kova,
     certPart,
     ...(stale ? ['ATTENTION : etat publie perime, le daemon ne repond peut-etre plus'] : []),
+    ...[tailnetWarning(state.tailnet, now.getTime())].filter((w): w is string => w !== null),
   ].join(', ');
 }
 

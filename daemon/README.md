@@ -97,6 +97,14 @@ Ce qui tourne en fond, sans commande a lancer :
   pings sans reponse (journal `client WS mort, fermeture et nettoyage`, code 4408) ;
 - **anti-veille** : `caffeinate -i -w <pid du daemon>` tant qu'un agent travaille,
   minuterie de 4 h, relache des que plus rien ne travaille ;
+- **Tailscale absent** : le telephone joint ce Mac par son adresse Tailscale, et par elle
+  seule. Sans elle le daemon n'ecoute que la loopback et l'app ne voit plus rien (du 12/11
+  au 13/11/2026 : 28 heures apres un redemarrage du Mac, Tailscale lance mais pas
+  connecte). Au bout de deux minutes sans adresse, le journal dit `aucune ecoute tailscale`,
+  `status` et `state.json` (`tailnet`) le disent avec quoi faire, et si Tailscale est
+  simplement arrete (`BackendState: Stopped`) le daemon lance une fois `tailscale up`
+  (`"tailscaleAutoUp": false` dans la configuration pour ne jamais y toucher). Un Tailscale
+  deconnecte de son compte n'est jamais touche. Code : `src/net/tailnet.ts`.
 - **Kova quitte** : apres 10 s sans socket, `kova down`, liste des panes videe et
   diffusee vide (ecran « Kova n'est pas lance » dans l'app).
 

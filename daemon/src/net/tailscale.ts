@@ -23,6 +23,16 @@ export interface PeerLink {
   relay: string;
 }
 
+/** `BackendState` de `tailscale status --json` : `Running`, `Stopped`, `NeedsLogin`… */
+export function parseBackendState(json: string): string | null {
+  try {
+    const state = (JSON.parse(json) as { BackendState?: unknown }).BackendState;
+    return typeof state === 'string' && state !== '' ? state : null;
+  } catch {
+    return null;
+  }
+}
+
 export function parsePeers(json: string): PeerLink[] {
   let data: unknown;
   try {
@@ -77,7 +87,13 @@ export function linkFor(remoteAddress: string | undefined, peers: PeerLink[]): L
  * pour un indicateur.
  */
 let knownPeersCache: PeerLink[] = [];
+/** `BackendState` lu au dernier rafraichissement : `Running`, `Stopped`, `NeedsLogin`… */
+let knownBackendCache: string | null = null;
 let refreshing = false;
+
+export function knownBackend(): string | null {
+  return knownBackendCache;
+}
 
 export function knownPeers(): PeerLink[] {
   return knownPeersCache;
@@ -95,6 +111,9 @@ function refreshPeers(): Promise<PeerLink[]> {
     execFile(bin, ['status', '--json'], { timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
       refreshing = false;
       if (!err) knownPeersCache = parsePeers(stdout);
+      // Tailscale arrete rend son etat sur la sortie standard, parfois avec un code
+      // d'erreur : l'etat se lit dans les deux cas.
+      knownBackendCache = parseBackendState(stdout) ?? (err ? null : knownBackendCache);
       resolve(knownPeersCache);
     });
   });

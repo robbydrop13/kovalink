@@ -17,6 +17,8 @@ export interface RuntimeState {
   tsDns: string | null;
   /** Date d'expiration du certificat TLS, au format ISO. */
   certExpiresAt: string | null;
+  /** L'ecoute sur l'adresse Tailscale, sans laquelle le telephone ne joint pas ce Mac. */
+  tailnet?: { listening: boolean; since: string | null; backend: string | null };
 }
 
 function statePath(): string {
