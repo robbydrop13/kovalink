@@ -36,3 +36,23 @@ export function resumeActions(state: ResumeState, threshold = BACKGROUND_RECONNE
   if (state.visibleSessionId !== null) actions.push('session.attach');
   return actions;
 }
+
+/**
+ * Au delà de ce silence, une liaison affichée comme bonne ne l'est plus. Le régime lent
+ * tolère 36 s (20 s de ping, deux pongs de 8 s) : 45 s sans rien recevoir du Mac, pas même
+ * un pong, veut dire que la surveillance elle même s'est arrêtée.
+ */
+export const STALL_AFTER_MS = 45_000;
+
+/**
+ * Dernier filet contre un gel silencieux : l'app est à l'écran, la pastille dit que la
+ * liaison est bonne, et le Mac n'a rien envoyé depuis `STALL_AFTER_MS`. Fonction pure.
+ */
+export function isStalled(
+  state: { appActive: boolean; linkUp: boolean; lastHeardAt: number | null },
+  now: number,
+  after = STALL_AFTER_MS,
+): boolean {
+  if (!state.appActive || !state.linkUp || state.lastHeardAt === null) return false;
+  return now - state.lastHeardAt > after;
+}

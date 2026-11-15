@@ -54,7 +54,7 @@ function fakeClock(): { tick: (ms: number) => void } {
   return { tick: (ms: number) => mock.timers.tick(ms) };
 }
 
-const { Socket, PING_INTERVAL_FAST_MS, PONG_TIMEOUT_FAST_MS } = await import('@/net/ws');
+const { Socket, PING_INTERVAL_FAST_MS, PONG_TIMEOUT_FAST_MS, CONNECT_TIMEOUT_MS } = await import('@/net/ws');
 
 function make() {
   const events: string[] = [];
@@ -121,6 +121,52 @@ describe('Socket', () => {
     clock.tick(PONG_TIMEOUT_FAST_MS);
     assert.equal(FakeWs.all.length, 2, 'un socket neuf, tout de suite');
     s.close();
+  });
+
+  /**
+   * 15 novembre. Le Mac s'endort à 14:32:08, 17 s après la connexion de l'iPhone. Le pong
+   * manque, l'app rouvre un socket vers un Mac qui ne répond plus : ce socket n'est ni
+   * ouvert ni fermé, et rien ne remontait. La pastille restait verte sur une liste figée.
+   */
+  it('rejoue le Mac qui s endort : le pong manqué se dit, le socket jamais ouvert aussi, puis on réessaie', () => {
+    const clock = fakeClock();
+    const { s, events } = make();
+    s.setFastPing(true);
+    s.connect();
+    FakeWs.all[0]!.open();
+    s.pingNow();
+    clock.tick(PONG_TIMEOUT_FAST_MS);
+    assert.deepEqual(events, ['open', 'close:network'], 'la coupure est dite au moment où elle est constatée');
+    assert.equal(FakeWs.all.length, 2);
+    // Le second socket part vers un Mac endormi : jamais d'ouverture, jamais de fermeture.
+    clock.tick(CONNECT_TIMEOUT_MS - 1);
+    assert.equal(events.length, 2);
+    clock.tick(1);
+    assert.deepEqual(events, ['open', 'close:network', 'close:network']);
+    assert.equal(FakeWs.all[1]!.closed, true, 'le socket muet est abandonné');
+    // Et une nouvelle tentative suit, sans attendre la minute d'iOS.
+    clock.tick(1_000);
+    assert.equal(FakeWs.all.length, 3);
+    // Le Mac se réveille : le socket s'ouvre, plus aucun délai en attente ne le coupe.
+    FakeWs.all[2]!.open();
+    clock.tick(CONNECT_TIMEOUT_MS);
+    assert.equal(s.isOpen, true);
+    assert.deepEqual(events.slice(3), ['open']);
+    s.close();
+  });
+
+  it('un socket ouvert à temps ne déclenche pas le délai d ouverture, et close() le désarme', () => {
+    const clock = fakeClock();
+    const { s, events } = make();
+    s.connect();
+    FakeWs.all[0]!.open();
+    clock.tick(CONNECT_TIMEOUT_MS);
+    assert.deepEqual(events, ['open']);
+    s.reconnectNow();
+    s.close();
+    clock.tick(CONNECT_TIMEOUT_MS * 2);
+    assert.deepEqual(events, ['open'], 'fermé par nous : ni coupure annoncée, ni nouvelle tentative');
+    assert.equal(FakeWs.all.length, 2);
   });
 
   it('en régime lent, il faut deux pongs manqués', () => {

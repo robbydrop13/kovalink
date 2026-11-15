@@ -35,6 +35,13 @@ export const PONG_TIMEOUT_MS = 8_000;
  */
 export const PING_INTERVAL_FAST_MS = 6_000;
 export const PONG_TIMEOUT_FAST_MS = 4_000;
+/**
+ * Délai d'ouverture. Vers un Mac endormi, le SYN part dans le vide et iOS n'abandonne
+ * qu'au bout d'une minute environ : pendant ce temps le socket n'est ni ouvert ni fermé,
+ * aucun `onclose` n'arrive, et rien ne disait à l'écran que la liaison était perdue
+ * (15 novembre : Mac en veille à 14:32:08, app ouverte, liste figée sans bandeau).
+ */
+export const CONNECT_TIMEOUT_MS = 10_000;
 const MISSED_PONGS_SLOW = 2;
 const MISSED_PONGS_FAST = 1;
 const BACKOFF_MS = [250, 500, 1000, 2000, 4000, 8000, 15000];
@@ -63,6 +70,7 @@ export class Socket {
   private ws: WebSocket | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pongTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private missedPongs = 0;
   /** Vrai tant qu'un écran de session est ouvert : ping serré, pong court. */
   private fast = false;
@@ -119,9 +127,18 @@ export class Socket {
       headers: { Authorization: `Bearer ${this.token}` },
     });
     this.ws = ws;
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = null;
+      if (this.ws !== ws || ws.readyState === 1) return;
+      // Jamais ouvert : c'est une coupure comme une autre, dite et réessayée.
+      this.detach();
+      this.handlers.onClose('network');
+      if (!this.closedByUs) this.scheduleReconnect();
+    }, CONNECT_TIMEOUT_MS);
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
+      this.clearConnectTimer();
       this.attempt = 0;
       this.missedPongs = 0;
       this.startPing();
@@ -149,6 +166,7 @@ export class Socket {
     ws.onclose = (event: WebSocketCloseEvent) => {
       // Un socket déjà remplacé ne parle plus au nom de la liaison.
       if (this.ws !== ws) return;
+      this.clearConnectTimer();
       this.stopPing();
       this.ws = null;
       // La traduction du code vit dans le protocole : l'app ne compare jamais un nombre.
@@ -200,8 +218,13 @@ export class Socket {
       this.missedPongs += 1;
       // Le ping suivant part tout de suite, pas au prochain cycle : un socket mort se voit
       // en 16 s et non en 36 (régime lent), ou en 4 s avec une session ouverte.
-      if (this.missedPongs >= this.missedPongsAllowed) this.reconnectNow();
-      else this.ping();
+      if (this.missedPongs >= this.missedPongsAllowed) {
+        // La liaison est perdue et l'écran doit le savoir : `reconnectNow` détache le
+        // socket mort, dont le `onclose` ne remontera donc jamais. Sans cet appel, la
+        // pastille restait verte tant que le socket neuf n'avait pas échoué à son tour.
+        this.handlers.onClose('network');
+        this.reconnectNow();
+      } else this.ping();
     }, this.pongWaitMs);
   }
 
@@ -230,10 +253,16 @@ export class Socket {
     this.inflight.clear();
   }
 
+  private clearConnectTimer(): void {
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
+  }
+
   /** Oublie le socket courant et le ferme sans qu'il puisse rappeler personne. */
   private detach(): void {
     const ws = this.ws;
     this.ws = null;
+    this.clearConnectTimer();
     this.stopPing();
     if (!ws) return;
     ws.onopen = null;

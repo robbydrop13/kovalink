@@ -4,7 +4,7 @@
 // dans une autre app pouvaient laisser le chat gelé pour toujours, pastille verte comprise.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { BACKGROUND_RECONNECT_AFTER_MS, resumeActions } from '@/net/resume';
+import { BACKGROUND_RECONNECT_AFTER_MS, STALL_AFTER_MS, isStalled, resumeActions } from '@/net/resume';
 
 const open = { open: true, awayMs: 1_000, visiblePaneId: 66, visibleSessionId: 'sess-1' };
 
@@ -40,5 +40,23 @@ describe('resumeActions', () => {
       'pane.peek',
       'session.attach',
     ]);
+  });
+});
+
+describe('isStalled, le filet contre le gel silencieux', () => {
+  const up = { appActive: true, linkUp: true, lastHeardAt: 1_000 };
+
+  it('pastille verte, app à l écran, rien du Mac depuis plus de 45 s : gelé', () => {
+    assert.equal(isStalled(up, 1_000 + STALL_AFTER_MS), false);
+    assert.equal(isStalled(up, 1_000 + STALL_AFTER_MS + 1), true);
+  });
+
+  it('en arrière plan, les minuteries dorment : un long silence n y veut rien dire', () => {
+    assert.equal(isStalled({ ...up, appActive: false }, 10 * STALL_AFTER_MS), false);
+  });
+
+  it('liaison déjà annoncée coupée, ou jamais rien reçu : pas de second diagnostic', () => {
+    assert.equal(isStalled({ ...up, linkUp: false }, 10 * STALL_AFTER_MS), false);
+    assert.equal(isStalled({ ...up, lastHeardAt: null }, 10 * STALL_AFTER_MS), false);
   });
 });

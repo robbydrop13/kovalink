@@ -10,7 +10,7 @@ import Constants from 'expo-constants';
 import type { PushRegister, S2C } from '@/protocol';
 import { PROTOCOL_VERSION } from '@/protocol';
 import { Socket, nextId } from './ws';
-import { resumeActions } from './resume';
+import { isStalled, resumeActions } from './resume';
 import { loadCredentials, rotateToken } from '@/store/credentials';
 import { useConnection } from '@/store/connection';
 import { usePanes } from '@/store/panes';
@@ -53,6 +53,37 @@ function clearUnreachableTimer(): void {
   unreachableTimer = null;
 }
 
+/**
+ * La liaison vient d'être perdue ou rouverte : « Connecting… » tout de suite, puis
+ * « Mac unreachable » et son bandeau si rien n'est revenu après `UNREACHABLE_AFTER_MS`.
+ * Tout chemin qui rouvre un socket passe par ici : le retour au premier plan et le
+ * bouton Réessayer rouvraient sans armer ce délai, et un socket qui ne s'ouvrait jamais
+ * laissait « Connecting… » sans bandeau.
+ */
+function linkLost(): void {
+  useConnection.getState().setLink('connecting');
+  clearUnreachableTimer();
+  unreachableTimer = setTimeout(() => {
+    unreachableTimer = null;
+    if (!socket?.isOpen) useConnection.getState().setLink('macUnreachable');
+  }, UNREACHABLE_AFTER_MS);
+}
+
+/** Dernier message reçu du Mac, pong compris. Sert au filet contre le gel silencieux. */
+let lastHeardAt: number | null = null;
+let stallTimer: ReturnType<typeof setInterval> | null = null;
+const STALL_CHECK_MS = 5_000;
+
+function checkStall(): void {
+  const link = useConnection.getState().link;
+  const linkUp = link === 'direct' || link === 'relayed';
+  if (!isStalled({ appActive, linkUp, lastHeardAt }, Date.now())) return;
+  bootWarn('link stalled', 'nothing from the Mac, reconnecting');
+  lastHeardAt = Date.now();
+  linkLost();
+  socket?.reconnectNow();
+}
+
 /** Signal de premier plan porté par chaque ping (A1, CA-31). */
 function foregroundPaneId(): number | null {
   return appActive ? visiblePaneId : null;
@@ -61,6 +92,7 @@ function foregroundPaneId(): number | null {
 const appVersion = Constants.expoConfig?.version ?? '1.0.0';
 
 function handle(msg: S2C): void {
+  lastHeardAt = Date.now();
   const conn = useConnection.getState();
   switch (msg.t) {
     case 'hello.ok': {
@@ -188,16 +220,16 @@ export async function startConnection(): Promise<void> {
     onClose: (reason) => {
       void (async () => {
         const state = useConnection.getState();
-        if (!(await online())) state.setLink('offline');
+        const isOnline = await online();
+        // Un pong manqué rouvre le socket dans la foulée : s'il s'est déjà rouvert pendant
+        // cette lecture du réseau, la coupure est passée et `hello.ok` dit la suite.
+        // L'annoncer après coup laissait « Connecting… » sur une liaison rétablie.
+        if (socket?.isOpen) return;
+        if (!isOnline) state.setLink('offline');
         else if (reason === 'auth') state.setError(t.linkPairingRefused);
         else {
           // Coupure : on se reconnecte en silence. Le bandeau n'apparaît que si ça dure.
-          state.setLink('connecting');
-          clearUnreachableTimer();
-          unreachableTimer = setTimeout(() => {
-            unreachableTimer = null;
-            if (!socket?.isOpen) useConnection.getState().setLink('macUnreachable');
-          }, UNREACHABLE_AFTER_MS);
+          linkLost();
         }
       })();
     },
@@ -243,7 +275,7 @@ export async function startConnection(): Promise<void> {
         visibleSessionId,
       })) {
         if (action === 'reconnect') {
-          useConnection.getState().setLink('connecting');
+          linkLost();
           socket?.reconnectNow();
         } else if (action === 'ping') socket?.pingNow();
         else if (action === 'panes.subscribe') socket?.send({ t: 'panes.subscribe', id: nextId() });
@@ -260,6 +292,8 @@ export async function startConnection(): Promise<void> {
     socket?.pingNow();
   });
 
+  if (!stallTimer) stallTimer = setInterval(checkStall, STALL_CHECK_MS);
+
   // Les nombres du cadran suivent maintenant l'etat. Pose ici et non dans le demarrage :
   // l'appairage en cours d'execution rappelle `startConnection` sans rejouer le boot.
   startWatchCountsSync();
@@ -274,6 +308,9 @@ export function stopConnection(): void {
   stopWatchCountsSync();
   netSub = null;
   appSub = null;
+  if (stallTimer) clearInterval(stallTimer);
+  stallTimer = null;
+  lastHeardAt = null;
   visiblePaneId = null;
   visibleSessionId = null;
 }
@@ -366,5 +403,7 @@ export function detachSession(): void {
 }
 
 export function forceReconnect(): void {
+  // Réessayer : la réponse se voit, « Connecting… » puis le bandeau si le Mac ne répond pas.
+  if (socket) linkLost();
   socket?.reconnectNow();
 }
