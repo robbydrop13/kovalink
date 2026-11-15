@@ -204,15 +204,7 @@ export class SleepAssertion {
       reason: this.proc ? this.mode : null,
       since: this.proc && this.since !== null ? new Date(this.since).toISOString() : null,
       power: this.power === null ? 'unknown' : this.power ? 'ac' : 'battery',
-      lid: this.lidUnavailable
-        ? this.lidValue === true
-          ? 'stuck'
-          : 'unavailable'
-        : this.lidValue === null
-          ? 'unknown'
-          : this.lidValue
-            ? 'held'
-            : 'free',
+      lid: this.lidState(),
     };
   }
 
@@ -226,8 +218,21 @@ export class SleepAssertion {
   }
 
   /** Valeur de `disablesleep` lue au demarrage : un 1 orphelin sera remis a 0. */
+  /**
+   * Ce que vaut le capot, d'apres la valeur LUE : un reglage pose a la main (Robin a
+   * tape `sudo pmset -a disablesleep 1` le 15 novembre) compte comme tenu, meme sans la
+   * regle sudoers. `unavailable` et `stuck` ne disent que l'ecart entre voulu et lu.
+   */
+  private lidState(): LidState {
+    if (this.lidValue === null) return this.lidUnavailable ? 'unavailable' : 'unknown';
+    const wanted = this.wantedMode() === 'ac';
+    if (this.lidUnavailable && this.lidValue !== wanted) return this.lidValue ? 'stuck' : 'unavailable';
+    return this.lidValue ? 'held' : 'free';
+  }
+
+  /** Valeur de `disablesleep` lue (demarrage, puis chaque releve) : un 1 orphelin sera remis a 0. */
   setLidKnown(value: boolean | null): void {
-    if (value === null) return;
+    if (value === null || value === this.lidValue) return;
     this.lidValue = value;
     this.syncLid();
     this.onChange?.(this.state);

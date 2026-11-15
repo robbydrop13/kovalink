@@ -397,6 +397,19 @@ describe('anti-veille : capot ferme sur secteur (choix B de Robin, 15 novembre)'
     assert.equal(h.sleep.state.lid, 'held');
   });
 
+  it('un 1 pose a la main sans regle sudoers compte comme tenu (Robin, 15 novembre)', async () => {
+    const h = lidBench({ sudo: false });
+    h.sleep.setLidKnown(false);
+    h.sleep.setPower(true);
+    await h.settle();
+    assert.equal(h.sleep.state.lid, 'unavailable');
+    // Robin tape `sudo pmset -a disablesleep 1` ; le releve suivant le lit.
+    h.sleep.setLidKnown(true);
+    await h.settle();
+    assert.equal(h.sleep.state.lid, 'held');
+    assert.equal(h.writes.includes(false), false);
+  });
+
   it('un 1 que sudo refuse de retirer se dit stuck et se retente a chaque releve', async () => {
     const h = lidBench();
     h.sleep.setLidKnown(false);

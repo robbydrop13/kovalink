@@ -598,7 +598,11 @@ async function run(): Promise<void> {
   // Posee ici et pas plus haut : `state.json` doit exister pour en garder la preuve.
   sleep.onChange = (state) => updateRuntimeState({ sleep: state });
   const watchPower = (): void => {
-    void readAcPower().then((onAc) => sleep.setPower(onAc));
+    // Le reglage du capot est relu aussi : Robin peut le changer a la main.
+    void Promise.all([readAcPower(), readSleepDisabled()]).then(([onAc, lid]) => {
+      sleep.setPower(onAc);
+      sleep.setLidKnown(lid);
+    });
   };
   updateRuntimeState({ sleep: sleep.state });
   // L'alimentation puis le reglage du capot, lus ensemble : un 1 laisse par un daemon
