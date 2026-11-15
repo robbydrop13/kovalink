@@ -133,6 +133,7 @@ async function run(): Promise<void> {
     send: (payload, targets) => push.sendCounts(payload, targets),
   });
   const sleep = new SleepAssertion(() => cfg().preventSleep);
+  push.onNotified = () => sleep.touch('push');
 
   const nonces = new NonceStore();
   const services: Services = {

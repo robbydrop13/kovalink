@@ -68,6 +68,8 @@ export interface Client {
   foregroundAt: number;
   /** Pings serveur envoyes sans pong depuis le dernier signe de vie. */
   missedPongs: number;
+  /** Ouverture du socket, pour journaliser sa duree de vie a la fermeture. */
+  connectedAt: number;
 }
 
 const MAX_FRAME_BYTES = 256 * 1024;
@@ -141,9 +143,10 @@ export class Hub {
       foregroundPaneId: null,
       foregroundAt: 0,
       missedPongs: 0,
+      connectedAt: Date.now(),
     };
     this.clients.add(client);
-    socket.on('close', () => this.remove(client));
+    socket.on('close', (code) => this.remove(client, typeof code === 'number' ? code : null));
     socket.on('error', () => this.remove(client));
     socket.on('pong', () => {
       client.missedPongs = 0;
@@ -151,14 +154,22 @@ export class Hub {
     socket.on('message', (raw) => {
       // Un message, quel qu'il soit, est un signe de vie.
       client.missedPongs = 0;
+      // Et un signe de Robin : le JavaScript de l'app ne tourne qu'au premier plan.
+      this.services.sleep.touch('phone');
       void this.onMessage(client, raw);
     });
     return client;
   }
 
   /** Retire le client et TOUT son etat : sessions, premier plan, abonnement du tail. */
-  remove(client: Client): void {
+  remove(client: Client, code: number | null = null): void {
     if (!this.clients.delete(client)) return;
+    // Duree de vie du socket : sans elle, un gel cote telephone ne se date pas.
+    logger.info('client WS ferme', {
+      deviceId: client.deviceId,
+      lifetimeMs: Date.now() - client.connectedAt,
+      code,
+    });
     client.foregroundPaneId = null;
     for (const sessionId of client.sessions) this.maybeDetach(sessionId);
     client.sessions.clear();

@@ -97,6 +97,10 @@ Ce qui tourne en fond, sans commande a lancer :
   pings sans reponse (journal `client WS mort, fermeture et nettoyage`, code 4408) ;
 - **anti-veille** : `caffeinate -i -w <pid du daemon>` tant qu'un agent travaille,
   minuterie de 4 h, relache des que plus rien ne travaille ;
+  Sur secteur, le Mac reste aussi eveille 15 min apres le dernier message recu de
+  l'app et 30 min apres une notification (pas un push de comptes) : sans cela, un Mac
+  regle sur une veille courte s'endort des que tous les agents attendent Robin, et
+  l'iPhone reste fige (15 novembre). Un socket simplement ouvert ne compte pas.
 - **Tailscale absent** : le telephone joint ce Mac par son adresse Tailscale, et par elle
   seule. Sans elle le daemon n'ecoute que la loopback et l'app ne voit plus rien (du 12/11
   au 13/11/2026 : 28 heures apres un redemarrage du Mac, Tailscale lance mais pas

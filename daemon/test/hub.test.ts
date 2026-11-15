@@ -160,6 +160,8 @@ function harness(askRows: Record<string, unknown>[] = []) {
     setTimeout: () => 1,
     clearTimeout: () => undefined,
     pid: 1,
+    // Jamais de vrai `pmset` dans ces tests : la tenue par le telephone a ses tests dans sleep.test.ts.
+    onAcPower: () => false,
   });
   const services: Services = {
     cfg: loadConfig,
