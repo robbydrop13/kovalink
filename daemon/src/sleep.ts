@@ -9,6 +9,8 @@ export const POWER_POLL_MS = 30_000;
 export const RESPAWN_DELAY_MS = 5_000;
 /** Apres un refus de sudo, le reglage du capot n'est retente qu'apres ce delai. */
 export const LID_RETRY_MS = 10 * 60_000;
+/** Un `disablesleep 1` que sudo refuse de retirer est retente apres ce delai. */
+export const LID_STUCK_RETRY_MS = 2 * 60_000;
 
 /** Ce que `SleepAssertion` attend d'un processus `caffeinate`. */
 export interface SleepProcess {
@@ -52,6 +54,11 @@ export interface SleepState {
    * `unknown`, pas encore lu.
    */
   lid: LidState;
+  /**
+   * Reglage `sleep` de macOS pour l'alimentation en cours, en minutes (`pmset -g`) :
+   * 0 = jamais, `null` = pas lu. Seulement consigne : le daemon ne l'ecrit jamais.
+   */
+  systemSleepMin: number | null;
 }
 
 export type LidState = 'held' | 'free' | 'unavailable' | 'stuck' | 'unknown';
@@ -66,11 +73,26 @@ export function parseSleepDisabled(out: string): boolean | null {
   return m ? m[1] === '1' : false;
 }
 
-/** Valeur courante de `disablesleep`, `null` si `pmset` echoue. */
-export function readSleepDisabled(): Promise<boolean | null> {
+/** Minutes avant la veille par inactivite, ligne ` sleep  N` de `pmset -g`. */
+export function parseSystemSleepMin(out: string): number | null {
+  const m = /^\s*sleep\s+(\d+)/m.exec(out);
+  return m ? Number(m[1]) : null;
+}
+
+export interface PmsetReading {
+  disabled: boolean | null;
+  sleepMin: number | null;
+}
+
+/** `disablesleep` et `sleep` tels que macOS les donne, `null` si `pmset` echoue. */
+export function readPmset(): Promise<PmsetReading> {
   return new Promise((resolve) => {
     execFile('/usr/bin/pmset', ['-g'], { encoding: 'utf8', timeout: 2_000 }, (err, stdout) => {
-      resolve(err ? null : parseSleepDisabled(stdout));
+      resolve(
+        err
+          ? { disabled: null, sleepMin: null }
+          : { disabled: parseSleepDisabled(stdout), sleepMin: parseSystemSleepMin(stdout) },
+      );
     });
   });
 }
@@ -185,6 +207,7 @@ export class SleepAssertion {
   private lidUnavailable = false;
   private lidBusy = false;
   private lidRetryAt = 0;
+  private systemSleepMin: number | null = null;
   /** Appele a chaque changement d'etat, pour `state.json`. */
   onChange: ((state: SleepState) => void) | null = null;
 
@@ -205,6 +228,7 @@ export class SleepAssertion {
       since: this.proc && this.since !== null ? new Date(this.since).toISOString() : null,
       power: this.power === null ? 'unknown' : this.power ? 'ac' : 'battery',
       lid: this.lidState(),
+      systemSleepMin: this.systemSleepMin,
     };
   }
 
@@ -231,7 +255,11 @@ export class SleepAssertion {
   }
 
   /** Valeur de `disablesleep` lue (demarrage, puis chaque releve) : un 1 orphelin sera remis a 0. */
-  setLidKnown(value: boolean | null): void {
+  setLidKnown(value: boolean | null, sleepMin?: number | null): void {
+    if (sleepMin !== undefined && sleepMin !== this.systemSleepMin) {
+      this.systemSleepMin = sleepMin;
+      if (value === null || value === this.lidValue) this.onChange?.(this.state);
+    }
     if (value === null || value === this.lidValue) return;
     this.lidValue = value;
     this.syncLid();
@@ -257,8 +285,10 @@ export class SleepAssertion {
         this.lidUnavailable = false;
         logger.info('veille capot ferme', { disablesleep: wanted ? 1 : 0 });
       } else {
-        // Un 1 qu'on n'arrive pas a retirer est retente a chaque releve : c'est le cas grave.
-        this.lidRetryAt = wanted ? this.now() + LID_RETRY_MS : 0;
+        // Un 1 a retirer est retente plus souvent (un Mac debranche doit retrouver sa
+        // veille en quelques minutes), mais plus a chaque releve : sans regle sudoers,
+        // cela faisait un sudo refuse toutes les 30 s tant que le Mac etait debranche.
+        this.lidRetryAt = this.now() + (wanted ? LID_RETRY_MS : LID_STUCK_RETRY_MS);
         if (!this.lidUnavailable) {
           const fields = { wanted: wanted ? 1 : 0 };
           if (wanted) logger.warn('reglage du capot refuse par sudo, regle sudoers absente ?', fields);

@@ -26,6 +26,8 @@ export interface RuntimeState {
     since: string | null;
     power: 'ac' | 'battery' | 'unknown';
     lid?: 'held' | 'free' | 'unavailable' | 'stuck' | 'unknown';
+    /** Reglage `sleep` de macOS en minutes, 0 = jamais. Lu, jamais ecrit par le daemon. */
+    systemSleepMin?: number | null;
   };
 }
 

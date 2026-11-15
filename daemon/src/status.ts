@@ -57,7 +57,11 @@ export function sleepPart(sleep: NonNullable<RuntimeState['sleep']>): string {
           : '';
   if (!sleep.held) return `Mac libre de dormir (${power})${sleep.lid === 'stuck' || sleep.lid === 'held' ? stuck : ''}`;
   const why = sleep.reason === 'ac' ? 'secteur' : `agent au travail, ${power}`;
-  return `Mac tenu eveille (${why}${lid}) depuis ${sleep.since ?? '?'}`;
+  const sys =
+    typeof sleep.systemSleepMin === 'number'
+      ? `, veille macOS ${sleep.systemSleepMin === 0 ? 'jamais' : `apres ${sleep.systemSleepMin} min`}`
+      : '';
+  return `Mac tenu eveille (${why}${lid}${sys}) depuis ${sleep.since ?? '?'}`;
 }
 
 export function runStatus(): void {

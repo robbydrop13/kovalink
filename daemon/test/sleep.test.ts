@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 process.env['KOVALINK_HOME'] = mkdtempSync(join(tmpdir(), 'kovalink-sleep-'));
 process.env['KOVALINK_QUIET'] = '1';
 
-const { SleepAssertion, SLEEP_CAP_MS, RESPAWN_DELAY_MS, LID_RETRY_MS, parseAcPower, parseSleepDisabled } = await import('../src/sleep.js');
+const { SleepAssertion, SLEEP_CAP_MS, RESPAWN_DELAY_MS, LID_RETRY_MS, LID_STUCK_RETRY_MS, parseAcPower, parseSleepDisabled, parseSystemSleepMin } = await import('../src/sleep.js');
 const { sleepPart } = await import('../src/status.js');
 
 /**
@@ -410,7 +410,7 @@ describe('anti-veille : capot ferme sur secteur (choix B de Robin, 15 novembre)'
     assert.equal(h.writes.includes(false), false);
   });
 
-  it('un 1 que sudo refuse de retirer se dit stuck et se retente a chaque releve', async () => {
+  it('un 1 que sudo refuse de retirer se dit stuck, et se retente toutes les 2 min, pas toutes les 30 s', async () => {
     const h = lidBench();
     h.sleep.setLidKnown(false);
     h.sleep.setPower(true);
@@ -419,10 +419,34 @@ describe('anti-veille : capot ferme sur secteur (choix B de Robin, 15 novembre)'
     h.sleep.setPower(false);
     await h.settle();
     assert.equal(h.sleep.state.lid, 'stuck');
-    h.setSudo(true);
+    const tries = h.writes.length;
+    h.advance(30_000);
     h.sleep.setPower(false);
     await h.settle();
-    assert.equal(h.sleep.state.lid, 'free');
+    assert.equal(h.writes.length, tries, 'pas un sudo refuse a chaque releve');
+    h.setSudo(true);
+    h.advance(LID_STUCK_RETRY_MS);
+    h.sleep.setPower(false);
+    await h.settle();
+    assert.equal(h.sleep.state.lid, 'free', 'debranche, le Mac retrouve sa veille en quelques minutes');
+  });
+
+  it('le reglage sleep de macOS est consigne, jamais ecrit', async () => {
+    const h = lidBench();
+    h.sleep.setPower(true);
+    h.sleep.setLidKnown(true, 0);
+    await h.settle();
+    assert.equal(h.sleep.state.systemSleepMin, 0);
+    assert.equal(h.sleep.state.lid, 'held');
+    h.sleep.setLidKnown(true, 1);
+    assert.equal(h.sleep.state.systemSleepMin, 1);
+    assert.equal(parseSystemSleepMin(' standby              1\n sleep                0 (sleep prevented by caffeinate)\n'), 0);
+    assert.equal(parseSystemSleepMin(' disksleep            10\n sleep                1\n'), 1);
+    assert.equal(parseSystemSleepMin(''), null);
+    assert.match(
+      sleepPart({ held: true, reason: 'ac', since: 'T', power: 'ac', lid: 'held', systemSleepMin: 0 }),
+      /capot ferme compris, veille macOS jamais/,
+    );
   });
 
   it('interrupteur de l app coupe, ou arret du daemon : le capot est rendu a macOS', async () => {
