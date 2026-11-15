@@ -53,6 +53,7 @@ import { applyPendingOrder, groupByTab, sortGroups, summaryLine, tabOrderOf, win
 import { useInterrupt } from '@/features/sessions/useInterrupt';
 import { createScrollLock } from '@/features/sessions/scrollLock';
 import { isDegraded, useConnection } from '@/store/connection';
+import { sessionsEmpty } from '@/utils/sessionsEmpty';
 import { usePanes } from '@/store/panes';
 import { dueAsks, nextAsk, useAsks } from '@/store/asks';
 import { useHomeTab, type HomeTab } from '@/store/homeTab';
@@ -147,6 +148,7 @@ export default function SessionsScreen() {
   // Kova quitté (CA-123) : le daemon a vidé sa liste et l'a annoncé. Ce qui resterait en
   // cache serait des panes fantômes, on ne les montre pas.
   const kovaDown = kova === 'down';
+  const empty = sessionsEmpty({ kovaDown, loading, link, paneCount: panes.length });
   const groups = useMemo(() => groupByTab(kovaDown ? [] : panes, tabs), [kovaDown, panes, tabs]);
   // L'ordre visé par un déplacement encore en attente s'applique par dessus l'instantané.
   const displayGroups = useMemo(() => applyPendingOrder(groups, pendingTabs, pendingPanes), [groups, pendingTabs, pendingPanes]);
@@ -644,7 +646,7 @@ export default function SessionsScreen() {
             onShowScheduled={() => setTab('scheduled')}
           />
         ) : null}
-        {loading && panes.length === 0 && !kovaDown ? <SkeletonList /> : null}
+        {empty === 'loading' ? <SkeletonList /> : null}
 
         {kovaDown ? (
           // État « Kova n'est pas lancé » du design 4.1. Aucun chemin de socket, aucun
@@ -660,9 +662,17 @@ export default function SessionsScreen() {
           </EmptyState>
         ) : null}
 
-        {!kovaDown && !loading && panes.length === 0 ? (
-          <EmptyState title={t.sessionsEmptyTitle} body={t.sessionsEmptyBody} />
+        {empty === 'unreachable' ? (
+          // Le Mac ne répond pas : le dire, au lieu d'annoncer une liste vide (13/11/2026).
+          <EmptyState
+            title={link === 'offline' ? t.sessionsOfflineTitle : t.sessionsUnreachableTitle}
+            body={link === 'offline' ? t.sessionsOfflineBody : t.sessionsUnreachableBody}
+          >
+            <Button label={t.actionRetry} onPress={forceReconnect} />
+          </EmptyState>
         ) : null}
+
+        {empty === 'none' ? <EmptyState title={t.sessionsEmptyTitle} body={t.sessionsEmptyBody} /> : null}
 
         {!kovaDown && panes.length > 0 && shown.length === 0 ? (
           <EmptyState title={t.sessionsNoMatchTitle} body={t.sessionsNoMatchBody} />
