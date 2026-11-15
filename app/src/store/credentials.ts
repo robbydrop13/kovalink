@@ -109,16 +109,19 @@ export async function loadCredentials(): Promise<Credentials | null> {
 }
 
 async function writeActive(c: Credentials): Promise<void> {
+  // `kl.tsDns` en DERNIER : un appel lu pendant la recopie trouve l'ancien Mac entier, ou un
+  // jeton neuf vers l'ancien Mac (refuse en 401), jamais l'adresse du nouveau Mac avec le
+  // jeton de l'ancien.
   await Promise.all([
     SecureStore.setItemAsync(KEYS.deviceId, c.deviceId, opts()),
     SecureStore.setItemAsync(KEYS.token, c.token, opts()),
-    SecureStore.setItemAsync(KEYS.tsDns, c.tsDns, opts()),
     SecureStore.setItemAsync(KEYS.port, String(c.port), opts()),
     // Un Mac sans jeton NSE ne doit pas hériter de celui du Mac précédent.
     c.nseToken
       ? SecureStore.setItemAsync(KEYS.nseToken, c.nseToken, opts())
       : SecureStore.deleteItemAsync(KEYS.nseToken, opts()).catch(() => undefined),
   ]);
+  await SecureStore.setItemAsync(KEYS.tsDns, c.tsDns, opts());
 }
 
 /**
@@ -209,6 +212,29 @@ async function readHosts(): Promise<HostEntry[] | null> {
 
 async function writeHosts(hosts: HostEntry[]): Promise<void> {
   await SecureStore.setItemAsync(HOSTS_KEY, JSON.stringify(hosts), opts());
+  // Le nombre de Macs, seul, lisible ecran verrouille : une action rapide (Stop) sait ainsi
+  // qu'il n'y a qu'un Mac a viser sans lire le registre, protege par le deverrouillage.
+  await SecureStore.setItemAsync(HOST_COUNT_KEY, String(hosts.length), countOpts()).catch(() => undefined);
+}
+
+const HOST_COUNT_KEY = 'kl.hostCount';
+
+function countOpts(): SecureStore.SecureStoreOptions {
+  const o = opts();
+  const accessible = SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY;
+  if (typeof accessible === 'number') o.keychainAccessible = accessible;
+  return o;
+}
+
+/** Nombre de Macs appaires, lisible ecran verrouille ; `null` s'il n'a jamais ete ecrit. */
+export async function hostCountWhileLocked(): Promise<number | null> {
+  try {
+    const v = await SecureStore.getItemAsync(HOST_COUNT_KEY, countOpts());
+    const n = v === null ? NaN : Number(v);
+    return Number.isInteger(n) ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 async function writeHostSlot(c: Credentials): Promise<void> {

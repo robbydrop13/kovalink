@@ -86,7 +86,21 @@ interface RequestOptions {
   anonymous?: boolean;
 }
 
+/**
+ * Vrai pendant un changement de Mac, entre la recopie de l'emplacement actif et le
+ * rechargement : un appel lu dans cette fenetre porterait le `paneId` de l'ancien Mac vers
+ * le nouveau. Pose par `net/hostSwitch.ts`.
+ */
+let requestsPaused = false;
+
+export function pauseRequests(paused: boolean): void {
+  requestsPaused = paused;
+}
+
 async function request<T>(path: string, o: RequestOptions = {}): Promise<T> {
+  // Pas une HttpError 4xx : la file d'envoi garde le message et le retente apres le
+  // rechargement, dans la base de son propre Mac.
+  if (requestsPaused && o.credentials === undefined) throw new Error('switching Mac, request held');
   const creds = o.credentials !== undefined ? o.credentials : await loadCredentials();
   if (!creds) throw new HttpError(401, 'UNAUTHORIZED', t.httpNotPaired);
 

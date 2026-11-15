@@ -17,7 +17,7 @@ import {
 import { dropHostDb, kvClear } from '@/db';
 import { usePanes } from '@/store/panes';
 import { markUnpaired } from '@/boot';
-import { revokeDevice } from './http';
+import { pauseRequests, revokeDevice } from './http';
 import { startConnection, stopConnection } from './connection';
 import { bootWarn } from '@/env';
 
@@ -56,10 +56,12 @@ export async function switchHost(id: string, failedOverFrom: string | null = nul
     // Liaison coupée ensuite : une rotation de jeton arrivée pendant la recopie ne peut plus
     // viser le mauvais Mac.
     stopConnection();
+    pauseRequests(true);
     await activateHost(id);
     await reloadApp();
   } catch (error) {
     switching = false;
+    pauseRequests(false);
     // Liaison relancée sur ce que dit l'emplacement actif : l'app ne reste pas sans liaison.
     void startConnection().catch((e: unknown) => bootWarn('restart after failed switch', e));
     throw error;

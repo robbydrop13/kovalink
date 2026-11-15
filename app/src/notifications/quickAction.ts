@@ -18,7 +18,13 @@ import { HttpError, fetchPrompt } from '@/net/http';
 import { t } from '@/i18n/en';
 import { answerPrompt } from '@/actions/answer';
 import { interruptPane } from '@/actions/interrupt';
-import { activeHostId, listHosts, setPendingRoute, takePendingRoute } from '@/store/credentials';
+import {
+  activeHostId,
+  hostCountWhileLocked,
+  listHosts,
+  setPendingRoute,
+  takePendingRoute,
+} from '@/store/credentials';
 import { switchHost } from '@/net/hostSwitch';
 import {
   parsePendingRoute,
@@ -121,13 +127,15 @@ async function resolvePaneId(data: PushPayload): Promise<number | null> {
  */
 async function hostRouteFor(data: PushPayload, gesture: NotificationGesture): Promise<HostRoute> {
   if (typeof data.host !== 'string' || data.host.length === 0) return { kind: 'here' };
+  // Lisible ecran verrouille, contrairement au registre : un seul Mac, Stop agit comme avant.
+  const singleHost = (await hostCountWhileLocked()) === 1;
   try {
     const [activeId, hosts] = await Promise.all([activeHostId(), listHosts()]);
-    return routeForHost({ payloadHost: data.host, activeId, hosts, gesture });
+    return routeForHost({ payloadHost: data.host, activeId, hosts, gesture, singleHost });
   } catch (e) {
     console.warn('[KovaLink] host lookup failed', describe(e));
-    // Même règle que `routeForHost` sans Mac actif lisible : une action rapide n'agit pas.
-    return gesture === 'action' ? { kind: 'openApp', hostName: null } : { kind: 'here' };
+    // Même règle que `routeForHost` sans Mac actif lisible.
+    return routeForHost({ payloadHost: data.host, activeId: null, hosts: [], gesture, singleHost });
   }
 }
 

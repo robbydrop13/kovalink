@@ -24,21 +24,36 @@ export interface KnownHost {
   name: string;
 }
 
+/**
+ * Deux `tsDns` designent-ils le meme Mac ? Sans tenir compte de la casse ni du point final
+ * d'un nom DNS : une difference de forme ne doit pas faire passer le Mac actif pour un autre.
+ */
+export function sameHost(a: string, b: string): boolean {
+  const norm = (s: string): string => s.trim().toLowerCase().replace(/\.$/, '');
+  return norm(a) === norm(b);
+}
+
 export function routeForHost(input: {
   payloadHost: unknown;
   activeId: string | null;
   hosts: readonly KnownHost[];
   gesture: NotificationGesture;
+  /**
+   * Un seul Mac appaire, lu sans deverrouillage (`kl.hostCount`). Trousseau verrouille et
+   * un seul Mac : le `paneId` ne peut viser que lui, l'action rapide agit comme avant.
+   */
+  singleHost?: boolean;
 }): HostRoute {
-  const { payloadHost, activeId, hosts, gesture } = input;
+  const { payloadHost, activeId, hosts, gesture, singleHost } = input;
   if (typeof payloadHost !== 'string' || payloadHost.length === 0) return { kind: 'here' };
   // Pas de Mac actif lisible : appareil pas appairé, ou trousseau verrouillé (Stop ne
   // demande pas Face ID). Une ouverture garde le chemin d'origine ; une action rapide
   // n'agit pas, car `interruptPane` mettrait en file le `paneId` d'un autre Mac, vidée
   // vers le Mac actif au déverrouillage.
+  if (!activeId && singleHost) return { kind: 'here' };
   if (!activeId) return gesture === 'action' ? { kind: 'openApp', hostName: null } : { kind: 'here' };
-  if (payloadHost === activeId) return { kind: 'here' };
-  const known = hosts.find((h) => h.id === payloadHost) ?? null;
+  if (sameHost(payloadHost, activeId)) return { kind: 'here' };
+  const known = hosts.find((h) => sameHost(h.id, payloadHost)) ?? null;
   // Une action rapide n'agit jamais sur un autre Mac : elle partirait avec le jeton du Mac
   // actif, vers le Mac actif, pour un prompt qui n'y existe pas.
   if (gesture === 'action') return { kind: 'openApp', hostName: known?.name ?? null };
@@ -54,7 +69,7 @@ export function showSystemBannerInForeground(payloadHost: unknown, activeId: str
     typeof payloadHost === 'string' &&
     payloadHost.length > 0 &&
     activeId !== null &&
-    payloadHost !== activeId
+    !sameHost(payloadHost, activeId)
   );
 }
 

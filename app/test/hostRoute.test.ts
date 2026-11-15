@@ -7,6 +7,7 @@ import {
   parsePendingRoute,
   pendingPathFor,
   routeForHost,
+  sameHost,
   serializePendingRoute,
   showSystemBannerInForeground,
 } from '@/notifications/hostRoute';
@@ -105,5 +106,31 @@ describe('route en attente', () => {
     assert.equal(pendingPathFor({ ...route, path: 'https://evil.example' }, m1.id, now), null);
     assert.equal(pendingPathFor({ ...route, path: '//evil.example' }, m1.id, now), null);
     assert.equal(pendingPathFor(null, m1.id, now), null);
+  });
+});
+
+describe('relecture du 15/11 : Mac unique ecran verrouille, et forme du nom', () => {
+  it('trousseau verrouille et un seul Mac : Stop agit comme avant', () => {
+    assert.deepEqual(
+      routeForHost({ payloadHost: 'a.ts.net', activeId: null, hosts: [], gesture: 'action', singleHost: true }),
+      { kind: 'here' },
+    );
+  });
+
+  it('trousseau verrouille et plusieurs Macs : une action rapide n agit pas', () => {
+    assert.deepEqual(
+      routeForHost({ payloadHost: 'a.ts.net', activeId: null, hosts: [], gesture: 'action', singleHost: false }),
+      { kind: 'openApp', hostName: null },
+    );
+  });
+
+  it('casse et point final ne font pas un autre Mac', () => {
+    assert.equal(sameHost('MacBook.Tail66.ts.net.', 'macbook.tail66.ts.net'), true);
+    assert.equal(sameHost('a.ts.net', 'b.ts.net'), false);
+    assert.deepEqual(
+      routeForHost({ payloadHost: 'A.ts.net', activeId: 'a.ts.net', hosts: [], gesture: 'action' }),
+      { kind: 'here' },
+    );
+    assert.equal(showSystemBannerInForeground('A.ts.net.', 'a.ts.net'), false);
   });
 });

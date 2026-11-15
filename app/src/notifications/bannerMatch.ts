@@ -1,3 +1,4 @@
+import { sameHost } from './hostRoute';
 // Reconnaissance du pane visé par une bannière. Pur, testé sous Node (CA-14).
 import type { Pane, PushPayload } from '@/protocol';
 
@@ -23,7 +24,7 @@ export function bannerBelongsTo(
   activeHost: string | null = null,
 ): boolean {
   if (!data || typeof data !== 'object') return false;
-  if (typeof data.host === 'string' && activeHost !== null && data.host !== activeHost) return false;
+  if (typeof data.host === 'string' && activeHost !== null && !sameHost(data.host, activeHost)) return false;
   if (typeof data.paneId === 'number') return data.paneId === pane.id;
   if (typeof data.promptRef === 'string' && promptRefs.includes(data.promptRef)) return true;
   return data.project === pane.projectName && data.tab === pane.tab;
