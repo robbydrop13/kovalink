@@ -65,7 +65,11 @@ function linkLost(): void {
   clearUnreachableTimer();
   unreachableTimer = setTimeout(() => {
     unreachableTimer = null;
-    if (!socket?.isOpen) useConnection.getState().setLink('macUnreachable');
+    // Seulement si l'on en est encore à « Connecting… » : entre temps la liaison a pu
+    // être dite hors ligne ou refusée, et ce délai ne doit pas réécrire ce diagnostic.
+    if (!socket?.isOpen && useConnection.getState().link === 'connecting') {
+      useConnection.getState().setLink('macUnreachable');
+    }
   }, UNREACHABLE_AFTER_MS);
 }
 
@@ -225,10 +229,16 @@ export async function startConnection(): Promise<void> {
         // cette lecture du réseau, la coupure est passée et `hello.ok` dit la suite.
         // L'annoncer après coup laissait « Connecting… » sur une liaison rétablie.
         if (socket?.isOpen) return;
-        if (!isOnline) state.setLink('offline');
-        else if (reason === 'auth') state.setError(t.linkPairingRefused);
-        else {
+        if (!isOnline) {
+          clearUnreachableTimer();
+          state.setLink('offline');
+        } else if (reason === 'auth') {
+          clearUnreachableTimer();
+          state.setError(t.linkPairingRefused);
+        } else if (state.link !== 'macUnreachable') {
           // Coupure : on se reconnecte en silence. Le bandeau n'apparaît que si ça dure.
+          // Déjà « Mac unreachable » : chaque tentative ratée y reste, sinon le bandeau
+          // clignotait à chaque essai tant que le Mac dormait.
           linkLost();
         }
       })();
@@ -262,6 +272,8 @@ export async function startConnection(): Promise<void> {
     if (status === 'active') {
       const away = backgroundedAt === null ? 0 : Date.now() - backgroundedAt;
       backgroundedAt = null;
+      // Le silence de l'arrière plan n'est pas un gel : le filet repart de maintenant.
+      if (lastHeardAt !== null) lastHeardAt = Date.now();
       // Écran de session ouvert : on remet la surveillance serrée avant tout le reste.
       socket?.setFastPing(visibleSessionId !== null);
       // La décision vit dans `resume.ts`, testable sans React Native. `reconnect` est
