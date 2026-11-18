@@ -21,7 +21,7 @@ export const COUNTS_PUSH_MIN_INTERVAL_MS = 60_000;
 
 /** Ce que le daemon sait compter, sans aucun texte. */
 export interface CountsSnapshot {
-  /** Le meme compte que `waitsOnYou` : permissions, questions ouvertes, entrees d'attention `now`. */
+  /** Le meme compte que `waitsOnYou` : permissions, questions ouvertes, entrees d'attention `now` ou Urgentes (prio 1). */
   asks: number;
   /** Les panes sur une erreur API. */
   errors: number;
@@ -77,7 +77,7 @@ export function countsOf(
   }
 
   for (const entry of attention) {
-    if (entry.level !== 'now') continue;
+    if (entry.level !== 'now' && entry.prio !== 1) continue;
     const since = epochSecondsOf(entry.ts);
     if (since !== null && (oldestAt === null || since < oldestAt)) oldestAt = since;
   }

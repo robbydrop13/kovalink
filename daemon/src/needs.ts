@@ -78,7 +78,9 @@ export function needInputOf(
     }),
     attention: attention.flatMap((entry) => {
       const since = epochSecondsOf(entry.ts);
-      return since === null ? [] : [{ id: entry.id, since, level: entry.level, title: entry.title }];
+      // Une carte Urgente (prio 1) attend Robin comme une `now`, quel que soit son niveau.
+      const level = entry.prio === 1 ? 'now' : entry.level;
+      return since === null ? [] : [{ id: entry.id, since, level, title: entry.title }];
     }),
     now,
   };

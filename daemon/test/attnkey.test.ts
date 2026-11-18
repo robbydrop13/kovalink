@@ -62,6 +62,15 @@ describe('cle de clic passee a attn', () => {
     assert.equal(attnEnv(['list', '--open', '--json']), undefined);
   });
 
+  it('un geste du Cockpit et un report portent la cle', async () => {
+    writeFileSync(keyFile, `${KEY}\n`, { mode: 0o600 });
+    const gesture = await execAttn(['act', '--by', 'robin', '--exit-codes', '--client-id=c-1', 'a-0d0db1', 'go']);
+    assert.match(gesture.stdout, /^from=kovalink key=ok /);
+    const snooze = await execAttn(['snooze', '--by', 'robin', '--until=2026-11-20T09:00:00+01:00', 'a-0d0db1']);
+    assert.match(snooze.stdout, /^from=kovalink key=ok /);
+    assert.ok(!snooze.stdout.includes(KEY), 'never in argv');
+  });
+
   it('sans cle lisible ou avec une cle vide : rien n est ajoute', async () => {
     rmSync(keyFile, { force: true });
     assert.equal(attnEnv(['act', 'a-0d0db1', 'Envoyer']), undefined);

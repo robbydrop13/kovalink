@@ -74,6 +74,12 @@ export const ERROR_CODES = [
   'ATTENTION_BUSY',
   'ATTENTION_ALREADY_SENT',
   'ATTENTION_ERROR',
+  // Gestes du Cockpit : le geste n'est pas offert par la carte (409), la file l'a refuse
+  // (409, sa propre ligne dans `message`, montree « Non transmis : <ligne> »), ou la carte
+  // n'est plus celle affichee (409, `--card-seen`, rien n'est note).
+  'ATTENTION_GESTURE_NOT_OFFERED',
+  'ATTENTION_REFUSED',
+  'ATTENTION_CARD_CHANGED',
   'INTERNAL',
 ] as const;
 

@@ -2,7 +2,9 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import {
   ROUTE_PATTERNS,
   type AttentionActRequest,
+  type AttentionGestureRequest,
   type AttentionResponse,
+  type AttentionSnoozeRequest,
   type ErrorCode,
   type ErrorPayload,
 } from '@kovalink/protocol';
@@ -20,13 +22,18 @@ function fail(reply: FastifyReply, status: number, code: ErrorCode, message: str
  * Refus sur les routes de la file : 400 pour une requete hors format (rien n'a ete
  * lance), 404 pour une entree qui n'est plus ouverte, 409 pour un geste deja en cours,
  * 502 quand `attn` echoue. La sortie de `attn` ne part JAMAIS vers l'app : elle reste
- * dans le journal local.
+ * dans le journal local. Seule exception, le refus d'un geste du Cockpit (code 4).
  */
 function failAttention(reply: FastifyReply, e: AttentionError, id: string): void {
   if (e.reason === 'bad_request') return fail(reply, 400, 'BAD_REQUEST', e.message);
   if (e.reason === 'not_found') return fail(reply, 404, 'ATTENTION_NOT_FOUND', e.message);
   if (e.reason === 'busy') return fail(reply, 409, 'ATTENTION_BUSY', e.message);
   if (e.reason === 'already_sent') return fail(reply, 409, 'ATTENTION_ALREADY_SENT', e.message);
+  if (e.reason === 'not_offered') return fail(reply, 409, 'ATTENTION_GESTURE_NOT_OFFERED', e.message);
+  // La seule sortie d'`attn` qui part vers l'app : sa ligne de refus, ecrite pour Robin
+  // (« Non transmis : <ligne> »), deja nettoyee et bornee par `gestureOutcome`.
+  if (e.reason === 'refused') return fail(reply, 409, 'ATTENTION_REFUSED', e.message);
+  if (e.reason === 'card_changed') return fail(reply, 409, 'ATTENTION_CARD_CHANGED', e.message);
   logger.warn('attn en echec', { id, err: e.message });
   return fail(reply, 502, 'ATTENTION_ERROR', 'attn failed');
 }
@@ -97,6 +104,93 @@ export function registerAttentionRoutes(
           detail: `id=${id.slice(0, 16)} ${e.reason}`,
         });
         return failAttention(reply, e, id.slice(0, 16));
+      }
+    },
+  );
+
+  /**
+   * Un nonce rejoue est refuse sans rien lancer, comme `act`. Rend `false` quand la
+   * requete s'arrete la.
+   */
+  function reserveNonce(reply: FastifyReply, deviceId: string, action: string, id: string, nonce: unknown): boolean {
+    if (typeof nonce !== 'string' || nonce.length === 0 || services.nonces.reserve(nonce)) return true;
+    audit({ deviceId, action, result: 'denied', detail: `id=${id.slice(0, 16)} duplicate` });
+    fail(reply, 409, 'BAD_REQUEST', 'duplicate nonce');
+    return false;
+  }
+
+  /** Un refus ou un echec d'un geste du Cockpit ou d'un report : nonce rendu, journal, reponse. */
+  function failGesture(
+    reply: FastifyReply,
+    e: unknown,
+    deviceId: string,
+    action: string,
+    id: string,
+    nonce: unknown,
+  ): void {
+    if (typeof nonce === 'string') services.nonces.release(nonce);
+    if (!(e instanceof AttentionError)) throw e;
+    audit({
+      deviceId,
+      action,
+      result: e.reason === 'attn_failed' ? 'error' : 'denied',
+      detail: `id=${id.slice(0, 16)} ${e.reason}`,
+    });
+    return failAttention(reply, e, id.slice(0, 16));
+  }
+
+  /** Un des sept gestes du Cockpit, s'il est offert par la carte -> `attn act`, forme de Kova. */
+  app.post<{ Params: { id: string }; Body: Partial<AttentionGestureRequest> }>(
+    ROUTE_PATTERNS.attentionGesture,
+    async (req, reply) => {
+      const deviceId = req.deviceId ?? '';
+      if (!services.rate.allow(deviceId, 'attention')) {
+        return fail(reply, 429, 'RATE_LIMITED', 'too many attention actions');
+      }
+      const id = req.params.id;
+      const { gesture, text, seen, draft, cardSeen, clientId, nonce } = req.body ?? {};
+      if (!reserveNonce(reply, deviceId, 'attention.gesture', id, nonce)) return;
+      try {
+        const res = await board.gesture(id, { gesture, text, seen, draft, cardSeen, clientId });
+        audit({
+          deviceId,
+          action: 'attention.gesture',
+          result: 'ok',
+          // Ni le texte ni le brouillon ne vont au journal, seulement leur longueur.
+          detail:
+            `id=${id} gesture=${String(gesture)} outcome=${res.outcome}` +
+            ` len=${typeof text === 'string' ? text.length : 0} draft=${typeof draft === 'string' ? draft.length : 0}`,
+        });
+        void services.refreshAttention?.('gesture');
+        return res;
+      } catch (e) {
+        // Un refus ou une carte changee a peut-etre fait bouger la file : relue aussi.
+        if (e instanceof AttentionError && (e.reason === 'refused' || e.reason === 'card_changed')) {
+          void services.refreshAttention?.('gesture');
+        }
+        return failGesture(reply, e, deviceId, 'attention.gesture', id, nonce);
+      }
+    },
+  );
+
+  /** Reporter une carte ouverte a une date -> `attn snooze --until`. */
+  app.post<{ Params: { id: string }; Body: Partial<AttentionSnoozeRequest> }>(
+    ROUTE_PATTERNS.attentionSnooze,
+    async (req, reply) => {
+      const deviceId = req.deviceId ?? '';
+      if (!services.rate.allow(deviceId, 'attention')) {
+        return fail(reply, 429, 'RATE_LIMITED', 'too many attention actions');
+      }
+      const id = req.params.id;
+      const { until, nonce } = req.body ?? {};
+      if (!reserveNonce(reply, deviceId, 'attention.snooze', id, nonce)) return;
+      try {
+        const res = await board.snooze(id, until);
+        audit({ deviceId, action: 'attention.snooze', result: 'ok', detail: `id=${id} until=${String(until)}` });
+        void services.refreshAttention?.('snooze');
+        return res;
+      } catch (e) {
+        return failGesture(reply, e, deviceId, 'attention.snooze', id, nonce);
       }
     },
   );

@@ -1,4 +1,4 @@
-// File d'attention : `attn list --open --json` est la seule source, et un geste de
+// File d'attention : `attn list --open --json --scope all` est la seule source, et un geste de
 // l'app devient un argv construit ici depuis une liste fermee de boutons. Ces tests fixent
 // la lecture (champs gardes, entree mal formee ignoree), le refus SANS lancer `attn`, et
 // l'argv exact de chaque geste, a travers les vraies routes.
@@ -141,7 +141,7 @@ describe('attention : cache', () => {
     board.invalidate();
     await board.list();
     assert.equal(h.calls.length, 3);
-    assert.deepEqual(h.calls[0], ['list', '--open', '--json']);
+    assert.deepEqual(h.calls[0], ['list', '--open', '--json', '--scope', 'all']);
   });
 
   it('une lecture partie avant invalidate ne fixe pas le cache et n est pas reprise', async () => {
@@ -287,7 +287,7 @@ describe('attention : routes', () => {
     assert.equal(res.statusCode, 200);
     assert.deepEqual(res.json(), { applied: true, op: 'act' });
     assert.deepEqual(h.calls, [
-      ['list', '--open', '--json'],
+      ['list', '--open', '--json', '--scope', 'all'],
       ['act', 'a-2555da', 'Envoyer', '--exit-codes'],
     ]);
     assert.deepEqual(refreshed, ['act']);
@@ -346,7 +346,7 @@ describe('attention : routes', () => {
     it(`400 sans geste quand le bouton ne va pas au genre : ${name}`, async () => {
       const res = await act(id, { button });
       assert.equal(res.statusCode, 400, res.body);
-      assert.deepEqual(h.calls, [['list', '--open', '--json']], 'seule la relecture part');
+      assert.deepEqual(h.calls, [['list', '--open', '--json', '--scope', 'all']], 'seule la relecture part');
     });
   }
 
@@ -357,7 +357,7 @@ describe('attention : routes', () => {
     h = fake([RAW[0]]);
     const res = await act('a-2555da', { button: 'Envoyer' });
     assert.equal(res.statusCode, 404);
-    assert.deepEqual(h.calls, [['list', '--open', '--json']]);
+    assert.deepEqual(h.calls, [['list', '--open', '--json', '--scope', 'all']]);
   });
 
   it('un second Envoyer sur la meme entree est refuse 10 min, meme avec un autre nonce', async () => {
@@ -375,7 +375,7 @@ describe('attention : routes', () => {
     const res = await act('a-abcdef', { button: 'Fait' });
     assert.equal(res.statusCode, 404);
     assert.equal(res.json().code, 'ATTENTION_NOT_FOUND');
-    assert.deepEqual(h.calls, [['list', '--open', '--json']]);
+    assert.deepEqual(h.calls, [['list', '--open', '--json', '--scope', 'all']]);
   });
 
   it('502 quand attn act echoue, sa sortie reste sur le Mac', async () => {

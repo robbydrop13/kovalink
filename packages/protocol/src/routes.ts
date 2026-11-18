@@ -166,10 +166,14 @@ export const ROUTES = {
   agentReopen: (name: string): string => `/v1/agents/${encodeURIComponent(name)}/reopen`,
 
   // --- File d'attention, pilotee par le CLI `attn` ------------------------
-  // Deux routes : les entrees ouvertes et un geste sur une entree (`Envoyer` transmet le
-  // clic au chief, `Fait` et `Ignorer` la ferment). Aucune creation depuis l'app.
+  // Les entrees ouvertes, l'ancien geste (`Envoyer` transmet le clic au chief, `Fait` et
+  // `Ignorer` la ferment), les gestes du Cockpit et le report. Aucune creation depuis l'app.
   attention: '/v1/attention',
   attentionAct: (id: string): string => `/v1/attention/${encodeURIComponent(id)}/act`,
+  // Les gestes du Cockpit, les memes que Kova : un des sept mots que la carte offre, et le
+  // report a une date. `act` reste pour les versions de l'app d'avant.
+  attentionGesture: (id: string): string => `/v1/attention/${encodeURIComponent(id)}/gesture`,
+  attentionSnooze: (id: string): string => `/v1/attention/${encodeURIComponent(id)}/snooze`,
 } as const;
 
 /** Gabarits Fastify correspondants. Ecrits une fois, a cote des chemins clients. */
@@ -236,6 +240,8 @@ export const ROUTE_PATTERNS = {
   // File d'attention : memes chemins que `ROUTES`, `:id` valide par le daemon.
   attention: '/v1/attention',
   attentionAct: '/v1/attention/:id/act',
+  attentionGesture: '/v1/attention/:id/gesture',
+  attentionSnooze: '/v1/attention/:id/snooze',
 } as const;
 
 /**

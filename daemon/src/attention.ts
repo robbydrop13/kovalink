@@ -1,8 +1,10 @@
 // File d'attention de Robin : seul le CLI `attn` la connait, le daemon ne lit jamais son
 // journal lui-meme. Chaque appel lui passe un argv fixe, jamais une ligne de shell : la
-// lecture (`list --open --json`), un clic transmis au chief (`act`) et une fermeture
-// (`close`). Le corps d'une entree reste dans la reponse ; la sortie de `attn` (messages,
-// chemins du Mac) ne part jamais vers l'app.
+// lecture des deux files (`list --open --json --scope all`), un geste du Cockpit (`act`
+// avec un des sept mots que la carte offre, la forme exacte de Kova), un report
+// (`snooze`), et les anciens boutons (`act`, `close`). Le corps d'une entree reste dans la
+// reponse ; la sortie de `attn` (messages, chemins du Mac) ne part jamais vers l'app, sauf
+// la ligne d'un refus (code 4), qui est le message d'`attn` a Robin.
 //
 // Les entrees `now` comptent dans `waitsOnYou` comme une question : la lecture est
 // gardee 10 s, et le daemon la relit au meme rythme pour que la pastille suive.
@@ -10,14 +12,28 @@ import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
+  ATTENTION_CLIENT_ID_RE,
+  ATTENTION_DRAFT_MAX,
+  ATTENTION_GESTURES,
   ATTENTION_ID_RE,
   ATTENTION_LEVELS,
+  ATTENTION_SEEN_RE,
+  ATTENTION_SNOOZE_MAX_DAYS,
   ATTENTION_TEXT_MAX,
+  gestureTakesText,
   isAttentionButton,
+  isAttentionGesture,
   type AttentionActResponse,
+  type AttentionAsk,
+  type AttentionDraft,
   type AttentionEntry,
+  type AttentionGesture,
+  type AttentionGestureResponse,
   type AttentionLevel,
+  type AttentionSnoozeResponse,
+  type AttentionWaiting,
 } from '@kovalink/protocol';
 import type { Exec } from './routines.js';
 
@@ -68,13 +84,13 @@ export function clickKeyPath(): string {
 }
 
 /**
- * L'environnement d'un geste (`act`, `close`) : la cle relue a chaque geste (une cle
+ * L'environnement d'un geste (`act`, `close`, `snooze`) : la cle relue a chaque geste (une cle
  * changee vaut sans relancer le daemon), passee par l'environnement, jamais en argument
  * (invisible dans `ps`), avec `ATTN_CLICK_FROM=kovalink`. Une lecture ou une cle absente :
  * l'environnement du daemon, inchange. Jamais pour `list`.
  */
 export function attnEnv(argv: readonly string[]): NodeJS.ProcessEnv | undefined {
-  if (argv[0] !== 'act' && argv[0] !== 'close') return undefined;
+  if (argv[0] !== 'act' && argv[0] !== 'close' && argv[0] !== 'snooze') return undefined;
   let key = '';
   try {
     key = readFileSync(clickKeyPath(), 'utf8').trim();
@@ -114,11 +130,20 @@ export const execAttn: Exec = (argv) => {
 
 /**
  * Refus d'un geste : requete hors format (400, rien n'est lance), entree qui n'est plus
- * ouverte (404), geste deja en cours sur elle (409), `attn` en echec (502).
+ * ouverte (404), geste deja en cours sur elle (409), geste que la carte n'offre pas (409),
+ * refuse par `attn` (409, `message` est sa ligne), carte changee (409), `attn` en echec (502).
  */
 export class AttentionError extends Error {
   constructor(
-    readonly reason: 'bad_request' | 'not_found' | 'busy' | 'already_sent' | 'attn_failed',
+    readonly reason:
+      | 'bad_request'
+      | 'not_found'
+      | 'busy'
+      | 'already_sent'
+      | 'not_offered'
+      | 'refused'
+      | 'card_changed'
+      | 'attn_failed',
     message: string,
   ) {
     super(message);
@@ -175,8 +200,131 @@ export function toAttentionEntry(raw: unknown): AttentionEntry | null {
   if (Array.isArray(r['src'])) {
     const src = r['src'].filter((s): s is string => typeof s === 'string' && s.length > 0);
     if (src.length > 0) entry.src = src;
+  } else {
+    // Un seul mot vaut une liste d'un, comme Kova.
+    const one = trimmed(r['src']);
+    if (one !== null) entry.src = [one];
   }
+  Object.assign(entry, cockpitFields(r));
   return entry;
+}
+
+function trimmed(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  return t.length > 0 ? t : null;
+}
+
+/** Les caracteres de controle retires, puis borne a `max` caracteres (`chars().take` de Kova). */
+function shown(v: string, max: number): string {
+  return Array.from(v.replace(SHOWN_CONTROL_RE, '')).slice(0, max).join('');
+}
+
+// Les controles au sens de Rust (`char::is_control`) : C0, DEL et C1.
+// eslint-disable-next-line no-control-regex
+const SHOWN_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/g;
+
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const LABEL_GRAY = '#94A3B8';
+
+/** Une empreinte de la file (`valid_seen` de Kova), sinon rien. */
+function seenOf(v: unknown): string | null {
+  return typeof v === 'string' && ATTENTION_SEEN_RE.test(v) ? v : null;
+}
+
+/** Les gestes listes : mots connus seulement, sans doublon, dans l'ordre de la file. */
+function gesturesOf(v: unknown): AttentionGesture[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: AttentionGesture[] = [];
+  for (const g of v) if (isAttentionGesture(g) && !out.includes(g)) out.push(g);
+  return out;
+}
+
+/** Le brouillon, lu champ par champ ; sans texte, il n'y en a pas. */
+function draftOf(v: unknown): AttentionDraft | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const d = v as Record<string, unknown>;
+  if (typeof d['text'] !== 'string' || d['text'].trim().length === 0) return null;
+  const draft: AttentionDraft = { text: d['text'] };
+  const fields: [keyof AttentionDraft, string][] = [
+    ['to', 'to'],
+    ['channel', 'channel'],
+    ['subject', 'subject'],
+    ['target', 'target'],
+    ['targetLabel', 'target_label'],
+    ['targetKind', 'target_kind'],
+  ];
+  for (const [ours, theirs] of fields) {
+    const value = trimmed(d[theirs]);
+    if (value !== null) draft[ours] = value;
+  }
+  const seen = seenOf(d['seen']);
+  if (seen !== null) draft.seen = seen;
+  return draft;
+}
+
+/** La question posee, seulement quand la carte attend l'agent (`reply_of` de Kova). */
+function askOf(v: unknown, waiting: AttentionWaiting | undefined): AttentionAsk | null {
+  if (waiting !== 'agent' || !v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const a = v as Record<string, unknown>;
+  const text = trimmed(a['text']);
+  if (text === null) return null;
+  const ask: AttentionAsk = { text };
+  const ts = trimmed(a['ts']);
+  const to = trimmed(a['to']);
+  const label = trimmed(a['label']);
+  if (ts !== null && Number.isFinite(Date.parse(ts))) ask.ts = ts;
+  if (to !== null) ask.to = to;
+  if (label !== null) {
+    const l = shown(label, 80);
+    if (l.length > 0) ask.label = l;
+  }
+  return ask;
+}
+
+/**
+ * Les champs du Cockpit, lus avec la meme indulgence que Kova (`parse`) : une priorite, un
+ * brouillon ou un label qui ne se lit pas est omis, l'entree reste.
+ */
+function cockpitFields(r: Record<string, unknown>): Partial<AttentionEntry> {
+  const out: Partial<AttentionEntry> = {};
+  const gestures = gesturesOf(r['gestures']);
+  if (gestures !== null) out.gestures = gestures;
+  const goLabel = typeof r['go_label'] === 'string' ? shown(r['go_label'].trim(), 40).trim() : '';
+  if (goLabel.length > 0) out.goLabel = goLabel;
+  const waiting = r['waiting'] === 'robin' || r['waiting'] === 'agent' ? r['waiting'] : undefined;
+  if (waiting !== undefined) out.waiting = waiting;
+  const ask = askOf(r['ask'], waiting);
+  if (ask !== null) out.ask = ask;
+  const cardSeen = seenOf(r['card_seen']);
+  if (cardSeen !== null) out.cardSeen = cardSeen;
+  const prio = r['prio'];
+  if (prio === 1 || prio === 2 || prio === 3) out.prio = prio;
+  const label = trimmed(r['label']);
+  if (label !== null) {
+    const color = r['label_color'];
+    out.label = { name: label, color: typeof color === 'string' && HEX_COLOR_RE.test(color) ? color : LABEL_GRAY };
+  }
+  if (r['scope'] === 'pro' || r['scope'] === 'perso') out.scope = r['scope'];
+  const draft = draftOf(r['draft']);
+  if (draft !== null) out.draft = draft;
+  for (const [ours, theirs] of [
+    ['detail', 'detail'],
+    ['failed', 'failed'],
+    ['uncertain', 'uncertain'],
+    ['proof', 'proof'],
+  ] as const) {
+    const value = trimmed(r[theirs]);
+    if (value !== null) out[ours] = value;
+  }
+  // Des chemins absolus du Mac, rien d'autre.
+  for (const key of ['before', 'after'] as const) {
+    const value = trimmed(r[key]);
+    if (value !== null && value.startsWith('/')) out[key] = value;
+  }
+  const snoozed = trimmed(r['snoozed_until']);
+  if (snoozed !== null && Number.isFinite(Date.parse(snoozed))) out.snoozedUntil = snoozed;
+  return out;
 }
 
 /** La sortie entiere : un tableau, sinon `attn` a change de forme et c'est une erreur. */
@@ -206,6 +354,181 @@ export function attentionArgv(id: string, button: string, note: string): string[
   return null;
 }
 
+/** La lecture : les deux files, pro et perso, comme le Cockpit de Kova. */
+export const LIST_ARGV = ['list', '--open', '--json', '--scope', 'all'] as const;
+
+/** Les drapeaux de chaque clic du Cockpit, comme l'`act_command` de Kova (`--by robin`). */
+const BY_ROBIN = ['--by', 'robin'] as const;
+export const EXIT_CODES = '--exit-codes';
+export const CLIENT_ID = '--client-id';
+export const CARD_SEEN = '--card-seen';
+
+/** Les codes de sortie d'`attn act --exit-codes` (contrat des gestes). */
+export const EXIT_DELIVERED = 0;
+export const EXIT_NOTED = 3;
+export const EXIT_REFUSED = 4;
+export const EXIT_CARD_CHANGED = 5;
+
+/**
+ * Comment commence la premiere ligne d'un clic qui n'a rien remis a un agent et le dit :
+ * la file envoie elle-meme (`envoi par le code (slack a U123)`) ou a deja pris cette
+ * version. Ce sont les mots d'`attn`, au caractere pres (`ALREADY` de Kova).
+ */
+export const SAID_PREFIXES: readonly string[] = [
+  'déjà envoyé par le code',
+  'déjà remis à',
+  'déjà parti',
+  'déjà noté',
+  'envoi par le code',
+];
+
+/** La longueur d'une ligne d'`attn` montree sur la carte. */
+const LINE_MAX = 160;
+
+/** Un geste du Cockpit, valide : ce que l'argv recoit. */
+export interface CheckedGesture {
+  gesture: AttentionGesture;
+  /** Taille, controle et geste verifies ; absent quand rien n'a ete tape. */
+  text?: string;
+  seen?: string;
+  draft?: string;
+  cardSeen?: string;
+  clientId?: string;
+}
+
+/**
+ * Valide un geste AVANT de lancer quoi que ce soit. Le texte et le brouillon sont des
+ * chaines bornees sans controle (sauf tabulation et saut de ligne) ; `ask` exige un texte,
+ * `cancel` n'en prend pas ; `seen` et `draft` vont avec `go` seulement ; les empreintes et
+ * l'identifiant du clic ont la forme que Kova passe.
+ */
+export function checkGesture(body: {
+  gesture?: unknown;
+  text?: unknown;
+  seen?: unknown;
+  draft?: unknown;
+  cardSeen?: unknown;
+  clientId?: unknown;
+}): CheckedGesture {
+  const { gesture, text, seen, draft, cardSeen, clientId } = body;
+  if (!isAttentionGesture(gesture)) {
+    throw new AttentionError('bad_request', `gesture must be one of ${ATTENTION_GESTURES.join(', ')}`);
+  }
+  const out: CheckedGesture = { gesture };
+  if (text !== undefined && typeof text !== 'string') throw new AttentionError('bad_request', 'text must be a string');
+  const t = typeof text === 'string' ? text.trim() : '';
+  if (CONTROL_RE.test(t)) throw new AttentionError('bad_request', 'text must not contain control characters');
+  if (Buffer.byteLength(t, 'utf8') > ATTENTION_TEXT_MAX) {
+    throw new AttentionError('bad_request', `text is longer than ${ATTENTION_TEXT_MAX} bytes`);
+  }
+  if (t.length > 0) {
+    if (!gestureTakesText(gesture)) throw new AttentionError('bad_request', `${gesture} carries no text`);
+    out.text = t;
+  } else if (gesture === 'ask') {
+    throw new AttentionError('bad_request', 'ask needs a text');
+  }
+  if (seen !== undefined) {
+    if (gesture !== 'go') throw new AttentionError('bad_request', 'seen goes with go only');
+    if (typeof seen !== 'string' || !ATTENTION_SEEN_RE.test(seen)) {
+      throw new AttentionError('bad_request', 'seen must be 8 to 64 hex digits');
+    }
+    out.seen = seen;
+  }
+  if (draft !== undefined) {
+    if (gesture !== 'go') throw new AttentionError('bad_request', 'draft goes with go only');
+    if (typeof draft !== 'string') throw new AttentionError('bad_request', 'draft must be a string');
+    if (CONTROL_RE.test(draft)) throw new AttentionError('bad_request', 'draft must not contain control characters');
+    if (Buffer.byteLength(draft, 'utf8') > ATTENTION_DRAFT_MAX) {
+      throw new AttentionError('bad_request', `draft is longer than ${ATTENTION_DRAFT_MAX} bytes`);
+    }
+    // Le texte exact de Robin, tel quel ; un brouillon vide n'est pas un brouillon.
+    if (draft.trim().length > 0) out.draft = draft;
+  }
+  if (cardSeen !== undefined) {
+    if (typeof cardSeen !== 'string' || !ATTENTION_SEEN_RE.test(cardSeen)) {
+      throw new AttentionError('bad_request', 'cardSeen must be 8 to 64 hex digits');
+    }
+    out.cardSeen = cardSeen;
+  }
+  if (clientId !== undefined) {
+    if (typeof clientId !== 'string' || !ATTENTION_CLIENT_ID_RE.test(clientId)) {
+      throw new AttentionError('bad_request', 'clientId must be 1 to 64 letters, digits, - or _, not starting with -');
+    }
+    out.clientId = clientId;
+  }
+  return out;
+}
+
+/**
+ * L'argv d'un geste, la forme exacte de Kova (`gesture_argv`) : `act --by robin
+ * --exit-codes --client-id=<id> [--card-seen=<x>] <carte> <mot> [--text=<T>] [--seen=<S>]
+ * [--draft=<D>]`. Chaque valeur est UN element avec `=` : un texte qui commence par `--`
+ * ne se lit jamais comme une option.
+ */
+export function gestureArgv(id: string, g: CheckedGesture & { clientId: string }): string[] {
+  const argv = ['act', ...BY_ROBIN, EXIT_CODES, `${CLIENT_ID}=${g.clientId}`];
+  if (g.cardSeen !== undefined) argv.push(`${CARD_SEEN}=${g.cardSeen}`);
+  argv.push(id, g.gesture);
+  if (g.text !== undefined) argv.push(`--text=${g.text}`);
+  if (g.gesture === 'go' && g.seen !== undefined) argv.push(`--seen=${g.seen}`);
+  if (g.gesture === 'go' && g.draft !== undefined) argv.push(`--draft=${g.draft}`);
+  return argv;
+}
+
+/** L'argv d'un report : `snooze --by robin --until=<ISO> <carte>`. */
+export function snoozeArgv(id: string, until: string): string[] {
+  return ['snooze', ...BY_ROBIN, `--until=${until}`, id];
+}
+
+/** Une ligne d'`attn` montrable : sans controle, bornee. */
+function lineOf(s: string): string {
+  return shown(s.trim(), LINE_MAX).trim();
+}
+
+/**
+ * Ce que dit la sortie d'un geste (`delivery_of`, `said_line` et `run_click_with` de
+ * Kova). 0 : remis, ou la file le dit elle-meme sur sa premiere ligne (`said`) ; 3 : note,
+ * remise a venir ; 4 : refuse, la derniere ligne de `stderr` est le message d'`attn` a
+ * Robin et part vers l'app ; 5 : la carte a change ; tout autre code : un echec, dont la
+ * sortie reste sur le Mac.
+ */
+export function gestureOutcome(res: { code: number; stdout: string; stderr: string }): AttentionGestureResponse {
+  if (res.code === EXIT_DELIVERED) {
+    const first = lineOf(res.stdout.split('\n')[0] ?? '');
+    if (SAID_PREFIXES.some((p) => first.startsWith(p))) return { outcome: 'said', line: first };
+    return { outcome: 'delivered' };
+  }
+  if (res.code === EXIT_NOTED) return { outcome: 'noted' };
+  if (res.code === EXIT_REFUSED) {
+    const lines = res.stderr.split('\n').map(lineOf).filter((l) => l.length > 0);
+    throw new AttentionError('refused', lines[lines.length - 1] ?? 'refused by attn');
+  }
+  if (res.code === EXIT_CARD_CHANGED) {
+    throw new AttentionError('card_changed', 'the card changed since it was shown, nothing was noted');
+  }
+  throw new AttentionError('attn_failed', failure('act', res));
+}
+
+// ISO 8601 avec l'heure et un decalage (`Z` ou `+01:00`).
+const ISO_WITH_OFFSET_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** Valide une date de report : ISO avec decalage, lisible, future, a 60 jours au plus. */
+export function checkUntil(until: unknown, nowMs: number): string {
+  if (typeof until !== 'string' || !ISO_WITH_OFFSET_RE.test(until)) {
+    throw new AttentionError('bad_request', 'until must be an ISO 8601 date with an offset');
+  }
+  const at = Date.parse(until);
+  if (!Number.isFinite(at)) throw new AttentionError('bad_request', 'until does not read as a date');
+  if (at <= nowMs) throw new AttentionError('bad_request', 'until must be in the future');
+  if (at > nowMs + ATTENTION_SNOOZE_MAX_DAYS * 24 * 3600_000) {
+    throw new AttentionError('bad_request', `until must be within ${ATTENTION_SNOOZE_MAX_DAYS} days`);
+  }
+  return until;
+}
+
+/** Combien de cartes gardent l'identifiant de leur dernier clic. */
+const CLIENT_IDS_MAX = 500;
+
 /**
  * La file cote daemon : une lecture gardee `ATTENTION_CACHE_MS`, un seul `attn list` en
  * vol, et les gestes. `snapshot()` rend la derniere lecture sans attendre, pour le calcul
@@ -223,6 +546,12 @@ export class AttentionBoard {
   private readonly acting = new Set<string>();
   /** Le dernier `Envoyer` reussi par identifiant, en ms epoch. */
   private readonly sentAt = new Map<string, number>();
+  /**
+   * Le dernier geste du Cockpit par carte et l'identifiant de clic qu'il a recu, quand
+   * l'app n'en donne pas : le meme geste avec le meme texte et le meme brouillon, reessaye,
+   * reprend l'identifiant, et la file ne le note pas deux fois (`client_id_for` de Kova).
+   */
+  private readonly clientIds = new Map<string, { key: string; clientId: string }>();
 
   constructor(
     private readonly exec: Exec,
@@ -259,7 +588,7 @@ export class AttentionBoard {
   }
 
   private async load(gen: number): Promise<AttentionEntry[]> {
-    const res = await this.exec(['list', '--open', '--json']);
+    const res = await this.exec([...LIST_ARGV]);
     if (res.code !== 0) throw new AttentionError('attn_failed', failure('list', res));
     const entries = parseAttention(res.stdout);
     // Invalidee pendant la lecture : son resultat sert a l'appelant, pas au cache.
@@ -320,5 +649,74 @@ export class AttentionBoard {
     } finally {
       this.acting.delete(id);
     }
+  }
+
+  /** L'identifiant de clic d'un geste sans `clientId` de l'app : repris pour un meme essai. */
+  private clientIdFor(id: string, g: CheckedGesture): string {
+    const key = JSON.stringify([g.gesture, g.text ?? '', g.draft ?? '']);
+    const known = this.clientIds.get(id);
+    if (known && known.key === key) return known.clientId;
+    const clientId = randomUUID();
+    this.clientIds.delete(id);
+    this.clientIds.set(id, { key, clientId });
+    // Les plus anciennes s'en vont d'abord : l'ordre d'insertion de `Map`.
+    for (const old of this.clientIds.keys()) {
+      if (this.clientIds.size <= CLIENT_IDS_MAX) break;
+      this.clientIds.delete(old);
+    }
+    return clientId;
+  }
+
+  /** Une carte ouverte relue a neuf, sous la garde « un geste a la fois » par carte. */
+  private async onOpenCard<T>(id: string, run: (entry: AttentionEntry) => Promise<T>): Promise<T> {
+    if (this.acting.has(id)) throw new AttentionError('busy', 'an action is already running on this entry');
+    this.acting.add(id);
+    try {
+      // Lecture neuve : une carte classee sur le Mac il y a 5 s ne recoit plus rien.
+      const entry = (await this.fresh()).find((e) => e.id === id);
+      if (!entry) throw new AttentionError('not_found', 'no open entry with this id');
+      return await run(entry);
+    } finally {
+      this.acting.delete(id);
+    }
+  }
+
+  /**
+   * Un geste du Cockpit, comme Kova le passe : tout est valide avant de lancer quoi que ce
+   * soit, puis la carte est relue et le geste doit etre un de ceux qu'elle offre. L'argv est
+   * construit ici, jamais recu de l'app.
+   */
+  async gesture(id: unknown, body: Parameters<typeof checkGesture>[0]): Promise<AttentionGestureResponse> {
+    if (typeof id !== 'string' || !ATTENTION_ID_RE.test(id)) {
+      throw new AttentionError('bad_request', 'id must match a-xxxxxx');
+    }
+    const g = checkGesture(body);
+    return this.onOpenCard(id, async (entry) => {
+      if (!(entry.gestures ?? []).includes(g.gesture)) {
+        throw new AttentionError('not_offered', `${g.gesture} is not offered on this card`);
+      }
+      const clientId = g.clientId ?? this.clientIdFor(id, g);
+      const res = await this.exec(gestureArgv(id, { ...g, clientId }));
+      try {
+        return gestureOutcome(res);
+      } finally {
+        // Une carte classee, une question posee ou un refus : la prochaine lecture le montre.
+        this.invalidate();
+      }
+    });
+  }
+
+  /** Un report a une date : la carte doit etre ouverte, la date future et a 60 jours au plus. */
+  async snooze(id: unknown, until: unknown): Promise<AttentionSnoozeResponse> {
+    if (typeof id !== 'string' || !ATTENTION_ID_RE.test(id)) {
+      throw new AttentionError('bad_request', 'id must match a-xxxxxx');
+    }
+    const date = checkUntil(until, this.now());
+    return this.onOpenCard(id, async () => {
+      const res = await this.exec(snoozeArgv(id, date));
+      if (res.code !== 0) throw new AttentionError('attn_failed', failure('snooze', res));
+      this.invalidate();
+      return { applied: true };
+    });
   }
 }
