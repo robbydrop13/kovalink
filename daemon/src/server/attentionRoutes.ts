@@ -173,7 +173,7 @@ export function registerAttentionRoutes(
     },
   );
 
-  /** Reporter une carte ouverte a une date -> `attn snooze --until`. */
+  /** Reporter une carte ouverte a une date -> `attn snooze --exit-codes --until`, signe comme un geste. */
   app.post<{ Params: { id: string }; Body: Partial<AttentionSnoozeRequest> }>(
     ROUTE_PATTERNS.attentionSnooze,
     async (req, reply) => {
@@ -182,14 +182,17 @@ export function registerAttentionRoutes(
         return fail(reply, 429, 'RATE_LIMITED', 'too many attention actions');
       }
       const id = req.params.id;
-      const { until, nonce } = req.body ?? {};
+      const { until, cardSeen, clientId, nonce } = req.body ?? {};
       if (!reserveNonce(reply, deviceId, 'attention.snooze', id, nonce)) return;
       try {
-        const res = await board.snooze(id, until);
+        const res = await board.snooze(id, { until, cardSeen, clientId });
         audit({ deviceId, action: 'attention.snooze', result: 'ok', detail: `id=${id} until=${String(until)}` });
         void services.refreshAttention?.('snooze');
         return res;
       } catch (e) {
+        if (e instanceof AttentionError && (e.reason === 'refused' || e.reason === 'card_changed')) {
+          void services.refreshAttention?.('snooze');
+        }
         return failGesture(reply, e, deviceId, 'attention.snooze', id, nonce);
       }
     },

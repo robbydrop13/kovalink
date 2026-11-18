@@ -36,6 +36,7 @@ import {
   pruneCards,
   settleGesture,
   snoozeDate,
+  snoozeRequest,
   startGesture,
   visibleEntries,
   type CardsState,
@@ -238,8 +239,30 @@ describe('cockpit : apres un geste', () => {
     assert.deepEqual(classifyGesture('go', { ok: false, kind: 'network', message: 'timeout' }), { kind: 'unknown' });
   });
 
-  it('un report en 502 (attn snooze n a pas de code de refus) reste non confirme', () => {
+  it('un report en 502 reste Envoi non confirmé ; carte changee en 409 : Non transmis', () => {
     assert.deepEqual(classifyGesture('snooze', http(502, 'ATTENTION_ERROR')), { kind: 'unknown' });
+    const changed = classifyGesture('snooze', http(409, 'ATTENTION_CARD_CHANGED', 'the card changed'));
+    assert.equal(changed.kind, 'refused');
+    const c = card({ title: 'T' });
+    const st = settleGesture(startGesture(EMPTY, c.id, 'snooze'), c, 'snooze', changed, { text: '' }, 1, 8);
+    assert.equal(st.toasts[0]?.head, 'Non transmis');
+  });
+
+  it('le report part avec l empreinte de la carte et un id de clic garde pour la meme date', () => {
+    const until = '2026-11-19T09:00:00+01:00';
+    assert.deepEqual(snoozeRequest(card({ cardSeen: 'fedcba9876543210' }), until, 'c-1'), {
+      until,
+      cardSeen: 'fedcba9876543210',
+      clientId: 'c-1',
+    });
+    assert.deepEqual(snoozeRequest(card({}), until, 'c-1'), { until, clientId: 'c-1' });
+    let n = 0;
+    const ids = new ClientIds(() => `c-${++n}`);
+    const first = ids.for('a-1', 'snooze', until, undefined);
+    assert.equal(ids.for('a-1', 'snooze', until, undefined), first, 'relance a la main : meme id');
+    assert.notEqual(ids.for('a-1', 'snooze', '2026-11-20T09:00:00+01:00', undefined), first, 'autre date : autre id');
+    ids.forget('a-1', 'snooze', until, undefined);
+    assert.notEqual(ids.for('a-1', 'snooze', until, undefined), first, 'pris : oublie');
   });
 
   it('un report refuse en 409 dirait Non transmis avec sa ligne, jamais Envoi non confirmé', () => {

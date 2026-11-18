@@ -220,9 +220,17 @@ export interface AttentionGestureResponse {
 export interface AttentionSnoozeRequest {
   /** ISO 8601 avec decalage, dans le futur, a 60 jours au plus. */
   until: string;
+  /** L'empreinte de la carte affichee : la file refuse le report si elle a change. */
+  cardSeen?: string;
+  /** Le meme pour un report reessaye. Absent : le daemon en tire un, repris pour la meme date. */
+  clientId?: string;
   nonce?: string;
 }
 
+/**
+ * Reponse de `POST /v1/attention/:id/snooze`. Un refus (`ATTENTION_REFUSED`, la ligne
+ * d'`attn` dans `message`) ou une carte changee (`ATTENTION_CARD_CHANGED`) est une erreur HTTP.
+ */
 export interface AttentionSnoozeResponse {
   applied: true;
 }

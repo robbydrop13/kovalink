@@ -9,6 +9,7 @@ import {
   isAttentionGesture,
   type AttentionGesture,
   type AttentionGestureResponse,
+  type AttentionSnoozeRequest,
   type AttentionUncertainWord,
 } from '@/protocol';
 import { t } from '@/i18n/en';
@@ -170,6 +171,14 @@ export class ClientIds {
       if (!alive.has(card)) this.ids.delete(key);
     }
   }
+}
+
+/**
+ * Ce qui part pour un report : la date, l'empreinte de la carte affichee (la file refuse si
+ * elle a change) et l'identifiant du clic, repris quand Robin relance le meme report.
+ */
+export function snoozeRequest(entry: { cardSeen?: string }, until: string, clientId: string): Omit<AttentionSnoozeRequest, 'nonce'> {
+  return { until, ...(entry.cardSeen !== undefined ? { cardSeen: entry.cardSeen } : {}), clientId };
 }
 
 /** Un identifiant de clic : lettres, chiffres et tirets, comme `ATTENTION_CLIENT_ID_RE`. */

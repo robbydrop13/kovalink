@@ -2,7 +2,7 @@
 // jamais un mot fabrique ici : le daemon relit la carte et construit l'argv de Kova. Aucune
 // file d'attente locale ni nouvel essai automatique : un geste sans reponse claire se dit
 // « Envoi non confirmé », et seul Robin le relance (avec le meme identifiant de clic).
-import type { AttentionGestureRequest } from '@/protocol';
+import type { AttentionGestureRequest, AttentionSnoozeRequest } from '@/protocol';
 import { HttpError, postAttentionGesture, postAttentionSnooze } from '@/net/http';
 import type { GestureCall } from '@/features/cockpit/gesture';
 import { nonce } from './nonce';
@@ -20,9 +20,9 @@ export async function sendCockpitGesture(id: string, body: Omit<AttentionGesture
   }
 }
 
-export async function snoozeCockpitCard(id: string, until: string): Promise<GestureCall> {
+export async function snoozeCockpitCard(id: string, body: Omit<AttentionSnoozeRequest, 'nonce'>): Promise<GestureCall> {
   try {
-    return { ok: true, response: await postAttentionSnooze(id, { until, nonce: nonce() }) };
+    return { ok: true, response: await postAttentionSnooze(id, { ...body, nonce: nonce() }) };
   } catch (e) {
     return failed(e);
   }

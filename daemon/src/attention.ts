@@ -536,9 +536,57 @@ export function uncertainArgv(id: string, u: CheckedUncertain): string[] {
   return argv;
 }
 
-/** L'argv d'un report : `snooze --by robin --until=<ISO> <carte>`. */
-export function snoozeArgv(id: string, until: string): string[] {
-  return ['snooze', ...BY_ROBIN, `--until=${until}`, id];
+/** Un report, valide : la date, l'empreinte de la carte et l'identifiant du clic. */
+export interface CheckedSnooze {
+  until: string;
+  cardSeen?: string;
+  clientId?: string;
+}
+
+/**
+ * Valide un report avant de lancer quoi que ce soit : la date (`checkUntil`), puis
+ * `cardSeen` et `clientId` de la forme des gestes.
+ */
+export function checkSnooze(body: { until?: unknown; cardSeen?: unknown; clientId?: unknown }, nowMs: number): CheckedSnooze {
+  const out: CheckedSnooze = { until: checkUntil(body.until, nowMs) };
+  const { cardSeen, clientId } = body;
+  if (cardSeen !== undefined) {
+    if (typeof cardSeen !== 'string' || !ATTENTION_SEEN_RE.test(cardSeen)) {
+      throw new AttentionError('bad_request', 'cardSeen must be 8 to 64 hex digits');
+    }
+    out.cardSeen = cardSeen;
+  }
+  if (clientId !== undefined) {
+    if (typeof clientId !== 'string' || !ATTENTION_CLIENT_ID_RE.test(clientId)) {
+      throw new AttentionError('bad_request', 'clientId must be 1 to 64 letters, digits, - or _, not starting with -');
+    }
+    out.clientId = clientId;
+  }
+  return out;
+}
+
+/**
+ * L'argv d'un report, la forme du contrat (`snooze` de la fixture) : `snooze --by robin
+ * --exit-codes --client-id=<id> [--card-seen=<x>] <carte> --until=<ISO>`.
+ */
+export function snoozeArgv(id: string, s: CheckedSnooze & { clientId: string }): string[] {
+  const argv = ['snooze', ...BY_ROBIN, EXIT_CODES, `${CLIENT_ID}=${s.clientId}`];
+  if (s.cardSeen !== undefined) argv.push(`${CARD_SEEN}=${s.cardSeen}`);
+  argv.push(id, `--until=${s.until}`);
+  return argv;
+}
+
+/**
+ * Ce que dit la sortie d'un report (`attn snooze --exit-codes`) : 0 note ; 4 refuse, sa
+ * premiere ligne part vers l'app ; 5 la carte a change ; jamais 3, un report ne se remet a
+ * aucun agent ; tout autre code, ou pas de code : un echec (502).
+ */
+export function snoozeOutcome(res: { code: number; stdout: string; stderr: string }): AttentionSnoozeResponse {
+  if (res.code === EXIT_DELIVERED) return { applied: true };
+  if (res.code === EXIT_CARD_CHANGED) {
+    throw new AttentionError('card_changed', 'the card changed since it was shown, nothing was noted');
+  }
+  throw refusalOf(res, 'snooze');
 }
 
 /** Une ligne d'`attn` montrable : sans controle, bornee. */
@@ -724,8 +772,8 @@ export class AttentionBoard {
   }
 
   /** L'identifiant de clic d'un geste sans `clientId` de l'app : repris pour un meme essai. */
-  private clientIdFor(id: string, g: CheckedGesture): string {
-    const key = JSON.stringify([g.gesture, g.text ?? '', g.draft ?? '']);
+  private clientIdFor(id: string, g: CheckedGesture | { snooze: string }): string {
+    const key = 'snooze' in g ? JSON.stringify(['snooze', g.snooze]) : JSON.stringify([g.gesture, g.text ?? '', g.draft ?? '']);
     const known = this.clientIds.get(id);
     if (known && known.key === key) return known.clientId;
     const clientId = randomUUID();
@@ -794,18 +842,20 @@ export class AttentionBoard {
   }
 
   /** Un report a une date : la carte doit etre ouverte, la date future et a 60 jours au plus. */
-  async snooze(id: unknown, until: unknown): Promise<AttentionSnoozeResponse> {
+  async snooze(id: unknown, body: { until?: unknown; cardSeen?: unknown; clientId?: unknown }): Promise<AttentionSnoozeResponse> {
     if (typeof id !== 'string' || !ATTENTION_ID_RE.test(id)) {
       throw new AttentionError('bad_request', 'id must match a-xxxxxx');
     }
-    const date = checkUntil(until, this.now());
+    const s = checkSnooze(body, this.now());
     return this.onOpenCard(id, async () => {
-      const res = await this.exec(snoozeArgv(id, date));
-      // `attn snooze` ne prend pas `--exit-codes` : aucun code ne distingue un refus d'un
-      // echec, tout code non nul vaut 502.
-      if (res.code !== 0) throw new AttentionError('attn_failed', failure('snooze', res));
-      this.invalidate();
-      return { applied: true };
+      // Le meme report reessaye (meme date) reprend l'identifiant, comme un geste.
+      const clientId = s.clientId ?? this.clientIdFor(id, { snooze: s.until });
+      const res = await this.exec(snoozeArgv(id, { ...s, clientId }));
+      try {
+        return snoozeOutcome(res);
+      } finally {
+        this.invalidate();
+      }
     });
   }
 }

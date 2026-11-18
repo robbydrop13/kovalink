@@ -22,6 +22,8 @@ const {
   gestureArgv,
   gestureOutcome,
   snoozeArgv,
+  snoozeOutcome,
+  checkSnooze,
   toAttentionEntry,
   uncertainArgv,
 } = await import('../src/attention.js');
@@ -309,20 +311,48 @@ describe('cockpit : argv et sortie', () => {
     }
   });
 
-  it('le report : snooze --by robin --until=<ISO> <carte>, date future a 60 jours au plus', () => {
+  it('le report : snooze --by robin --exit-codes --client-id [--card-seen] <carte> --until, date future a 60 jours au plus', () => {
     const now = Date.parse('2026-11-18T10:00:00+01:00');
-    assert.deepEqual(snoozeArgv('a-36d0b2', '2026-11-19T09:00:00+01:00'), [
+    const until = '2026-11-19T09:00:00+01:00';
+    assert.deepEqual(snoozeArgv('a-36d0b2', { until, clientId: 'c1' }), [
       'snooze',
       '--by',
       'robin',
-      '--until=2026-11-19T09:00:00+01:00',
+      '--exit-codes',
+      '--client-id=c1',
       'a-36d0b2',
+      `--until=${until}`,
     ]);
+    assert.deepEqual(snoozeArgv('a-36d0b2', { until, clientId: 'c1', cardSeen: 'fedcba98' }).slice(3, 6), [
+      '--exit-codes',
+      '--client-id=c1',
+      '--card-seen=fedcba98',
+    ]);
+    assert.deepEqual(checkSnooze({ until, cardSeen: 'fedcba98', clientId: 'c1' }, now), { until, cardSeen: 'fedcba98', clientId: 'c1' });
+    for (const bad of [{ cardSeen: 'zz' }, { cardSeen: 5 }, { clientId: '-x' }, { clientId: 'a b' }]) {
+      assert.throws(() => checkSnooze({ until, ...bad }, now), (e: unknown) => e instanceof AttentionError && e.reason === 'bad_request');
+    }
     assert.equal(checkUntil('2026-11-19T09:00:00+01:00', now), '2026-11-19T09:00:00+01:00');
     assert.equal(checkUntil('2026-11-19T08:00:00Z', now), '2026-11-19T08:00:00Z');
     for (const bad of ['2026-11-19', '2026-11-19T09:00:00', '2026-11-17T09:00:00+01:00', '2027-03-01T09:00:00+01:00', '--by=x', 5]) {
       assert.throws(() => checkUntil(bad, now), (e: unknown) => e instanceof AttentionError && e.reason === 'bad_request', String(bad));
     }
+  });
+});
+
+describe('cockpit : sortie d un report', () => {
+  const outcome = (code: number, stderr = 'pourquoi\n') => {
+    try {
+      return snoozeOutcome({ code, stdout: '', stderr });
+    } catch (e) {
+      return e instanceof AttentionError ? e.reason : 'throw';
+    }
+  };
+  it('0 note, 4 refuse, 5 carte changee ; 3 et tout autre code : un echec', () => {
+    assert.deepEqual(outcome(0), { applied: true });
+    assert.equal(outcome(4), 'refused');
+    assert.equal(outcome(5), 'card_changed');
+    for (const code of [1, 2, 3, -1]) assert.equal(outcome(code), 'attn_failed', String(code));
   });
 });
 
@@ -567,20 +597,56 @@ describe('cockpit : routes', () => {
     assert.equal(h.calls.filter((a) => a[0] === 'act').length, 1);
   });
 
-  it('snooze : carte ouverte, argv signe, relecture', async () => {
-    const res = await snooze('a-36d0b2', { until: '2026-11-19T09:00:00+01:00' });
+  it('snooze : carte ouverte, argv du contrat avec l empreinte et l id du clic, relecture', async () => {
+    const res = await snooze('a-36d0b2', { until: '2026-11-19T09:00:00+01:00', cardSeen: CARD_FP, clientId: 'c-snooze' });
     assert.equal(res.statusCode, 200);
     assert.deepEqual(res.json(), { applied: true });
-    assert.deepEqual(h.calls, [LIST, ['snooze', '--by', 'robin', '--until=2026-11-19T09:00:00+01:00', 'a-36d0b2']]);
+    assert.deepEqual(h.calls, [
+      LIST,
+      [
+        'snooze',
+        '--by',
+        'robin',
+        '--exit-codes',
+        '--client-id=c-snooze',
+        `--card-seen=${CARD_FP}`,
+        'a-36d0b2',
+        '--until=2026-11-19T09:00:00+01:00',
+      ],
+    ]);
     assert.deepEqual(refreshed, ['snooze']);
   });
 
-  it('snooze : sans --exit-codes, tout code non nul est un echec (502), sa sortie reste sur le Mac', async () => {
-    for (const code of [1, 4]) {
+  it('snooze sans clientId : le daemon en tire un, repris pour la meme date, neuf pour une autre', async () => {
+    const until = '2026-11-19T09:00:00+01:00';
+    const cid = () => h.calls.filter((a) => a[0] === 'snooze').map((a) => a.find((w) => w.startsWith('--client-id=')));
+    h = fake(undefined, (argv) => (argv[0] === 'snooze' ? { code: 1, stdout: '', stderr: '' } : undefined));
+    await snooze('a-36d0b2', { until });
+    await snooze('a-36d0b2', { until });
+    await snooze('a-36d0b2', { until: '2026-11-20T09:00:00+01:00' });
+    const [a, b, c] = cid();
+    assert.ok(a && a === b, 'meme report, meme id');
+    assert.notEqual(c, a, 'autre date, autre id');
+  });
+
+  it('snooze : 4 -> 409 avec la ligne d attn nettoyee ; 5 -> 409 carte changee ; 3 ou 1 -> 502', async () => {
+    const line = 'attn: a-36d0b2 deja reportee';
+    const run = async (code: number) => {
       h = fake(undefined, (argv) =>
-        argv[0] === 'snooze' ? { code, stdout: '', stderr: 'attn: a-36d0b2 deja reportee (noté dans /Users/x/log)\n' } : undefined,
+        argv[0] === 'snooze' ? { code, stdout: '', stderr: `${line} (noté dans /Users/x/log)\nsuite\n` } : undefined,
       );
-      const res = await snooze('a-36d0b2', { until: '2026-11-19T09:00:00+01:00' });
+      refreshed = [];
+      return snooze('a-36d0b2', { until: '2026-11-19T09:00:00+01:00' });
+    };
+    let res = await run(4);
+    assert.equal(res.statusCode, 409);
+    assert.deepEqual(res.json(), { code: 'ATTENTION_REFUSED', message: line, retryable: false });
+    assert.deepEqual(refreshed, ['snooze']);
+    res = await run(5);
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.json().code, 'ATTENTION_CARD_CHANGED');
+    for (const code of [3, 1]) {
+      res = await run(code);
       assert.equal(res.statusCode, 502, String(code));
       assert.equal(res.json().code, 'ATTENTION_ERROR');
       assert.equal(res.body.includes('/Users'), false);
@@ -602,6 +668,9 @@ describe('cockpit : routes', () => {
   it('snooze : 400 sans rien lancer, 404 pour une carte partie, 502 quand attn echoue', async () => {
     for (const until of ['demain', '2026-11-17T09:00:00+01:00', '2027-02-01T09:00:00+01:00', undefined]) {
       assert.equal((await snooze('a-36d0b2', { until })).statusCode, 400, String(until));
+    }
+    for (const bad of [{ cardSeen: 'pas-hex' }, { clientId: '--by=x' }]) {
+      assert.equal((await snooze('a-36d0b2', { until: '2026-11-19T09:00:00+01:00', ...bad })).statusCode, 400, JSON.stringify(bad));
     }
     assert.deepEqual(h.calls, []);
     assert.equal((await snooze('a-999999', { until: '2026-11-19T09:00:00+01:00' })).statusCode, 404);

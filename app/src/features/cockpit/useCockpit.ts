@@ -16,6 +16,7 @@ import {
   newClientId,
   pruneCards,
   settleGesture,
+  snoozeRequest,
   startGesture,
   type CardsState,
   type CockpitWord,
@@ -103,8 +104,11 @@ export const useCockpit = create<CockpitState>((set, get) => ({
   snooze: async (entry, until) => {
     const payload = gesturePayload(cards(get()), entry, 'snooze', Date.now(), undefined);
     if (payload === null) return;
+    // Le meme report (meme date), relance a la main, garde son id ; pris, il l'oublie.
+    const clientId = clientIds.for(entry.id, 'snooze', until, undefined);
     set((st) => startGesture(cards(st), entry.id, 'snooze'));
-    const result = classifyGesture('snooze', await snoozeCockpitCard(entry.id, until));
+    const result = classifyGesture('snooze', await snoozeCockpitCard(entry.id, snoozeRequest(entry, until, clientId)));
+    if (result.kind === 'filed' || result.kind === 'stays') clientIds.forget(entry.id, 'snooze', until, undefined);
     toastSeq += 1;
     const seq = toastSeq;
     set((st) => settleGesture(cards(st), entry, 'snooze', result, payload, Date.now(), seq));

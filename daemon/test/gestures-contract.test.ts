@@ -23,6 +23,9 @@ const {
   gestureArgv,
   gestureOutcome,
   checkUncertain,
+  checkSnooze,
+  snoozeArgv,
+  snoozeOutcome,
   toAttentionEntry,
   uncertainArgv,
 } = await import('../src/attention.js');
@@ -49,6 +52,7 @@ interface Contract {
   card_fields: Record<string, unknown>;
   card_seen?: { flag: string; field: string; refused_exit_code: number };
   uncertain?: string;
+  snooze?: { argv: string; noted: number; refused: number; card_changed: number };
 }
 
 const CARD = 'a-36d0b2';
@@ -75,8 +79,58 @@ function outcomeOf(code: number): string {
   }
 }
 
+/** Le code de sortie d'`attn snooze` -> ce que le daemon en dit. */
+function snoozeOf(code: number): string {
+  try {
+    return snoozeOutcome({ code, stdout: '', stderr: 'pourquoi\n' }).applied ? 'noted' : 'throw';
+  } catch (e) {
+    return e instanceof AttentionError ? e.reason : 'throw';
+  }
+}
+
+/** Un argv reduit a sa forme : chaque element sans sa valeur (`--until=<x>` -> `--until`). */
+function shapeOf(argv: string[]): string[] {
+  return argv.map((a) => (a.startsWith('--') ? a.split('=')[0] ?? a : a));
+}
+
 describe('contrat des gestes de la file', { skip: present ? false : `contrat absent : ${CONTRACT_PATH}` }, () => {
   const contract = (present ? JSON.parse(readFileSync(CONTRACT_PATH, 'utf8')) : {}) as Contract;
+
+  it('le report : la forme de son argv, ses options, ses codes de sortie', () => {
+    const spec = contract.snooze;
+    assert.ok(spec, 'le contrat nomme snooze');
+    // `snooze --exit-codes [--client-id=<uuid>] [--card-seen=<x>] <card> --until=<ISO>` :
+    // les crochets marquent une option, chaque element garde sa place.
+    // `<ISO 8601>` : un espace dans un `<...>` ne coupe pas l'element.
+    const raw = spec.argv.replace(/<[^>]*>/g, (m) => m.replace(/ /g, '_')).split(' ');
+    const words = raw.map((w) => w.replace(/^\[|\]$/g, ''));
+    const optional = raw.filter((w) => w.startsWith('[')).map((w) => w.slice(1).split('=')[0]);
+    const expected = shapeOf(words.map((w) => (w === '<card>' ? CARD : w)));
+    const until = '2026-11-19T09:00:00+01:00';
+    const now = Date.parse('2026-11-18T10:00:00+01:00');
+    const full = snoozeArgv(CARD, { ...checkSnooze({ until, cardSeen: CARD_FP, clientId: CID }, now), clientId: CID });
+    // `--by robin` est l'`act_command` de Kova, hors du contrat.
+    const by = full.indexOf('--by');
+    const bare = full.filter((_, i) => i !== by && i !== by + 1);
+    assert.deepEqual(shapeOf(bare), expected);
+    assert.ok(bare.includes(`--client-id=${CID}`) && bare.includes(`--card-seen=${CARD_FP}`) && bare.includes(`--until=${until}`));
+    assert.deepEqual(optional.sort(), ['--card-seen', '--client-id']);
+    const lean = snoozeArgv(CARD, { ...checkSnooze({ until }, now), clientId: CID });
+    assert.equal(lean.some((a) => a.startsWith('--card-seen')), false, 'sans empreinte, pas de --card-seen');
+    assert.equal(spec.noted, EXIT_DELIVERED);
+    assert.equal(spec.refused, EXIT_REFUSED);
+    assert.equal(spec.card_changed, EXIT_CARD_CHANGED);
+    assert.equal(snoozeOf(spec.noted), 'noted');
+    assert.equal(snoozeOf(spec.refused), 'refused');
+    assert.equal(snoozeOf(spec.card_changed), 'card_changed');
+    // Jamais 3 : un report ne se remet a aucun agent, un 3 serait un echec.
+    assert.equal(snoozeOf(EXIT_NOTED), 'attn_failed');
+    assert.deepEqual(Object.keys(spec).filter((k) => typeof (spec as Record<string, unknown>)[k] === 'number').sort(), [
+      'card_changed',
+      'noted',
+      'refused',
+    ]);
+  });
 
   it('les sept mots, de part et d autre', () => {
     assert.deepEqual([...ATTENTION_GESTURES].sort(), Object.keys(contract.gestures).sort());
