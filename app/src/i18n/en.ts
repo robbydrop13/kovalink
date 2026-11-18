@@ -8,10 +8,11 @@
 import { asks } from './parts/asks';
 import { browser } from './parts/browser';
 import { chat } from './parts/chat';
+import { cockpit } from './parts/cockpit';
 import { files } from './parts/files';
 import { panel } from './parts/panel';
 import { sessions } from './parts/sessions';
 import { system } from './parts/system';
 
-export const t = { ...sessions, ...chat, ...files, ...browser, ...asks, ...panel, ...system } as const;
+export const t = { ...sessions, ...chat, ...files, ...browser, ...asks, ...panel, ...system, ...cockpit } as const;
 export type Strings = typeof t;

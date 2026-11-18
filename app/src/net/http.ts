@@ -19,6 +19,10 @@ import {
   type AsksResponse,
   type AttentionActRequest,
   type AttentionActResponse,
+  type AttentionGestureRequest,
+  type AttentionGestureResponse,
+  type AttentionSnoozeRequest,
+  type AttentionSnoozeResponse,
   type AttentionResponse,
   type KovaLaunchResponse,
   type KovaPanelHistoryResponse,
@@ -535,4 +539,26 @@ export function postAttentionAct(
   timeoutMs = 25_000,
 ): Promise<AttentionActResponse> {
   return request(ROUTES.attentionAct(id), { method: 'POST', body, timeoutMs });
+}
+
+/**
+ * Un geste du Cockpit, un des mots que la carte offre (ou `parti` / `Renvoyer` sur une
+ * carte incertaine). Le daemon relit la carte et construit l'argv de Kova ; un refus (400,
+ * 404, 409, 502) leve un `HttpError`. Meme delai que `act`.
+ */
+export function postAttentionGesture(
+  id: string,
+  body: AttentionGestureRequest,
+  timeoutMs = 25_000,
+): Promise<AttentionGestureResponse> {
+  return request(ROUTES.attentionGesture(id), { method: 'POST', body, timeoutMs });
+}
+
+/** Reporter une carte a une date ISO avec decalage. */
+export function postAttentionSnooze(
+  id: string,
+  body: AttentionSnoozeRequest,
+  timeoutMs = 25_000,
+): Promise<AttentionSnoozeResponse> {
+  return request(ROUTES.attentionSnooze(id), { method: 'POST', body, timeoutMs });
 }
