@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
-import { ATTENTION_GESTURES, gestureFilesCard, gestureTakesText } from '@kovalink/protocol';
+import { ATTENTION_GESTURES, ATTENTION_UNCERTAIN_WORDS, gestureFilesCard, gestureTakesText } from '@kovalink/protocol';
 
 process.env['KOVALINK_HOME'] = mkdtempSync(join(tmpdir(), 'kovalink-contract-'));
 process.env['KOVALINK_QUIET'] = '1';
@@ -22,7 +22,9 @@ const {
   checkGesture,
   gestureArgv,
   gestureOutcome,
+  checkUncertain,
   toAttentionEntry,
+  uncertainArgv,
 } = await import('../src/attention.js');
 
 const CONTRACT_PATH =
@@ -46,6 +48,7 @@ interface Contract {
   exit_codes: Record<string, string>;
   card_fields: Record<string, unknown>;
   card_seen?: { flag: string; field: string; refused_exit_code: number };
+  uncertain?: string;
 }
 
 const CARD = 'a-36d0b2';
@@ -163,6 +166,22 @@ describe('contrat des gestes de la file', { skip: present ? false : `contrat abs
     }
     const entry = toAttentionEntry({ id: CARD, ts: '2026-11-05T16:22:48+01:00', level: 'now', title: 't', [card.field]: CARD_FP });
     assert.equal(entry?.cardSeen, CARD_FP);
+  });
+
+  it('carte incertaine : aucun geste liste, les deux mots que Kova garde', () => {
+    const sentence = contract.uncertain ?? '';
+    assert.match(sentence, /gestures is empty/);
+    for (const word of ATTENTION_UNCERTAIN_WORDS) {
+      // Le contrat les ecrit `act <card> <mot>` : memes positionnels ici.
+      assert.ok(sentence.includes(`act <card> ${word}`), `le contrat nomme ${word}`);
+      const argv = uncertainArgv(CARD, checkUncertain({ gesture: word }));
+      assert.deepEqual(
+        argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--by'),
+        ['act', CARD, word],
+      );
+      assert.ok(argv.includes('--exit-codes'));
+      assert.equal((ATTENTION_GESTURES as readonly string[]).includes(word), false, 'pas un des sept');
+    }
   });
 
   it('les champs de carte du contrat passent jusqu a l app', () => {

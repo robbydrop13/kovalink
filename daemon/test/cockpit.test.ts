@@ -12,12 +12,22 @@ import { ATTENTION_DRAFT_MAX, ROUTES, type AttentionResponse } from '@kovalink/p
 process.env['KOVALINK_HOME'] = mkdtempSync(join(tmpdir(), 'kovalink-cockpit-'));
 process.env['KOVALINK_QUIET'] = '1';
 
-const { AttentionBoard, AttentionError, checkGesture, checkUntil, gestureArgv, gestureOutcome, snoozeArgv, toAttentionEntry } =
-  await import('../src/attention.js');
+const {
+  AttentionBoard,
+  AttentionError,
+  checkGesture,
+  checkUncertain,
+  checkUntil,
+  gestureArgv,
+  gestureOutcome,
+  snoozeArgv,
+  toAttentionEntry,
+  uncertainArgv,
+} = await import('../src/attention.js');
 const { registerAttentionRoutes } = await import('../src/server/attentionRoutes.js');
 const { NonceStore } = await import('../src/server/services.js');
 const { RateLimiter } = await import('../src/server/rate.js');
-const { waitsOnYouOf } = await import('../src/needs.js');
+const { needInputOf, waitsOnYouOf } = await import('../src/needs.js');
 const { countsOf } = await import('../src/push/counts.js');
 import type { Exec, ExecResult } from '../src/routines.js';
 
@@ -217,9 +227,9 @@ describe('cockpit : argv et sortie', () => {
       line: 'déjà parti ou en cours pour cette version du brouillon',
     });
     assert.throws(
-      () => gestureOutcome({ code: 4, stdout: '', stderr: 'debut\nce brouillon a change\u0007 ' + 'y'.repeat(300) + '\n' }),
+      () => gestureOutcome({ code: 4, stdout: '', stderr: 'ce brouillon a change\u0007 ' + 'y'.repeat(300) + '\nsuite\n' }),
       (e: unknown) =>
-        e instanceof AttentionError && e.reason === 'refused' && e.message.startsWith('ce brouillon a change y') && e.message.length === 160,
+        e instanceof AttentionError && e.reason === 'refused' && e.message.startsWith('ce brouillon a change y') && e.message.length === 140,
     );
     assert.throws(
       () => gestureOutcome({ code: 5, stdout: '', stderr: 'autre carte' }),
@@ -229,6 +239,35 @@ describe('cockpit : argv et sortie', () => {
       () => gestureOutcome({ code: 2, stdout: '', stderr: '/Users/robin/secret' }),
       (e: unknown) => e instanceof AttentionError && e.reason === 'attn_failed',
     );
+  });
+
+  it('carte incertaine : parti et Renvoyer, forme de Kova, seen seul', () => {
+    assert.deepEqual(uncertainArgv('a-36d0b2', checkUncertain({ gesture: 'parti', seen: SEEN, cardSeen: CARD_FP, clientId: 'c-1' })), [
+      'act',
+      '--by',
+      'robin',
+      '--exit-codes',
+      'a-36d0b2',
+      'parti',
+      `--seen=${SEEN}`,
+    ]);
+    assert.deepEqual(uncertainArgv('a-36d0b2', checkUncertain({ gesture: 'Renvoyer', text: '' })), [
+      'act',
+      '--by',
+      'robin',
+      '--exit-codes',
+      'a-36d0b2',
+      'Renvoyer',
+    ]);
+    for (const body of [
+      { gesture: 'parti', text: 'x' },
+      { gesture: 'Renvoyer', draft: 'x' },
+      { gesture: 'parti', seen: '--by=robin0000000' },
+      { gesture: 'go' },
+    ]) {
+      assert.throws(() => checkUncertain(body), (e: unknown) => e instanceof AttentionError && e.reason === 'bad_request');
+    }
+    assert.throws(() => checkGesture({ gesture: 'parti' }), (e: unknown) => e instanceof AttentionError, 'pas un des sept');
   });
 
   it('le report : snooze --by robin --until=<ISO> <carte>, date future a 60 jours au plus', () => {
@@ -257,6 +296,14 @@ describe('cockpit : compte des Urgentes', () => {
     assert.equal(waitsOnYouOf([], [], now, entries), 1);
     assert.equal(countsOf([], [], now, entries).asks, 1);
     assert.equal(countsOf([], [], now, entries).oldestAt, Math.floor(Date.parse(CARD.ts) / 1000));
+    // Comptee, mais pas ajoutee a la liste des needs comme une `now`.
+    assert.deepEqual(
+      needInputOf([], [], now, entries).attention?.map((a) => a.level),
+      ['point', 'point'],
+    );
+    const nowUrgent = toAttentionEntry({ ...CARD, level: 'now' });
+    assert.ok(nowUrgent);
+    assert.equal(waitsOnYouOf([], [], now, [nowUrgent]), 1, 'une now Urgente ne compte qu une fois');
   });
 });
 
@@ -408,7 +455,7 @@ describe('cockpit : routes', () => {
 
   it('code 4 : refuse, la ligne d attn va a l app ; code 5 : carte changee ; autre : 502 sans sortie', async () => {
     h = fake(undefined, (argv) =>
-      argv[0] === 'act' ? { code: 4, stdout: '', stderr: 'usage...\nce brouillon a change, relis-le\n' } : undefined,
+      argv[0] === 'act' ? { code: 4, stdout: '', stderr: 'ce brouillon a change, relis-le\nusage...\n' } : undefined,
     );
     let res = await gesture('a-36d0b2', { gesture: 'go' });
     assert.equal(res.statusCode, 409);
@@ -467,6 +514,18 @@ describe('cockpit : routes', () => {
     assert.deepEqual(h.calls, []);
     assert.equal((await gesture('a-999999', { gesture: 'done', nonce: 'n-2' })).statusCode, 404);
     assert.equal((await gesture('a-36d0b2', { gesture: 'done', nonce: 'n-2' })).statusCode, 200);
+  });
+
+  it('parti et Renvoyer : seulement sur une carte incertaine relue', async () => {
+    h = fake([{ ...CARD, gestures: [], uncertain: 'timeout' }, ASKED]);
+    const res = await gesture('a-36d0b2', { gesture: 'Renvoyer', seen: SEEN, cardSeen: CARD_FP });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), { outcome: 'delivered' });
+    assert.deepEqual(h.calls[1], ['act', '--by', 'robin', '--exit-codes', 'a-36d0b2', 'Renvoyer', `--seen=${SEEN}`]);
+    const refused = await gesture('a-0d0db1', { gesture: 'parti' });
+    assert.equal(refused.statusCode, 409);
+    assert.equal(refused.json().code, 'ATTENTION_GESTURE_NOT_OFFERED');
+    assert.equal(h.calls.filter((a) => a[0] === 'act').length, 1);
   });
 
   it('snooze : carte ouverte, argv signe, relecture', async () => {

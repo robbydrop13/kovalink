@@ -114,6 +114,19 @@ export function gestureFilesCard(g: AttentionGesture): boolean {
   return g !== 'ask' && g !== 'cancel';
 }
 
+/**
+ * Les deux mots d'une carte dont l'envoi est incertain (`uncertain`) : la file n'y liste
+ * aucun geste, et Kova garde `C'est parti` (`parti` : Robin a vu le message partir) et
+ * `Renvoyer` (rien n'est parti, une nouvelle validation). Acceptes seulement sur une carte
+ * qui a `uncertain`.
+ */
+export const ATTENTION_UNCERTAIN_WORDS = ['parti', 'Renvoyer'] as const;
+export type AttentionUncertainWord = (typeof ATTENTION_UNCERTAIN_WORDS)[number];
+
+export function isAttentionUncertainWord(v: unknown): v is AttentionUncertainWord {
+  return typeof v === 'string' && (ATTENTION_UNCERTAIN_WORDS as readonly string[]).includes(v);
+}
+
 export type AttentionWaiting = 'robin' | 'agent';
 export type AttentionScope = 'pro' | 'perso';
 export type AttentionPrio = 1 | 2 | 3;
@@ -169,10 +182,15 @@ export const ATTENTION_SNOOZE_MAX_DAYS = 60;
 
 /** Corps de `POST /v1/attention/:id/gesture`. */
 export interface AttentionGestureRequest {
-  gesture: AttentionGesture;
+  /**
+   * Un des sept gestes, ou un mot d'une carte incertaine (`parti`, `Renvoyer`) : ceux-la ne
+   * prennent ni texte ni brouillon, et partent sous la forme de Kova, sans `--client-id`
+   * ni `--card-seen` (un `cardSeen` envoye est ignore) ; `seen` les accompagne.
+   */
+  gesture: AttentionGesture | AttentionUncertainWord;
   /** Le texte tape dans la carte : requis pour `ask`, refuse pour `cancel`. */
   text?: string;
-  /** `go` seulement : l'empreinte du brouillon affiche (`draft.seen`). */
+  /** `go`, `parti` et `Renvoyer` seulement : l'empreinte du brouillon affiche (`draft.seen`). */
   seen?: string;
   /** `go` seulement : le brouillon tel que Robin l'a reecrit, son texte exact. */
   draft?: string;

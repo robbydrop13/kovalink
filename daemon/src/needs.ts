@@ -78,9 +78,7 @@ export function needInputOf(
     }),
     attention: attention.flatMap((entry) => {
       const since = epochSecondsOf(entry.ts);
-      // Une carte Urgente (prio 1) attend Robin comme une `now`, quel que soit son niveau.
-      const level = entry.prio === 1 ? 'now' : entry.level;
-      return since === null ? [] : [{ id: entry.id, since, level, title: entry.title }];
+      return since === null ? [] : [{ id: entry.id, since, level: entry.level, title: entry.title }];
     }),
     now,
   };
@@ -96,5 +94,8 @@ export function waitsOnYouOf(
   nowMs: number,
   attention: readonly AttentionEntry[] = [],
 ): number {
-  return waitsOnYou(needInputOf(panes, asks, nowMs, attention));
+  // Les cartes Urgentes (prio 1) d'un autre niveau que `now` comptent aussi, sans entrer
+  // dans la liste des needs : le Cockpit les montre, pas l'ecran des questions.
+  const urgent = attention.filter((e) => e.prio === 1 && e.level !== 'now' && epochSecondsOf(e.ts) !== null).length;
+  return waitsOnYou(needInputOf(panes, asks, nowMs, attention)) + urgent;
 }

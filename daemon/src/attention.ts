@@ -22,9 +22,11 @@ import {
   ATTENTION_SEEN_RE,
   ATTENTION_SNOOZE_MAX_DAYS,
   ATTENTION_TEXT_MAX,
+  ATTENTION_UNCERTAIN_WORDS,
   gestureTakesText,
   isAttentionButton,
   isAttentionGesture,
+  isAttentionUncertainWord,
   type AttentionActResponse,
   type AttentionAsk,
   type AttentionDraft,
@@ -33,6 +35,7 @@ import {
   type AttentionGestureResponse,
   type AttentionLevel,
   type AttentionSnoozeResponse,
+  type AttentionUncertainWord,
   type AttentionWaiting,
 } from '@kovalink/protocol';
 import type { Exec } from './routines.js';
@@ -382,8 +385,9 @@ export const SAID_PREFIXES: readonly string[] = [
   'envoi par le code',
 ];
 
-/** La longueur d'une ligne d'`attn` montree sur la carte. */
-const LINE_MAX = 160;
+/** La longueur d'une ligne d'`attn` montree sur la carte : 160 pour `said`, 140 pour un refus (Kova). */
+const SAID_MAX = 160;
+const REFUSED_MAX = 140;
 
 /** Un geste du Cockpit, valide : ce que l'argv recoit. */
 export interface CheckedGesture {
@@ -475,33 +479,87 @@ export function gestureArgv(id: string, g: CheckedGesture & { clientId: string }
   return argv;
 }
 
+/** Un mot d'une carte incertaine, valide : seul `seen` l'accompagne. */
+export interface CheckedUncertain {
+  word: AttentionUncertainWord;
+  seen?: string;
+}
+
+/**
+ * Valide `parti` ou `Renvoyer` avant de lancer quoi que ce soit : ni texte ni brouillon,
+ * `seen` une empreinte, `clientId` et `cardSeen` de la bonne forme mais pas transmis (Kova
+ * ne les passe pas pour ces deux mots).
+ */
+export function checkUncertain(body: {
+  gesture?: unknown;
+  text?: unknown;
+  seen?: unknown;
+  draft?: unknown;
+  cardSeen?: unknown;
+  clientId?: unknown;
+}): CheckedUncertain {
+  const { gesture, text, seen, draft, cardSeen, clientId } = body;
+  if (!isAttentionUncertainWord(gesture)) {
+    throw new AttentionError('bad_request', `gesture must be one of ${ATTENTION_UNCERTAIN_WORDS.join(', ')}`);
+  }
+  if (text !== undefined && (typeof text !== 'string' || text.trim().length > 0)) {
+    throw new AttentionError('bad_request', `${gesture} carries no text`);
+  }
+  if (draft !== undefined) throw new AttentionError('bad_request', `${gesture} carries no draft`);
+  if (cardSeen !== undefined && (typeof cardSeen !== 'string' || !ATTENTION_SEEN_RE.test(cardSeen))) {
+    throw new AttentionError('bad_request', 'cardSeen must be 8 to 64 hex digits');
+  }
+  if (clientId !== undefined && (typeof clientId !== 'string' || !ATTENTION_CLIENT_ID_RE.test(clientId))) {
+    throw new AttentionError('bad_request', 'clientId must be 1 to 64 letters, digits, - or _, not starting with -');
+  }
+  const out: CheckedUncertain = { word: gesture };
+  if (seen !== undefined) {
+    if (typeof seen !== 'string' || !ATTENTION_SEEN_RE.test(seen)) {
+      throw new AttentionError('bad_request', 'seen must be 8 to 64 hex digits');
+    }
+    out.seen = seen;
+  }
+  return out;
+}
+
+/**
+ * L'argv de `parti` ou `Renvoyer`, la forme de Kova (`verb_argv_with` puis `with_seen`) :
+ * `act --by robin --exit-codes <carte> <mot> [--seen=<S>]`.
+ */
+export function uncertainArgv(id: string, u: CheckedUncertain): string[] {
+  const argv = ['act', ...BY_ROBIN, EXIT_CODES, id, u.word];
+  if (u.seen !== undefined) argv.push(`--seen=${u.seen}`);
+  return argv;
+}
+
 /** L'argv d'un report : `snooze --by robin --until=<ISO> <carte>`. */
 export function snoozeArgv(id: string, until: string): string[] {
   return ['snooze', ...BY_ROBIN, `--until=${until}`, id];
 }
 
 /** Une ligne d'`attn` montrable : sans controle, bornee. */
-function lineOf(s: string): string {
-  return shown(s.trim(), LINE_MAX).trim();
+function lineOf(s: string, max: number): string {
+  return shown(s.trim(), max).trim();
 }
 
 /**
  * Ce que dit la sortie d'un geste (`delivery_of`, `said_line` et `run_click_with` de
  * Kova). 0 : remis, ou la file le dit elle-meme sur sa premiere ligne (`said`) ; 3 : note,
- * remise a venir ; 4 : refuse, la derniere ligne de `stderr` est le message d'`attn` a
+ * remise a venir ; 4 : refuse, la premiere ligne de `stderr` est le message d'`attn` a
  * Robin et part vers l'app ; 5 : la carte a change ; tout autre code : un echec, dont la
  * sortie reste sur le Mac.
  */
 export function gestureOutcome(res: { code: number; stdout: string; stderr: string }): AttentionGestureResponse {
   if (res.code === EXIT_DELIVERED) {
-    const first = lineOf(res.stdout.split('\n')[0] ?? '');
+    const first = lineOf(res.stdout.split('\n')[0] ?? '', SAID_MAX);
     if (SAID_PREFIXES.some((p) => first.startsWith(p))) return { outcome: 'said', line: first };
     return { outcome: 'delivered' };
   }
   if (res.code === EXIT_NOTED) return { outcome: 'noted' };
   if (res.code === EXIT_REFUSED) {
-    const lines = res.stderr.split('\n').map(lineOf).filter((l) => l.length > 0);
-    throw new AttentionError('refused', lines[lines.length - 1] ?? 'refused by attn');
+    // La premiere ligne de `stderr`, comme Kova (`run_click_with`).
+    const line = lineOf(res.stderr.split('\n')[0] ?? '', REFUSED_MAX);
+    throw new AttentionError('refused', line.length > 0 ? line : 'refused by attn');
   }
   if (res.code === EXIT_CARD_CHANGED) {
     throw new AttentionError('card_changed', 'the card changed since it was shown, nothing was noted');
@@ -689,6 +747,21 @@ export class AttentionBoard {
   async gesture(id: unknown, body: Parameters<typeof checkGesture>[0]): Promise<AttentionGestureResponse> {
     if (typeof id !== 'string' || !ATTENTION_ID_RE.test(id)) {
       throw new AttentionError('bad_request', 'id must match a-xxxxxx');
+    }
+    if (isAttentionUncertainWord(body.gesture)) {
+      const u = checkUncertain(body);
+      return this.onOpenCard(id, async (entry) => {
+        // Seulement sur une carte dont l'envoi est incertain, relue a l'instant.
+        if (entry.uncertain === undefined) {
+          throw new AttentionError('not_offered', `${u.word} applies to an uncertain card only`);
+        }
+        const res = await this.exec(uncertainArgv(id, u));
+        try {
+          return gestureOutcome(res);
+        } finally {
+          this.invalidate();
+        }
+      });
     }
     const g = checkGesture(body);
     return this.onOpenCard(id, async (entry) => {
