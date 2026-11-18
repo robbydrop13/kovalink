@@ -549,9 +549,9 @@ function lineOf(s: string, max: number): string {
 /**
  * Ce que dit la sortie d'un geste (`delivery_of`, `said_line` et `run_click_with` de
  * Kova). 0 : remis, ou la file le dit elle-meme sur sa premiere ligne (`said`) ; 3 : note,
- * remise a venir ; 4, ou tout autre code avec une ligne sur `stderr` : refuse, cette ligne
- * est le message d'`attn` a Robin et part vers l'app (`refusalOf`) ; 5 : la carte a change ;
- * sans code (spawn, delai, signal) ou sans ligne : un echec, dont la sortie reste sur le Mac.
+ * remise a venir ; 4 : refuse, la premiere ligne de `stderr` est le message d'`attn` a
+ * Robin et part vers l'app (`refusalOf`) ; 5 : la carte a change ; tout autre code, ou pas
+ * de code (spawn, delai, signal) : un echec, dont la sortie reste sur le Mac.
  */
 export function gestureOutcome(res: { code: number; stdout: string; stderr: string }): AttentionGestureResponse {
   if (res.code === EXIT_DELIVERED) {
@@ -567,21 +567,18 @@ export function gestureOutcome(res: { code: number; stdout: string; stderr: stri
 }
 
 /**
- * Un geste qu'`attn` a refuse : il a rendu un code (4, ou un autre que 0, 3 et 5) et dit
- * pourquoi sur `stderr`. Sa premiere ligne part vers l'app, nettoyee, 140 caracteres, comme
- * Kova la montre (« Non transmis : <ligne> », `run_click_with`) ; la fin « (noté dans ...) »
- * est coupee, elle ne porte qu'un chemin du journal. Sans code ou sans ligne : un echec,
- * dont la sortie reste sur le Mac (502).
+ * Un geste qu'`attn --exit-codes` a refuse : le code 4 du contrat, la raison sur `stderr`.
+ * Sa premiere ligne part vers l'app, nettoyee, 140 caracteres (« Non transmis : <ligne> »
+ * chez Kova) ; la fin « (noté dans ...) » est coupee, elle ne porte qu'un chemin du journal.
+ * Tout autre code, un spawn en echec, un delai ou un signal : un echec, dont la sortie
+ * reste sur le Mac (502, « Envoi non confirmé » sur le telephone).
  */
 export function refusalOf(res: { code: number; stdout: string; stderr: string }, what: string): AttentionError {
-  if (res.code > 0) {
-    const first = res.stderr.split('\n').find((l) => l.trim().length > 0) ?? '';
-    const cut = first.indexOf(' (noté dans');
-    const line = lineOf(cut === -1 ? first : first.slice(0, cut), REFUSED_MAX);
-    if (line.length > 0) return new AttentionError('refused', line);
-    if (res.code === EXIT_REFUSED) return new AttentionError('refused', 'refused by attn');
-  }
-  return new AttentionError('attn_failed', failure(what, res));
+  if (res.code !== EXIT_REFUSED) return new AttentionError('attn_failed', failure(what, res));
+  const first = res.stderr.split('\n').find((l) => l.trim().length > 0) ?? '';
+  const cut = first.indexOf(' (noté dans');
+  const line = lineOf(cut === -1 ? first : first.slice(0, cut), REFUSED_MAX);
+  return new AttentionError('refused', line.length > 0 ? line : 'refused by attn');
 }
 
 // ISO 8601 avec l'heure et un decalage (`Z` ou `+01:00`).
@@ -804,7 +801,9 @@ export class AttentionBoard {
     const date = checkUntil(until, this.now());
     return this.onOpenCard(id, async () => {
       const res = await this.exec(snoozeArgv(id, date));
-      if (res.code !== 0) throw refusalOf(res, 'snooze');
+      // `attn snooze` ne prend pas `--exit-codes` : aucun code ne distingue un refus d'un
+      // echec, tout code non nul vaut 502.
+      if (res.code !== 0) throw new AttentionError('attn_failed', failure('snooze', res));
       this.invalidate();
       return { applied: true };
     });

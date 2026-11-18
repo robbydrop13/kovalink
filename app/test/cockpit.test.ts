@@ -238,7 +238,11 @@ describe('cockpit : apres un geste', () => {
     assert.deepEqual(classifyGesture('go', { ok: false, kind: 'network', message: 'timeout' }), { kind: 'unknown' });
   });
 
-  it('un report refuse par attn dit Non transmis avec sa ligne, jamais Envoi non confirmé', () => {
+  it('un report en 502 (attn snooze n a pas de code de refus) reste non confirme', () => {
+    assert.deepEqual(classifyGesture('snooze', http(502, 'ATTENTION_ERROR')), { kind: 'unknown' });
+  });
+
+  it('un report refuse en 409 dirait Non transmis avec sa ligne, jamais Envoi non confirmé', () => {
     const c = card({ title: 'T' });
     const result = classifyGesture('snooze', http(409, 'ATTENTION_REFUSED', "attn: a-f7c938 n'a pas d'envoi incertain"));
     assert.deepEqual(result, { kind: 'refused', reason: "attn: a-f7c938 n'a pas d'envoi incertain" });

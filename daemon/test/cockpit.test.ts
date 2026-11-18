@@ -271,7 +271,7 @@ describe('cockpit : argv et sortie', () => {
     assert.throws(() => checkGesture({ gesture: 'parti' }), (e: unknown) => e instanceof AttentionError, 'pas un des sept');
   });
 
-  it('un autre code avec une ligne : refuse avec la ligne d attn, la fin (noté dans ...) coupee', () => {
+  it('code 4 : refuse avec la ligne d attn, la fin (noté dans ...) coupee ; tout autre code : un echec', () => {
     const refusal = (code: number, stderr: string): string => {
       try {
         gestureOutcome({ code, stdout: '', stderr });
@@ -282,15 +282,17 @@ describe('cockpit : argv et sortie', () => {
       return 'ok';
     };
     assert.equal(
-      refusal(1, 'attn act : --by robin refusé, ce geste ne vient ni de Kova ni de KovaLink (noté dans /Users/robin/.attn/refus.log)\n'),
+      refusal(4, 'attn act : --by robin refusé, ce geste ne vient ni de Kova ni de KovaLink (noté dans /Users/robin/.attn/refus.log)\n'),
       'refused: attn act : --by robin refusé, ce geste ne vient ni de Kova ni de KovaLink',
     );
     assert.equal(
-      refusal(1, "attn: a-f7c938 n'a pas d'envoi incertain pour ce brouillon\n"),
+      refusal(4, "attn: a-f7c938 n'a pas d'envoi incertain pour ce brouillon\n"),
       "refused: attn: a-f7c938 n'a pas d'envoi incertain pour ce brouillon",
     );
-    assert.equal(refusal(2, '\n  premiere\nseconde'), 'refused: premiere', 'la premiere ligne non vide');
-    assert.match(refusal(1, ''), /^attn_failed/, 'sans ligne : un echec');
+    assert.equal(refusal(4, '\n  premiere\nseconde'), 'refused: premiere', 'la premiere ligne non vide');
+    assert.equal(refusal(4, ''), 'refused: refused by attn', 'sans ligne : le message generique');
+    assert.match(refusal(1, "attn: a-f7c938 n'a pas d'envoi incertain\n"), /^attn_failed/, 'code 1 : un echec, meme avec une ligne');
+    assert.match(refusal(2, 'usage: attn act ...'), /^attn_failed/, 'code 2 : un echec');
     assert.match(refusal(-1, 'spawn ETIMEDOUT'), /^attn_failed/, 'sans code : un echec');
   });
 
@@ -573,22 +575,28 @@ describe('cockpit : routes', () => {
     assert.deepEqual(refreshed, ['snooze']);
   });
 
-  it('snooze refuse par attn : 409 ATTENTION_REFUSED avec sa ligne', async () => {
-    h = fake(undefined, (argv) =>
-      argv[0] === 'snooze' ? { code: 1, stdout: '', stderr: 'attn: a-36d0b2 deja reportee (noté dans /Users/x/log)\n' } : undefined,
-    );
-    const res = await snooze('a-36d0b2', { until: '2026-11-19T09:00:00+01:00' });
-    assert.equal(res.statusCode, 409);
-    assert.deepEqual(res.json(), { code: 'ATTENTION_REFUSED', message: 'attn: a-36d0b2 deja reportee', retryable: false });
+  it('snooze : sans --exit-codes, tout code non nul est un echec (502), sa sortie reste sur le Mac', async () => {
+    for (const code of [1, 4]) {
+      h = fake(undefined, (argv) =>
+        argv[0] === 'snooze' ? { code, stdout: '', stderr: 'attn: a-36d0b2 deja reportee (noté dans /Users/x/log)\n' } : undefined,
+      );
+      const res = await snooze('a-36d0b2', { until: '2026-11-19T09:00:00+01:00' });
+      assert.equal(res.statusCode, 502, String(code));
+      assert.equal(res.json().code, 'ATTENTION_ERROR');
+      assert.equal(res.body.includes('/Users'), false);
+    }
   });
 
-  it('un geste refuse par attn avec le code 1 : 409, pas 502', async () => {
-    h = fake(undefined, (argv) =>
-      argv[0] === 'act' ? { code: 1, stdout: '', stderr: "attn: a-36d0b2 n'a pas d'envoi incertain pour ce brouillon\n" } : undefined,
-    );
-    const res = await gesture('a-36d0b2', { gesture: 'go' });
+  it('un geste : code 4 avec la ligne d attn -> 409 ; code 1 -> 502', async () => {
+    const line = "attn: a-36d0b2 n'a pas d'envoi incertain pour ce brouillon";
+    h = fake(undefined, (argv) => (argv[0] === 'act' ? { code: 4, stdout: '', stderr: `${line}\n` } : undefined));
+    let res = await gesture('a-36d0b2', { gesture: 'go' });
     assert.equal(res.statusCode, 409);
-    assert.equal(res.json().code, 'ATTENTION_REFUSED');
+    assert.deepEqual(res.json(), { code: 'ATTENTION_REFUSED', message: line, retryable: false });
+    h = fake(undefined, (argv) => (argv[0] === 'act' ? { code: 1, stdout: '', stderr: `${line}\n` } : undefined));
+    res = await gesture('a-36d0b2', { gesture: 'go' });
+    assert.equal(res.statusCode, 502);
+    assert.equal(res.json().code, 'ATTENTION_ERROR');
   });
 
   it('snooze : 400 sans rien lancer, 404 pour une carte partie, 502 quand attn echoue', async () => {
