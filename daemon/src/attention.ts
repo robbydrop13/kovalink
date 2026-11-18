@@ -124,7 +124,9 @@ export const execAttn: Exec = (argv) => {
       },
       (err, stdout, stderr) => {
         const e = err as (Error & { code?: unknown }) | null;
-        const code = e === null ? 0 : typeof e.code === 'number' ? e.code : 1;
+        // Sans code numerique (spawn en echec, delai depasse, signal) : `EXIT_NO_CODE`,
+        // jamais un refus d'`attn`, qui n'a rien dit.
+        const code = e === null ? 0 : typeof e.code === 'number' ? e.code : EXIT_NO_CODE;
         resolve({ code, stdout: stdout ?? '', stderr: stderr || (e?.message ?? '') });
       },
     );
@@ -371,6 +373,8 @@ export const EXIT_DELIVERED = 0;
 export const EXIT_NOTED = 3;
 export const EXIT_REFUSED = 4;
 export const EXIT_CARD_CHANGED = 5;
+/** `attn` n'a pas rendu de code : il n'a pas pu partir, a depasse son delai ou a ete tue. */
+export const EXIT_NO_CODE = -1;
 
 /**
  * Comment commence la premiere ligne d'un clic qui n'a rien remis a un agent et le dit :
@@ -545,9 +549,9 @@ function lineOf(s: string, max: number): string {
 /**
  * Ce que dit la sortie d'un geste (`delivery_of`, `said_line` et `run_click_with` de
  * Kova). 0 : remis, ou la file le dit elle-meme sur sa premiere ligne (`said`) ; 3 : note,
- * remise a venir ; 4 : refuse, la premiere ligne de `stderr` est le message d'`attn` a
- * Robin et part vers l'app ; 5 : la carte a change ; tout autre code : un echec, dont la
- * sortie reste sur le Mac.
+ * remise a venir ; 4, ou tout autre code avec une ligne sur `stderr` : refuse, cette ligne
+ * est le message d'`attn` a Robin et part vers l'app (`refusalOf`) ; 5 : la carte a change ;
+ * sans code (spawn, delai, signal) ou sans ligne : un echec, dont la sortie reste sur le Mac.
  */
 export function gestureOutcome(res: { code: number; stdout: string; stderr: string }): AttentionGestureResponse {
   if (res.code === EXIT_DELIVERED) {
@@ -556,15 +560,28 @@ export function gestureOutcome(res: { code: number; stdout: string; stderr: stri
     return { outcome: 'delivered' };
   }
   if (res.code === EXIT_NOTED) return { outcome: 'noted' };
-  if (res.code === EXIT_REFUSED) {
-    // La premiere ligne de `stderr`, comme Kova (`run_click_with`).
-    const line = lineOf(res.stderr.split('\n')[0] ?? '', REFUSED_MAX);
-    throw new AttentionError('refused', line.length > 0 ? line : 'refused by attn');
-  }
   if (res.code === EXIT_CARD_CHANGED) {
     throw new AttentionError('card_changed', 'the card changed since it was shown, nothing was noted');
   }
-  throw new AttentionError('attn_failed', failure('act', res));
+  throw refusalOf(res, 'act');
+}
+
+/**
+ * Un geste qu'`attn` a refuse : il a rendu un code (4, ou un autre que 0, 3 et 5) et dit
+ * pourquoi sur `stderr`. Sa premiere ligne part vers l'app, nettoyee, 140 caracteres, comme
+ * Kova la montre (« Non transmis : <ligne> », `run_click_with`) ; la fin « (noté dans ...) »
+ * est coupee, elle ne porte qu'un chemin du journal. Sans code ou sans ligne : un echec,
+ * dont la sortie reste sur le Mac (502).
+ */
+export function refusalOf(res: { code: number; stdout: string; stderr: string }, what: string): AttentionError {
+  if (res.code > 0) {
+    const first = res.stderr.split('\n').find((l) => l.trim().length > 0) ?? '';
+    const cut = first.indexOf(' (noté dans');
+    const line = lineOf(cut === -1 ? first : first.slice(0, cut), REFUSED_MAX);
+    if (line.length > 0) return new AttentionError('refused', line);
+    if (res.code === EXIT_REFUSED) return new AttentionError('refused', 'refused by attn');
+  }
+  return new AttentionError('attn_failed', failure(what, res));
 }
 
 // ISO 8601 avec l'heure et un decalage (`Z` ou `+01:00`).
@@ -787,7 +804,7 @@ export class AttentionBoard {
     const date = checkUntil(until, this.now());
     return this.onOpenCard(id, async () => {
       const res = await this.exec(snoozeArgv(id, date));
-      if (res.code !== 0) throw new AttentionError('attn_failed', failure('snooze', res));
+      if (res.code !== 0) throw refusalOf(res, 'snooze');
       this.invalidate();
       return { applied: true };
     });

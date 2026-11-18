@@ -238,6 +238,15 @@ describe('cockpit : apres un geste', () => {
     assert.deepEqual(classifyGesture('go', { ok: false, kind: 'network', message: 'timeout' }), { kind: 'unknown' });
   });
 
+  it('un report refuse par attn dit Non transmis avec sa ligne, jamais Envoi non confirmé', () => {
+    const c = card({ title: 'T' });
+    const result = classifyGesture('snooze', http(409, 'ATTENTION_REFUSED', "attn: a-f7c938 n'a pas d'envoi incertain"));
+    assert.deepEqual(result, { kind: 'refused', reason: "attn: a-f7c938 n'a pas d'envoi incertain" });
+    const st = settleGesture(startGesture(EMPTY, c.id, 'snooze'), c, 'snooze', result, { text: '' }, 1, 7);
+    assert.deepEqual(st.toasts[0], { id: 7, ok: false, head: 'Non transmis', title: 'T', more: "attn: a-f7c938 n'a pas d'envoi incertain." });
+    assert.deepEqual(st.hidden, {}, 'la carte reste');
+  });
+
   it('le texte qui part : seulement sur les gestes qui le prennent ; Demander exige un texte', () => {
     const c = card({ draft: { text: 'x', seen: '0123456789abcdef' } });
     const st: CardsState = { ...EMPTY, texts: { [c.id]: '  pas encore  ' } };

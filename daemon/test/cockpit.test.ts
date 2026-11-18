@@ -18,6 +18,7 @@ const {
   checkGesture,
   checkUncertain,
   checkUntil,
+  execAttn,
   gestureArgv,
   gestureOutcome,
   snoozeArgv,
@@ -236,7 +237,7 @@ describe('cockpit : argv et sortie', () => {
       (e: unknown) => e instanceof AttentionError && e.reason === 'card_changed',
     );
     assert.throws(
-      () => gestureOutcome({ code: 2, stdout: '', stderr: '/Users/robin/secret' }),
+      () => gestureOutcome({ code: -1, stdout: '', stderr: 'spawn ENOENT /Users/robin/secret' }),
       (e: unknown) => e instanceof AttentionError && e.reason === 'attn_failed',
     );
   });
@@ -268,6 +269,42 @@ describe('cockpit : argv et sortie', () => {
       assert.throws(() => checkUncertain(body), (e: unknown) => e instanceof AttentionError && e.reason === 'bad_request');
     }
     assert.throws(() => checkGesture({ gesture: 'parti' }), (e: unknown) => e instanceof AttentionError, 'pas un des sept');
+  });
+
+  it('un autre code avec une ligne : refuse avec la ligne d attn, la fin (noté dans ...) coupee', () => {
+    const refusal = (code: number, stderr: string): string => {
+      try {
+        gestureOutcome({ code, stdout: '', stderr });
+      } catch (e) {
+        assert.ok(e instanceof AttentionError);
+        return `${e.reason}: ${e.message}`;
+      }
+      return 'ok';
+    };
+    assert.equal(
+      refusal(1, 'attn act : --by robin refusé, ce geste ne vient ni de Kova ni de KovaLink (noté dans /Users/robin/.attn/refus.log)\n'),
+      'refused: attn act : --by robin refusé, ce geste ne vient ni de Kova ni de KovaLink',
+    );
+    assert.equal(
+      refusal(1, "attn: a-f7c938 n'a pas d'envoi incertain pour ce brouillon\n"),
+      "refused: attn: a-f7c938 n'a pas d'envoi incertain pour ce brouillon",
+    );
+    assert.equal(refusal(2, '\n  premiere\nseconde'), 'refused: premiere', 'la premiere ligne non vide');
+    assert.match(refusal(1, ''), /^attn_failed/, 'sans ligne : un echec');
+    assert.match(refusal(-1, 'spawn ETIMEDOUT'), /^attn_failed/, 'sans code : un echec');
+  });
+
+  it('un CLI absent n a pas de code : un echec (502), jamais un refus', async () => {
+    const was = process.env['KOVALINK_ATTN'];
+    process.env['KOVALINK_ATTN'] = '/nonexistent/kovalink-attn';
+    try {
+      const res = await execAttn(['snooze', '--until=2026-11-19T09:00:00+01:00', 'a-36d0b2']);
+      assert.equal(res.code, -1);
+      assert.throws(() => gestureOutcome(res), (e: unknown) => e instanceof AttentionError && e.reason === 'attn_failed');
+    } finally {
+      if (was === undefined) delete process.env['KOVALINK_ATTN'];
+      else process.env['KOVALINK_ATTN'] = was;
+    }
   });
 
   it('le report : snooze --by robin --until=<ISO> <carte>, date future a 60 jours au plus', () => {
@@ -464,7 +501,7 @@ describe('cockpit : routes', () => {
     res = await gesture('a-36d0b2', { gesture: 'go', cardSeen: CARD_FP });
     assert.equal(res.json().code, 'ATTENTION_CARD_CHANGED');
     assert.equal(res.body.includes('autre carte'), false);
-    h = fake(undefined, (argv) => (argv[0] === 'act' ? { code: 1, stdout: '', stderr: '/Users/robin/secret' } : undefined));
+    h = fake(undefined, (argv) => (argv[0] === 'act' ? { code: -1, stdout: '', stderr: '/Users/robin/secret' } : undefined));
     res = await gesture('a-36d0b2', { gesture: 'go' });
     assert.equal(res.statusCode, 502);
     assert.equal(res.body.includes('secret'), false);
@@ -536,13 +573,31 @@ describe('cockpit : routes', () => {
     assert.deepEqual(refreshed, ['snooze']);
   });
 
+  it('snooze refuse par attn : 409 ATTENTION_REFUSED avec sa ligne', async () => {
+    h = fake(undefined, (argv) =>
+      argv[0] === 'snooze' ? { code: 1, stdout: '', stderr: 'attn: a-36d0b2 deja reportee (noté dans /Users/x/log)\n' } : undefined,
+    );
+    const res = await snooze('a-36d0b2', { until: '2026-11-19T09:00:00+01:00' });
+    assert.equal(res.statusCode, 409);
+    assert.deepEqual(res.json(), { code: 'ATTENTION_REFUSED', message: 'attn: a-36d0b2 deja reportee', retryable: false });
+  });
+
+  it('un geste refuse par attn avec le code 1 : 409, pas 502', async () => {
+    h = fake(undefined, (argv) =>
+      argv[0] === 'act' ? { code: 1, stdout: '', stderr: "attn: a-36d0b2 n'a pas d'envoi incertain pour ce brouillon\n" } : undefined,
+    );
+    const res = await gesture('a-36d0b2', { gesture: 'go' });
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.json().code, 'ATTENTION_REFUSED');
+  });
+
   it('snooze : 400 sans rien lancer, 404 pour une carte partie, 502 quand attn echoue', async () => {
     for (const until of ['demain', '2026-11-17T09:00:00+01:00', '2027-02-01T09:00:00+01:00', undefined]) {
       assert.equal((await snooze('a-36d0b2', { until })).statusCode, 400, String(until));
     }
     assert.deepEqual(h.calls, []);
     assert.equal((await snooze('a-999999', { until: '2026-11-19T09:00:00+01:00' })).statusCode, 404);
-    h = fake(undefined, (argv) => (argv[0] === 'snooze' ? { code: 2, stdout: '', stderr: '/Users/x' } : undefined));
+    h = fake(undefined, (argv) => (argv[0] === 'snooze' ? { code: -1, stdout: '', stderr: '/Users/x' } : undefined));
     const res = await snooze('a-36d0b2', { until: '2026-11-19T09:00:00+01:00' });
     assert.equal(res.statusCode, 502);
     assert.equal(res.body.includes('/Users'), false);
