@@ -8,8 +8,6 @@ import {
   attentionButtonEnabled,
   attentionButtons,
   attentionOpenTarget,
-  asksScreenEmpty,
-  attentionSections,
   phaseAfterSendFailure,
 } from '@/features/asks/attention';
 import { handoffView } from '@/features/asks/handoff';
@@ -28,57 +26,6 @@ function entry(partial: Partial<AttentionEntry> = {}): AttentionEntry {
     ...partial,
   };
 }
-
-describe('attention : sections et comptes', () => {
-  it('range par niveau, now du plus ancien au plus recent', () => {
-    const late = entry({ ts: '2026-11-05T12:00:00+01:00' });
-    const early = entry({ ts: '2026-11-05T08:00:00+01:00' });
-    const point = entry({ level: 'point', topic: 'watch' });
-    const memo = entry({ level: 'memo' });
-    const s = attentionSections([late, point, memo, early]);
-    assert.deepEqual(
-      s.now.map((e) => e.id),
-      [early.id, late.id],
-    );
-    assert.deepEqual(
-      s.memo.map((e) => e.id),
-      [memo.id],
-    );
-    assert.equal(s.pointCount, 1);
-  });
-
-  it('groupe le prochain point par sujet, sans sujet a la fin, et compte chaque ligne', () => {
-    const a1 = entry({ level: 'point', topic: 'voice' });
-    const loose1 = entry({ level: 'point' });
-    const b1 = entry({ level: 'point', topic: 'watch' });
-    const a2 = entry({ level: 'point', topic: 'voice' });
-    const loose2 = entry({ level: 'point', topic: '  ' });
-    const s = attentionSections([loose2, b1, a2, loose1, a1]);
-    assert.deepEqual(
-      s.point.map((g) => [g.topic, g.entries.map((e) => e.id)]),
-      [
-        ['voice', [a1.id, a2.id]],
-        ['watch', [b1.id]],
-        [null, [loose1.id, loose2.id]],
-      ],
-    );
-    // Le compte est la longueur de ce que la section liste, tous groupes confondus.
-    assert.equal(s.pointCount, s.point.reduce((n, g) => n + g.entries.length, 0));
-    assert.equal(s.pointCount, 5);
-  });
-
-  it('l etat vide ne s affiche que si rien du tout n attend, point et memo compris', () => {
-    assert.equal(asksScreenEmpty(0, attentionSections([])), true);
-    assert.equal(asksScreenEmpty(0, attentionSections([entry({ level: 'point' })])), false);
-    assert.equal(asksScreenEmpty(0, attentionSections([entry({ level: 'memo' })])), false);
-    assert.equal(asksScreenEmpty(1, attentionSections([])), false);
-  });
-
-  it('une file vide ne donne rien a afficher', () => {
-    const s = attentionSections([]);
-    assert.deepEqual(s, { now: [], point: [], pointCount: 0, memo: [] });
-  });
-});
 
 describe('attention : Ouvrir', () => {
   it('une URL http(s) va au panneau web', () => {

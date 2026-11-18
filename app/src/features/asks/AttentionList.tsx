@@ -1,10 +1,6 @@
-// La file d'attention (`attn`) dans l'onglet Asks : une ligne d'entree, puis les deux
-// sections du bas, « Au prochain point » (repliee, par sujet) et « Pour memoire » (un
-// compte qui se deplie en titres). Les regles (sections, comptes, boutons) vivent dans
+// La ligne d'une entree de la file d'attention d'avant le Cockpit : le Cockpit la montre
+// pour une carte dont la file ne liste pas les gestes. Les regles (boutons) vivent dans
 // `attention.ts` ; ce fichier ne fait que les rendre.
-//
-// Une file vide ne prend aucune place : pas d'etat vide, pas d'en-tete a zero.
-import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import {
@@ -28,7 +24,6 @@ import {
   attentionButtonEnabled,
   attentionButtons,
   attentionOpenTarget,
-  type TopicGroup,
 } from './attention';
 import { useAttentionStore } from './useAttention';
 
@@ -130,74 +125,6 @@ export function AttentionRow({
   );
 }
 
-/** « Au prochain point (N) » : replie par defaut, deplie par sujet. */
-export function PointSection({
-  groups,
-  count,
-  now,
-  unavailable,
-}: {
-  groups: TopicGroup[];
-  count: number;
-  now: number;
-  unavailable: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  if (count === 0) return null;
-  return (
-    <View style={styles.section}>
-      <SectionToggle title={t.attnPointTitle(count)} open={open} onToggle={() => setOpen((v) => !v)} />
-      {open
-        ? groups.map((group) => (
-            <View key={group.topic ?? ''} style={styles.group}>
-              <Txt variant="caption" color={colors.text.tertiary} style={styles.topic}>
-                {group.topic ?? t.attnNoTopic}
-              </Txt>
-              {group.entries.map((entry) => (
-                <AttentionRow key={entry.id} entry={entry} now={now} unavailable={unavailable} />
-              ))}
-            </View>
-          ))
-        : null}
-    </View>
-  );
-}
-
-/** « Pour memoire (N) » : une ligne de compte, qui se deplie en titres seulement. */
-export function MemoSection({ entries }: { entries: AttentionEntry[] }) {
-  const [open, setOpen] = useState(false);
-  if (entries.length === 0) return null;
-  return (
-    <View style={styles.section}>
-      <SectionToggle title={t.attnMemoTitle(entries.length)} open={open} onToggle={() => setOpen((v) => !v)} />
-      {open
-        ? entries.map((entry) => (
-            <Txt key={entry.id} variant="footnote" color={colors.text.secondary} numberOfLines={1} style={styles.memo}>
-              {entry.title}
-            </Txt>
-          ))
-        : null}
-    </View>
-  );
-}
-
-function SectionToggle({ title, open, onToggle }: { title: string; open: boolean; onToggle: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      accessibilityState={{ expanded: open }}
-      onPress={onToggle}
-      style={styles.toggle}
-    >
-      <Icon name={open ? 'chevron-down' : 'chevron-right'} size={14} color={colors.text.tertiary} />
-      <Txt variant="caption" color={colors.text.tertiary} style={styles.toggleTitle}>
-        {title.toUpperCase()}
-      </Txt>
-    </Pressable>
-  );
-}
-
 function StateLine({
   icon,
   text,
@@ -239,10 +166,4 @@ const styles = StyleSheet.create({
   },
   buttonPressed: { backgroundColor: colors.bg.pressed },
   stateLine: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
-  section: { gap: space[2], marginTop: space[4] },
-  group: { gap: space[2] },
-  topic: { paddingHorizontal: space[1], letterSpacing: 0.4 },
-  toggle: { flexDirection: 'row', alignItems: 'center', gap: space[2], paddingHorizontal: space[1] },
-  toggleTitle: { letterSpacing: 0.6 },
-  memo: { paddingHorizontal: space[5] },
 });

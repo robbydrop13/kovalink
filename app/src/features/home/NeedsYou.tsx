@@ -3,6 +3,10 @@
 // lignes restantes (deux au minimum) ; le reste se deplie. Un tap mene la ou se regle la
 // chose : le pane pour une erreur ou une permission, l'ecran de la question pour un ask,
 // l'onglet Scheduled pour une routine.
+//
+// Les cartes de la file d'attention n'y sont pas listees : le Cockpit les tient. Une seule
+// ligne en donne le compte, « Cockpit · N », et l'ouvre par `onOpenCockpit` (la navigation
+// vers le Cockpit se branchera la). Sans `onOpenCockpit`, pas de ligne : pas de bouton mort.
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { NeedItem } from '@/protocol';
@@ -19,11 +23,15 @@ interface Props {
   onOpenPane: (paneId: number) => void;
   onOpenAsk: (askId: string) => void;
   onShowScheduled: () => void;
+  /** Les cartes du Cockpit (`useCockpitCount`). */
+  cockpitCount?: number;
+  onOpenCockpit?: () => void;
 }
 
-export function NeedsYou({ items, now, onOpenPane, onOpenAsk, onShowScheduled }: Props) {
+export function NeedsYou({ items, now, onOpenPane, onOpenAsk, onShowScheduled, cockpitCount = 0, onOpenCockpit }: Props) {
   const [expanded, setExpanded] = useState(false);
-  if (items.length === 0) return null;
+  const cockpitLine = onOpenCockpit !== undefined && cockpitCount > 0;
+  if (items.length === 0 && !cockpitLine) return null;
 
   const counts = needCounts(items);
   const shown = visibleNeedItems(items, expanded);
@@ -109,6 +117,23 @@ export function NeedsYou({ items, now, onOpenPane, onOpenAsk, onShowScheduled }:
           </Pressable>
         );
       })}
+
+      {cockpitLine ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t.cockpitNeedsLine(cockpitCount)}
+          onPress={onOpenCockpit}
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        >
+          <View style={styles.marker}>
+            <Icon name="inbox" size={14} color={colors.text.secondary} />
+          </View>
+          <Txt variant="callout" color={colors.text.primary} numberOfLines={1} style={styles.detail}>
+            {t.cockpitNeedsLine(cockpitCount)}
+          </Txt>
+          <Icon name="chevron-right" size={14} color={colors.text.tertiary} />
+        </Pressable>
+      ) : null}
 
       {hidden > 0 || expanded ? (
         <Pressable

@@ -1,11 +1,7 @@
-// La file d'attention (`attn`) dans l'onglet Asks, en regles pures : les sections, le
-// regroupement par sujet, les comptes, les boutons d'une ligne et ce que `Ouvrir` ouvre.
-// Rien n'est lu d'un magasin ni d'une horloge : les tests le prouvent sur des entrees
-// construites a la main.
-//
-// Trois sections, comme Kova : les entrees `now` rejoignent les questions et permissions
-// en tete, `point` se replie par sujet, `memo` n'est qu'un compte qui se deplie en titres.
-// Un compte est TOUJOURS la longueur de la liste qu'il annonce.
+// La ligne d'une entree de la file d'attention (`attn`) d'avant le Cockpit, en regles
+// pures : ses boutons et ce que `Ouvrir` ouvre. Le Cockpit la montre encore pour une carte
+// dont la file ne liste pas les gestes (daemon ou `attn` plus anciens) ; ses sections sont
+// celles du Cockpit (`features/cockpit/rules.ts`).
 import {
   ATTENTION_DONE,
   ATTENTION_IGNORE,
@@ -16,60 +12,10 @@ import {
 } from '@/protocol';
 import { isWebUrl, panelKindOfPath, type PanelTarget } from '@/features/panel/target';
 
-/** Un sujet du prochain point : `topic` null rassemble les entrees qui n'en ont pas. */
-export interface TopicGroup {
-  topic: string | null;
-  entries: AttentionEntry[];
-}
-
-export interface AttentionSections {
-  /** Les entrees `now`, la plus ancienne d'abord. */
-  now: AttentionEntry[];
-  /** Les sujets dans l'ordre ou ils sont apparus, le groupe sans sujet a la fin. */
-  point: TopicGroup[];
-  /** Le nombre de lignes de `point`, tous sujets confondus. */
-  pointCount: number;
-  memo: AttentionEntry[];
-}
-
 /** Instant d'une entree en ms, 0 quand la date ne se lit pas (elle passe en tete). */
 export function attentionAtMs(entry: AttentionEntry): number {
   const ms = Date.parse(entry.ts);
   return Number.isFinite(ms) ? ms : 0;
-}
-
-function byAge(a: AttentionEntry, b: AttentionEntry): number {
-  return attentionAtMs(a) - attentionAtMs(b) || a.id.localeCompare(b.id);
-}
-
-export function attentionSections(entries: readonly AttentionEntry[]): AttentionSections {
-  const now = entries.filter((e) => e.level === 'now').sort(byAge);
-  const memo = entries.filter((e) => e.level === 'memo').sort(byAge);
-  const groups = new Map<string, AttentionEntry[]>();
-  const loose: AttentionEntry[] = [];
-  for (const entry of [...entries].filter((e) => e.level === 'point').sort(byAge)) {
-    const topic = entry.topic?.trim() ?? '';
-    if (topic.length === 0) {
-      loose.push(entry);
-      continue;
-    }
-    const group = groups.get(topic);
-    if (group) group.push(entry);
-    else groups.set(topic, [entry]);
-  }
-  const point: TopicGroup[] = [...groups].map(([topic, list]) => ({ topic, entries: list }));
-  if (loose.length > 0) point.push({ topic: null, entries: loose });
-  const pointCount = point.reduce((n, g) => n + g.entries.length, 0);
-  return { now, point, pointCount, memo };
-}
-
-/**
- * Rien du tout a montrer : ni question, ni permission, ni entree d'attention a aucun
- * niveau. Seul ce cas affiche l'etat vide ; une file qui n'a que du `point` ou du `memo`
- * montre ses sections, sans « aucune question » au dessus.
- */
-export function asksScreenEmpty(feedLength: number, sections: AttentionSections): boolean {
-  return feedLength === 0 && sections.now.length === 0 && sections.pointCount === 0 && sections.memo.length === 0;
 }
 
 /**

@@ -44,9 +44,6 @@ export const asks = {
   // File d'attention (`attn`). Mots de Robin, en francais comme dans Kova : les boutons
   // sont aussi les mots que `attn` et Kova attendent.
   attnNowTitle: (n: number) => `À toi maintenant (${n})`,
-  attnPointTitle: (n: number) => `Au prochain point (${n})`,
-  attnMemoTitle: (n: number) => `Pour mémoire (${n})`,
-  attnNoTopic: 'Sans sujet',
   attnOpen: 'Ouvrir',
   attnSend: 'Envoyer',
   attnIgnore: 'Ignorer',

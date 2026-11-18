@@ -8,14 +8,14 @@
 // Les questions reportees restent visibles, replies, avec leur heure de retour : un report
 // n'est pas un abandon. Rien n'est rafraichi a la main, le daemon pousse la liste.
 //
-// La file d'attention (`attn`) s'y ajoute en trois sections, comme dans Kova : ses entrees
-// `now` rejoignent les questions sous « A toi maintenant (N) », puis « Au prochain point »
-// (replie, par sujet) et « Pour memoire » (un compte). N est le nombre de lignes listees.
+// Les cartes de la file d'attention (`attn`) n'y sont plus : elles vivent dans le Cockpit
+// (`features/cockpit`), comme sur le Mac. N, sous « A toi maintenant (N) », est le nombre
+// de lignes listees.
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { AskItem, AttentionEntry, Prompt, PromptOption } from '@/protocol';
+import type { AskItem, Prompt, PromptOption } from '@/protocol';
 import { t } from '@/i18n/en';
 import { colors, layout, radius, space } from '@/theme';
 import { Banner, EmptyState } from '@/ui/States';
@@ -34,17 +34,13 @@ import { useClock } from '@/utils/useClock';
 import { NotifyType, notify } from '@/utils/haptics';
 import { clockTime } from '@/utils/time';
 import { AskCard, PermissionCard, paneTabTitle } from './AskCard';
-import { asksScreenEmpty, attentionAtMs, attentionSections } from './attention';
-import { AttentionRow, MemoSection, PointSection } from './AttentionList';
-import { useAttention } from './useAttention';
 
 type ParsedPrompt = Extract<Prompt, { state: 'parsed' }>;
 
 /** Une ligne de la liste : une question, ou une permission. */
 type FeedItem =
   | { key: string; at: number; kind: 'ask'; ask: AskItem }
-  | { key: string; at: number; kind: 'prompt'; prompt: ParsedPrompt }
-  | { key: string; at: number; kind: 'attention'; entry: AttentionEntry };
+  | { key: string; at: number; kind: 'prompt'; prompt: ParsedPrompt };
 
 /** Les trois gestes d'une permission : approuver, refuser, toujours approuver. */
 function permissionOptions(prompt: ParsedPrompt): {
@@ -74,8 +70,6 @@ export function AsksView() {
   const now = useClock(true, 30_000);
   const [openSnoozed, setOpenSnoozed] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const attention = useAttention();
-  const sections = useMemo(() => attentionSections(attention ?? []), [attention]);
 
   // Les permissions sortent du magasin de prompts, filtrees sur `parsed` : un prompt
   // illisible ne propose pas de bouton (meme regle que la ValidationBar).
@@ -94,15 +88,9 @@ export function AsksView() {
           },
         ];
       }),
-      ...sections.now.map((entry) => ({
-        key: `attention-${entry.id}`,
-        at: attentionAtMs(entry),
-        kind: 'attention' as const,
-        entry,
-      })),
     ];
     return items.sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
-  }, [asks, prompts, sections]);
+  }, [asks, prompts]);
 
   const snoozed = useMemo(
     () => [...snoozedAsks(asks)].sort((a, b) => a.snoozedUntilMs - b.snoozedUntilMs),
@@ -197,16 +185,13 @@ export function AsksView() {
           </Txt>
         ) : null}
 
-        {asksScreenEmpty(feed.length, sections) ? (
+        {feed.length === 0 ? (
           <EmptyState icon="check-circle" title={t.askEmptyTitle} body={t.askEmptyBody} />
         ) : null}
 
         {feed.map((item) => {
           if (item.kind === 'ask') {
             return <AskCard key={item.key} ask={item.ask} now={now} unavailable={degraded} />;
-          }
-          if (item.kind === 'attention') {
-            return <AttentionRow key={item.key} entry={item.entry} now={now} unavailable={degraded} />;
           }
           const prompt = item.prompt;
           const pane = panes.find((p) => p.id === prompt.paneId) ?? null;
@@ -231,9 +216,6 @@ export function AsksView() {
             />
           );
         })}
-
-        <PointSection groups={sections.point} count={sections.pointCount} now={now} unavailable={degraded} />
-        <MemoSection entries={sections.memo} />
 
         {snoozed.length > 0 ? (
           <View style={styles.snoozedSection}>
