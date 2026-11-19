@@ -5,8 +5,8 @@
 // l'onglet Scheduled pour une routine.
 //
 // Les cartes de la file d'attention n'y sont pas listees : le Cockpit les tient. Une seule
-// ligne en donne le compte, « Cockpit · N », et l'ouvre par `onOpenCockpit` (la navigation
-// vers le Cockpit se branchera la). Sans `onOpenCockpit`, pas de ligne : pas de bouton mort.
+// ligne en donne le compte, « Cockpit · N », et `onOpenCockpit` passe sur l'onglet Cockpit.
+// Sans `onOpenCockpit`, pas de ligne : pas de bouton mort.
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { NeedItem } from '@/protocol';

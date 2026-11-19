@@ -1,5 +1,5 @@
-// La file d'attention (`attn`) telle que l'onglet Asks la tient. Relue au montage, puis
-// toutes les 10 s tant que l'onglet est affiche (le daemon garde sa lecture autant), et
+// La file d'attention (`attn`) telle que le Cockpit la tient. Relue au montage, puis
+// toutes les 10 s tant que le Cockpit est affiche (le daemon garde sa lecture autant), et
 // des que le compte `waitsOnYou` du daemon bouge : une entree `now` ouverte ou fermee sur
 // le Mac le fait bouger. Le dernier instantane reste en memoire, pour un retour immediat.
 //

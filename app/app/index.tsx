@@ -45,6 +45,8 @@ import { confirmClose, toggleBookmark } from '@/features/sessions/paneActions';
 import type { SwipeActions } from '@/features/sessions/SwipeRow';
 import type { ReorderActions } from '@/features/sessions/reorderAccessibility';
 import { AsksView } from '@/features/asks/AsksView';
+import { CockpitView } from '@/features/cockpit/CockpitView';
+import { useCockpitBadge, useCockpitCount } from '@/features/cockpit/useCockpitCount';
 import { AgentsView } from '@/features/agents/AgentsView';
 import { ScheduledView } from '@/features/scheduled/ScheduledView';
 import { useScheduledFailed } from '@/features/scheduled/useRoutines';
@@ -75,6 +77,7 @@ import { t } from '@/i18n/en';
 
 /** Titre de chaque onglet de l'accueil, repris par l'etat vide des onglets a venir. */
 const TAB_TITLES: Record<HomeTab, string> = {
+  cockpit: t.homeTabCockpit,
   panes: t.homeTabPanes,
   asks: t.homeTabAsks,
   agents: t.homeTabAgents,
@@ -84,10 +87,6 @@ const TAB_TITLES: Record<HomeTab, string> = {
 export default function SessionsScreen() {
   const asks = useAsks((s) => s.asks);
   const pendingAsk = nextAsk(asks);
-  // Le badge des Asks : le compte du daemon (permissions et questions, un par pane),
-  // sinon les questions dues quand le daemon est plus ancien.
-  const waitsOnYou = useAsks((s) => s.waitsOnYou);
-  const askCount = waitsOnYou ?? dueAsks(asks).length;
   // Le point de l'onglet : une routine active dont le dernier passage a echoue.
   const scheduledFailed = useScheduledFailed();
   const tab = useHomeTab((s) => s.tab);
@@ -177,6 +176,12 @@ export default function SessionsScreen() {
   // Cmd+J depuis la liste : l'anneau entier (aucun pane courant), la ligne de résumé.
   const next = useNextTarget(null);
   const needs = useNeeds();
+  // Le badge des Asks : permissions et questions seulement, le calcul du protocole sur ce
+  // que l'app tient (`useNeeds` ne lit pas la file). Les cartes ont le badge du Cockpit ;
+  // le `waitsOnYou` du daemon est la somme des deux.
+  const askCount = needs.waits;
+  const cockpitCount = useCockpitCount();
+  const cockpitBadge = useCockpitBadge();
   /** Panes qui portent une question due : leur ligne propose `Answer`. */
   const answerPanes = useMemo(() => {
     const ids = new Set<number>();
@@ -654,13 +659,15 @@ export default function SessionsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.text.secondary} />
         }
       >
-        {needs.items.length > 0 ? (
+        {needs.items.length > 0 || cockpitCount > 0 ? (
           <NeedsYou
             items={needs.items}
             now={needs.now}
             onOpenPane={open}
             onOpenAsk={(id) => openAsk(id)}
             onShowScheduled={() => setTab('scheduled')}
+            cockpitCount={cockpitCount}
+            onOpenCockpit={() => setTab('cockpit')}
           />
         ) : null}
         {empty === 'loading' ? <SkeletonList /> : null}
@@ -726,6 +733,9 @@ export default function SessionsScreen() {
         // Sur un Mac de secours, le daemon ferme ces routes : une ligne le dit, au lieu
         // d'une erreur par onglet.
         <EmptyState icon="info" title={t.hostPrimaryOnly} body={t.hostPrimaryOnlyBody} />
+      ) : tab === 'cockpit' ? (
+        // La carte ouverte se deplie dans la liste : aucun ecran pousse.
+        <CockpitView showTitle={false} contentPaddingBottom={insets.bottom + TAB_BAR_HEIGHT} />
       ) : tab === 'asks' ? (
         <AsksView />
       ) : tab === 'agents' ? (
@@ -748,6 +758,7 @@ export default function SessionsScreen() {
         active={tab}
         onSelect={setTab}
         askCount={askCount}
+        cockpitCount={cockpitBadge}
         scheduledFailed={scheduledFailed}
         onDictate={openDictation}
       />

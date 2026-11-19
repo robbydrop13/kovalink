@@ -8,6 +8,7 @@ import {
   PAGE_SIZE,
   askRefOf,
   cockpitAge,
+  cockpitBadgeCount,
   cockpitButtons,
   cockpitGoLabel,
   cockpitIcons,
@@ -392,5 +393,20 @@ describe('cockpit : report', () => {
     const iso = isoWithOffset(d);
     assert.match(iso, /^2026-11-19T09:00:00[+-]\d{2}:\d{2}$/);
     assert.equal(Date.parse(iso), d.getTime());
+  });
+});
+
+describe('cockpit : badge de l onglet', () => {
+  it('compte les cartes now et les Urgentes, comme la part cartes du waitsOnYou du daemon', () => {
+    const entries = [
+      card({ id: 'a-000001', level: 'now' }),
+      card({ id: 'a-000002', level: 'point', prio: 1 }),
+      card({ id: 'a-000003', level: 'point', prio: 2 }),
+      card({ id: 'a-000004', level: 'memo', prio: 1 }),
+      card({ id: 'a-000005', level: 'point' }),
+      card({ id: 'a-000006', level: 'now', ts: 'pas une date' }),
+    ];
+    assert.equal(cockpitBadgeCount(entries), 3);
+    assert.equal(cockpitBadgeCount([]), 0);
   });
 });

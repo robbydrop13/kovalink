@@ -124,6 +124,8 @@ export const sessions = {
   sessionsNavSettings: 'Settings',
 
   // Accueil a onglets (P02)
+  homeTabCockpit: 'Cockpit',
+  homeTabCockpitA11y: (count: number) => (count > 0 ? `Cockpit, ${count} waiting` : 'Cockpit'),
   homeTabPanes: 'Panes',
   homeTabAsks: 'Asks',
   homeTabAgents: 'Agents',

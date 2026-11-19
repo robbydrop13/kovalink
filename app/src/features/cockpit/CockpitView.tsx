@@ -38,7 +38,16 @@ const SECTION_DOT: Record<CockpitPrio, string> = {
   3: colors.status.idle,
 };
 
-export function CockpitView({ style, contentPaddingBottom = 0 }: { style?: ViewStyle; contentPaddingBottom?: number }) {
+export function CockpitView({
+  style,
+  contentPaddingBottom = 0,
+  showTitle = true,
+}: {
+  style?: ViewStyle;
+  contentPaddingBottom?: number;
+  /** Faux quand l'ecran qui le monte porte deja le titre (l'onglet de l'accueil). */
+  showTitle?: boolean;
+}) {
   const entries = useAttention();
   const filter = useCockpit((s) => s.filter);
   const limit = useCockpit((s) => s.limit);
@@ -64,9 +73,11 @@ export function CockpitView({ style, contentPaddingBottom = 0 }: { style?: ViewS
         contentContainerStyle={[styles.content, { paddingBottom: contentPaddingBottom + space[8] }]}
       >
         <View style={styles.header}>
-          <Txt variant="title1" color={colors.text.primary}>
-            {t.cockpitTitle}
-          </Txt>
+          {showTitle ? (
+            <Txt variant="title1" color={colors.text.primary}>
+              {t.cockpitTitle}
+            </Txt>
+          ) : null}
           {entries !== null ? (
             <Txt variant="footnote" color={colors.text.secondary}>
               {t.cockpitSubtitle(page.total, page.urgent)}

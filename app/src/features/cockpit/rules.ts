@@ -22,6 +22,14 @@ export type CockpitScope = 'claap' | 'perso';
 export type CockpitFilter = 'all' | CockpitScope;
 
 /** La priorite d'une carte : la sienne, sinon `now` 2 et `point` 3 ; `memo` n'est jamais montre. */
+/**
+ * Le badge de l'onglet Cockpit : la part cartes du `waitsOnYou` du daemon, les cartes `now`
+ * plus les Urgentes (prio 1) d'un autre niveau, chacune avec une date lisible.
+ */
+export function cockpitBadgeCount(entries: readonly AttentionEntry[]): number {
+  return entries.filter((e) => (e.level === 'now' || e.prio === 1) && Number.isFinite(Date.parse(e.ts))).length;
+}
+
 export function cockpitPrio(entry: AttentionEntry): CockpitPrio | null {
   if (entry.prio === 1 || entry.prio === 2 || entry.prio === 3) {
     return entry.level === 'memo' ? null : entry.prio;

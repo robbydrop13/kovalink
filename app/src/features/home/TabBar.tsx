@@ -1,39 +1,45 @@
-// Barre d'onglets de l'accueil (P02) : Panes, Asks, Agents, Scheduled, et au milieu le
-// bouton dictee qui ouvre claap-agent micro lance. 49 pt de contenu,
+// Barre d'onglets de l'accueil (P02) : Cockpit, Panes, Asks, Agents, Scheduled, et apres
+// Asks le bouton dictee qui ouvre claap-agent micro lance. 49 pt de contenu,
 // plus l'encoche basse. Elle est posee par dessus l'ecran : la liste de Panes reserve sa
 // hauteur dans son padding bas, sinon la derniere ligne passe dessous.
 //
-// Le badge des Asks compte les questions dues. D01 fera entrer `waitsOnYou` par le
-// protocole, ce compteur deviendra la somme des deux.
+// Deux badges : le Cockpit compte ses cartes `now` et Urgentes, les Asks les permissions
+// et les questions dues. Leur somme est le `waitsOnYou` du daemon.
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius } from '@/theme';
 import { Icon, type IconName } from '@/ui/Icon';
 import { Txt } from '@/ui/Txt';
 import { t } from '@/i18n/en';
-import type { HomeTab } from '@/store/homeTab';
+import { HOME_TABS, type HomeTab } from '@/store/homeTab';
 
 /** Hauteur du contenu de la barre, hors encoche basse. */
 export const TAB_BAR_HEIGHT = 49;
 
-const TABS: readonly { key: HomeTab; icon: IconName; label: string }[] = [
-  { key: 'panes', icon: 'sidebar', label: t.homeTabPanes },
-  { key: 'asks', icon: 'message-circle', label: t.homeTabAsks },
-  { key: 'agents', icon: 'users', label: t.homeTabAgents },
-  { key: 'scheduled', icon: 'clock', label: t.homeTabScheduled },
-];
+const TAB_LOOK: Record<HomeTab, { icon: IconName; label: string }> = {
+  cockpit: { icon: 'inbox', label: t.homeTabCockpit },
+  panes: { icon: 'sidebar', label: t.homeTabPanes },
+  asks: { icon: 'message-circle', label: t.homeTabAsks },
+  agents: { icon: 'users', label: t.homeTabAgents },
+  scheduled: { icon: 'clock', label: t.homeTabScheduled },
+};
+
+const TABS = HOME_TABS.map((key) => ({ key, ...TAB_LOOK[key] }));
 
 export function TabBar({
   active,
   onSelect,
   askCount,
+  cockpitCount,
   scheduledFailed = false,
   onDictate,
 }: {
   active: HomeTab;
   onSelect: (tab: HomeTab) => void;
-  /** Questions dues, celles que l'onglet Asks ouvre. */
+  /** Permissions et questions dues, celles que l'onglet Asks ouvre. */
   askCount: number;
+  /** Cartes `now` et Urgentes du Cockpit. */
+  cockpitCount: number;
   /** Une routine active a echoue : un point rouge, comme sur le Mac. */
   scheduledFailed?: boolean;
   /** Bouton du milieu : dicter un message a claap-agent. */
@@ -46,13 +52,15 @@ export function TabBar({
       {TABS.flatMap((item, index) => {
         const selected = item.key === active;
         const tint = selected ? colors.accent.primary : colors.text.tertiary;
-        const badge = item.key === 'asks' ? askCount : 0;
+        const badge = item.key === 'asks' ? askCount : item.key === 'cockpit' ? cockpitCount : 0;
         const tab = (
           <Pressable
             key={item.key}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
-            accessibilityLabel={item.key === 'asks' ? t.homeTabAsksA11y(askCount) : item.label}
+            accessibilityLabel={
+              item.key === 'asks' ? t.homeTabAsksA11y(askCount) : item.key === 'cockpit' ? t.homeTabCockpitA11y(cockpitCount) : item.label
+            }
             onPress={() => onSelect(item.key)}
             style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
           >
@@ -72,7 +80,8 @@ export function TabBar({
             </Txt>
           </Pressable>
         );
-        if (index !== 1) return [tab];
+        // Le micro reste apres Asks, comme avant l'arrivee du Cockpit.
+        if (index !== 2) return [tab];
         return [
           tab,
           <View key="dictate" style={styles.tab}>
